@@ -55,6 +55,9 @@ class MonitorApp(App):
         Binding("escape", "go_back", "返回"),
         Binding("tab", "switch_tab", "切换标签"),
         Binding("enter", "enter_analysis", "进入分析"),
+        Binding("k", "group_cursor_up", "分组向上"),
+        Binding("l", "group_cursor_down", "分组向下"),
+        Binding("space", "select_group", "选择分组"),
         Binding("ctrl+c", "quit", "强制退出", priority=True),
     ]
     
@@ -63,6 +66,8 @@ class MonitorApp(App):
     connection_status: reactive[ConnectionStatus] = reactive(ConnectionStatus.DISCONNECTED)
     market_status: reactive[MarketStatus] = reactive(MarketStatus.CLOSE)
     refresh_mode: reactive[str] = reactive("快照模式")
+    current_group_cursor: reactive[int] = reactive(0)  # 当前分组光标位置
+    selected_group_name: reactive[Optional[str]] = reactive(None)  # 当前选中的分组名
     
     def __init__(self):
         """初始化监控应用"""
@@ -99,6 +104,10 @@ class MonitorApp(App):
         self.group_stocks_content: Optional[Static] = None
         self.chart_panel: Optional[Static] = None
         self.ai_analysis_panel: Optional[Static] = None
+        
+        # 分组相关状态
+        self.group_data: List[Dict[str, Any]] = []  # 存储分组数据
+        self.group_cursor_visible: bool = True  # 光标是否可见
         
         # 定时器
         self.refresh_timer: Optional[asyncio.Task] = None
@@ -159,6 +168,11 @@ class MonitorApp(App):
             # 获取用户分组相关组件
             self.group_table = self.query_one("#group_table", DataTable)
             self.group_stocks_content = self.query_one("#group_stocks_content", Static)
+            
+            # 配置分组表格的光标特性
+            if self.group_table:
+                self.group_table.cursor_type = "row"  # 启用行光标
+                self.group_table.show_cursor = True   # 显示光标
             
             # 获取图表面板
             self.chart_panel = self.query_one("#kline_chart", Static)
@@ -318,11 +332,12 @@ class MonitorApp(App):
             user_groups = await loop.run_in_executor(
                 None, 
                 self.futu_market.get_user_security_group,
-                "CUSTOM"  # 获取自定义分组
+                "ALL"  # 获取所有分组
             )
             
             # 清空现有数据
             self.group_table.clear()
+            self.group_data.clear()  # 清空分组数据缓存
             
             # 添加分组数据到表格
             # 处理不同类型的返回数据
@@ -343,15 +358,53 @@ class MonitorApp(App):
             if processed_groups:
                 self.logger.info(f"获取到 {len(processed_groups)} 个分组数据")
                 
+                # 获取事件循环，用于异步调用
+                loop = asyncio.get_event_loop()
+                
                 for i, group in enumerate(processed_groups):
                     try:
                         if isinstance(group, dict):
                             # 富途API返回的字典格式
                             group_name = group.get('group_name', f'分组{i+1}')
-                            stock_list = group.get('stock_list', [])
-                            stock_count = len(stock_list) if stock_list else 0
                             group_type = group.get('group_type', 'CUSTOM')
                             
+                            # 单独获取分组中的股票列表
+                            try:
+                                group_stocks_result = await loop.run_in_executor(
+                                    None,
+                                    self.futu_market.get_user_security,
+                                    group_name
+                                )
+                                
+                                # 处理返回的DataFrame
+                                stock_list = []
+                                if group_stocks_result is not None:
+                                    import pandas as pd
+                                    if isinstance(group_stocks_result, pd.DataFrame) and not group_stocks_result.empty:
+                                        # DataFrame转换为字典列表
+                                        stock_list = group_stocks_result.to_dict('records')
+                                    elif isinstance(group_stocks_result, list):
+                                        stock_list = group_stocks_result
+                                    elif isinstance(group_stocks_result, dict):
+                                        stock_list = [group_stocks_result]
+                                
+                                stock_count = len(stock_list)
+                                self.logger.debug(f"获取分组 '{group_name}' 的股票: {stock_count} 只")
+                            except Exception as e:
+                                self.logger.warning(f"获取分组 '{group_name}' 股票失败: {e}")
+                                stock_list = []
+                                stock_count = 0
+                            
+                            # 存储分组数据
+                            group_data = {
+                                'name': group_name,
+                                'stock_list': stock_list,
+                                'stock_count': stock_count,
+                                'type': group_type
+                            }
+                            self.group_data.append(group_data)
+                            
+                            # 添加分组行，使用DataTable原生光标而不是手动标记
                             self.group_table.add_row(
                                 group_name,
                                 str(stock_count),
@@ -364,6 +417,16 @@ class MonitorApp(App):
                             group_name = str(group[0])
                             stock_count = len(group[1]) if isinstance(group[1], (list, tuple)) else 0
                             
+                            # 存储分组数据
+                            group_data = {
+                                'name': group_name,
+                                'stock_list': group[1] if isinstance(group[1], (list, tuple)) else [],
+                                'stock_count': stock_count,
+                                'type': 'CUSTOM'
+                            }
+                            self.group_data.append(group_data)
+                            
+                            # 直接添加分组名称，不包含光标标记
                             self.group_table.add_row(
                                 group_name,
                                 str(stock_count),
@@ -374,6 +437,17 @@ class MonitorApp(App):
                         else:
                             # 其他格式，作为分组名处理
                             group_name = str(group)
+                            
+                            # 存储分组数据
+                            group_data = {
+                                'name': group_name,
+                                'stock_list': [],
+                                'stock_count': 0,
+                                'type': 'CUSTOM'
+                            }
+                            self.group_data.append(group_data)
+                            
+                            # 直接添加分组名称，不包含光标标记
                             self.group_table.add_row(
                                 group_name,
                                 "未知",
@@ -386,28 +460,54 @@ class MonitorApp(App):
                         continue
                         
                 # 如果没有成功添加任何分组，显示默认信息
-                if self.group_table.row_count == 0:
+                if len(self.group_data) == 0:
+                    self.group_data.append({
+                        'name': '数据解析失败',
+                        'stock_list': [],
+                        'stock_count': 0,
+                        'type': 'ERROR'
+                    })
                     self.group_table.add_row("数据解析失败", "0", "ERROR")
                     
             else:
                 # 添加默认提示行
+                self.group_data.append({
+                    'name': '暂无分组',
+                    'stock_list': [],
+                    'stock_count': 0,
+                    'type': '-'
+                })
                 self.group_table.add_row("暂无分组", "0", "-")
                 self.logger.info("未获取到分组数据，显示默认提示")
             
-            self.logger.info(f"加载用户分组完成，共 {len(processed_groups)} 个分组")
+            # 重置光标位置并更新显示
+            self.current_group_cursor = 0
+            # 使用原生DataTable光标，无需延迟更新
+            await self._update_group_cursor()
+            self.logger.info(f"加载用户分组完成，共 {len(self.group_data)} 个分组")
             
         except Exception as e:
             self.logger.warning(f"加载用户分组失败: {e}")
             # API调用失败时不更新连接状态，只显示错误信息
             if self.group_table:
                 self.group_table.clear()
+                self.group_data.clear()
+                self.group_data.append({
+                    'name': '加载失败',
+                    'stock_list': [],
+                    'stock_count': 0,
+                    'type': 'ERROR'
+                })
                 self.group_table.add_row(
                     "加载失败",
                     "0",
                     "ERROR"
                 )
+                self.current_group_cursor = 0
+                # 使用原生DataTable光标，无需延迟更新
+                await self._update_group_cursor()
     
-    
+
     
     async def _start_data_refresh(self) -> None:
         """启动数据刷新"""
@@ -692,8 +792,10 @@ class MonitorApp(App):
                     await self._update_stock_info()
                     self.logger.info(f"选择股票: {self.current_stock_code}")
             elif event.data_table.id == "group_table":
-                # 分组表格选择
-                await self._handle_group_selection(event.cursor_row)
+                # 分组表格选择 - 同步光标位置并更新预览
+                self.current_group_cursor = event.cursor_row
+                await self._update_group_preview()
+                self.logger.debug(f"用户点击选择分组行: {event.cursor_row}")
         except Exception as e:
             self.logger.error(f"处理行选择事件失败: {e}")
     
@@ -720,15 +822,27 @@ class MonitorApp(App):
             
             # 获取分组中的股票列表
             loop = asyncio.get_event_loop()
-            group_stocks = await loop.run_in_executor(
+            group_stocks_result = await loop.run_in_executor(
                 None,
                 self.futu_market.get_user_security,
                 group_name
             )
             
+            # 处理返回的DataFrame
+            group_stocks = []
+            if group_stocks_result is not None:
+                import pandas as pd
+                if isinstance(group_stocks_result, pd.DataFrame) and not group_stocks_result.empty:
+                    # DataFrame转换为字典列表
+                    group_stocks = group_stocks_result.to_dict('records')
+                elif isinstance(group_stocks_result, list):
+                    group_stocks = group_stocks_result
+                elif isinstance(group_stocks_result, dict):
+                    group_stocks = [group_stocks_result]
+            
             # 更新分组股票显示
             if self.group_stocks_content:
-                if group_stocks:
+                if group_stocks and len(group_stocks) > 0:
                     stock_list_text = f"[bold yellow]{group_name} - 股票列表[/bold yellow]\n\n"
                     for i, stock in enumerate(group_stocks[:10]):  # 最多显示10只股票
                         if isinstance(stock, dict):
@@ -751,6 +865,117 @@ class MonitorApp(App):
             self.logger.error(f"处理分组选择失败: {e}")
             if self.group_stocks_content:
                 self.group_stocks_content.update("[red]加载分组股票失败[/red]")
+    
+    async def _update_group_cursor(self) -> None:
+        """更新分组表格的光标显示 - 使用DataTable原生光标"""
+        if not self.group_table or len(self.group_data) == 0:
+            return
+            
+        try:
+            # 确保光标位置在有效范围内
+            if self.current_group_cursor < 0:
+                self.current_group_cursor = 0
+            elif self.current_group_cursor >= len(self.group_data):
+                self.current_group_cursor = len(self.group_data) - 1
+            
+            # 使用DataTable的原生光标移动功能
+            self.group_table.move_cursor(
+                row=self.current_group_cursor, 
+                column=0,  # 移动到第一列
+                animate=False,  # 不使用动画，避免延迟
+                scroll=True     # 确保光标可见
+            )
+            
+            # 更新右侧分组预览信息
+            await self._update_group_preview()
+            
+            self.logger.debug(f"分组光标移动到行 {self.current_group_cursor}")
+            
+        except Exception as e:
+            self.logger.error(f"更新分组光标失败: {e}")
+            # 降级处理：仅更新预览信息
+            await self._update_group_preview()
+    
+    async def _update_group_preview(self) -> None:
+        """更新统一窗口中的分组股票信息"""
+        try:
+            if 0 <= self.current_group_cursor < len(self.group_data):
+                current_group = self.group_data[self.current_group_cursor]
+                if self.group_stocks_content:
+                    # 统一窗口中的信息显示
+                    preview_text = f"[bold cyan]{current_group['name']}[/bold cyan] [dim]({current_group['stock_count']}只股票)[/dim]\n\n"
+                    
+                    # 显示股票列表
+                    stock_list = current_group.get('stock_list', [])
+                    if stock_list and len(stock_list) > 0:
+                        # 使用列表格式显示股票
+                        for i, stock in enumerate(stock_list[:12]):  # 显示前12只股票以充分利用空间
+                            if isinstance(stock, dict):
+                                stock_code = stock.get('code', 'Unknown')
+                                stock_name = stock.get('name', '')
+                                if stock_name:
+                                    preview_text += f"• {stock_code} {stock_name[:8]}\n"
+                                else:
+                                    preview_text += f"• {stock_code}\n"
+                            else:
+                                preview_text += f"• {stock}\n"
+                        
+                        if len(stock_list) > 12:
+                            preview_text += f"\n[dim]...还有 {len(stock_list) - 12} 只股票[/dim]\n"
+                    else:
+                        preview_text += "[dim]该分组暂无股票[/dim]\n"
+                    
+                    preview_text += "\n[yellow]Space键选择此分组作为主监控列表[/yellow]"
+                    
+                    self.group_stocks_content.update(preview_text)
+                    self.logger.debug(f"已更新分组信息: {current_group['name']}")
+            else:
+                # 无效的光标位置
+                if self.group_stocks_content:
+                    self.group_stocks_content.update("[dim]使用 k/l 键选择分组\n使用 Space 键切换监控列表[/dim]")
+                    
+        except Exception as e:
+            self.logger.error(f"更新分组信息失败: {e}")
+            if self.group_stocks_content:
+                self.group_stocks_content.update("[red]信息加载失败[/red]")
+    
+    async def _switch_to_group_stocks(self, group_data: Dict[str, Any]) -> None:
+        """切换主界面监控的股票为指定分组的股票"""
+        try:
+            stock_list = group_data.get('stock_list', [])
+            
+            if stock_list:
+                # 提取股票代码
+                new_monitored_stocks = []
+                for stock in stock_list:
+                    if isinstance(stock, dict):
+                        stock_code = stock.get('code', '')
+                        if stock_code:
+                            new_monitored_stocks.append(stock_code)
+                    elif isinstance(stock, str):
+                        new_monitored_stocks.append(stock)
+                
+                if new_monitored_stocks:
+                    # 更新监控股票列表
+                    self.monitored_stocks = new_monitored_stocks
+                    
+                    # 清空现有股票数据
+                    self.stock_data.clear()
+                    
+                    # 重新加载股票表格
+                    await self._load_default_stocks()
+                    
+                    # 刷新股票数据
+                    await self._refresh_stock_data()
+                    
+                    self.logger.info(f"已切换到分组 '{group_data['name']}' 的股票，共 {len(new_monitored_stocks)} 只")
+                else:
+                    self.logger.warning(f"分组 '{group_data['name']}' 中没有有效的股票代码")
+            else:
+                self.logger.warning(f"分组 '{group_data['name']}' 为空")
+                
+        except Exception as e:
+            self.logger.error(f"切换到分组股票失败: {e}")
     
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """处理按钮点击事件"""
@@ -809,6 +1034,44 @@ class MonitorApp(App):
             tabs.active = "analysis"
         else:
             tabs.active = "main"
+    
+    async def action_group_cursor_up(self) -> None:
+        """分组光标向上移动"""
+        try:
+            if len(self.group_data) > 0:
+                self.current_group_cursor = (self.current_group_cursor - 1) % len(self.group_data)
+                await self._update_group_cursor()
+                self.logger.debug(f"分组光标向上移动到: {self.current_group_cursor}")
+            else:
+                self.logger.debug("无分组数据，无法移动光标")
+        except Exception as e:
+            self.logger.error(f"分组光标向上移动失败: {e}")
+    
+    async def action_group_cursor_down(self) -> None:
+        """分组光标向下移动"""
+        try:
+            if len(self.group_data) > 0:
+                self.current_group_cursor = (self.current_group_cursor + 1) % len(self.group_data)
+                await self._update_group_cursor()
+                self.logger.debug(f"分组光标向下移动到: {self.current_group_cursor}")
+            else:
+                self.logger.debug("无分组数据，无法移动光标")
+        except Exception as e:
+            self.logger.error(f"分组光标向下移动失败: {e}")
+    
+    async def action_select_group(self) -> None:
+        """选择当前光标所在的分组"""
+        if 0 <= self.current_group_cursor < len(self.group_data):
+            group_data = self.group_data[self.current_group_cursor]
+            self.selected_group_name = group_data['name']
+            
+            # 切换主界面监控的股票为该分组的股票
+            await self._switch_to_group_stocks(group_data)
+            
+            # 同时更新分组股票显示
+            await self._handle_group_selection(self.current_group_cursor)
+            
+            self.logger.info(f"选择分组: {group_data['name']}, 包含 {group_data['stock_count']} 只股票")
     
     async def action_enter_analysis(self) -> None:
         """进入分析界面动作"""

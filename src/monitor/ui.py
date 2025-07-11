@@ -69,7 +69,7 @@ class StockListPanel(Container):
 
 
 class UserGroupPanel(Container):
-    """用户分组面板 - 右侧30%区域"""
+    """用户分组面板 - 右侧30%区域（完全合并的单一窗口）"""
     
     DEFAULT_CSS = """
     UserGroupPanel {
@@ -78,28 +78,19 @@ class UserGroupPanel(Container):
         border-title-color: $text;
         border-title-background: $surface;
         padding: 1;
+        layout: vertical;
     }
     
-    UserGroupPanel .group-content {
-        height: 1fr;
-        background: $surface;
-        padding: 1;
-    }
-    
-    UserGroupPanel .group-list {
-        background: $panel;
-        border: solid $primary;
-        margin: 1 0;
-        padding: 1;
-        height: 60%;
-    }
-    
-    UserGroupPanel .group-stocks {
-        background: $panel;
-        border: solid $secondary;
-        margin: 1 0;
-        padding: 1;
+    UserGroupPanel .compact-table {
         height: 40%;
+        margin-bottom: 1;
+    }
+    
+    UserGroupPanel .info-display {
+        height: 60%;
+        background: $surface;
+        overflow-y: auto;
+        padding: 1;
     }
     
     UserGroupPanel DataTable {
@@ -109,32 +100,29 @@ class UserGroupPanel(Container):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.border_title = "用户分组"
+        self.border_title = "分组与股票管理"
         
     def compose(self) -> ComposeResult:
-        """组合用户分组组件"""
-        with Container(classes="group-content"):
-            # 分组列表区域
-            with Container(classes="group-list"):
-                yield Static("[bold cyan]用户分组列表[/bold cyan]", id="group_title")
-                group_table = DataTable(
-                    show_cursor=True,
-                    zebra_stripes=True,
-                    cursor_type="row",
-                    show_header=True,
-                    show_row_labels=False,
-                    id="group_table"
-                )
-                group_table.add_columns("分组名称", "股票数量", "类型")
-                yield group_table
-            
-            # 选中分组的股票列表
-            with Container(classes="group-stocks"):
-                yield Static("[bold yellow]分组股票[/bold yellow]", id="group_stocks_title")
-                yield Static(
-                    "[dim]请选择分组查看股票列表[/dim]",
-                    id="group_stocks_content"
-                )
+        """组合完全统一的单一窗口"""
+        # 紧凑的分组表格（40%空间）
+        with Container(classes="compact-table"):
+            group_table = DataTable(
+                show_cursor=True,
+                zebra_stripes=True,
+                cursor_type="row",
+                show_header=True,
+                show_row_labels=False,
+                id="group_table"
+            )
+            group_table.add_columns("分组名称", "股票数量", "类型")
+            yield group_table
+        
+        # 信息显示区域（60%空间，无额外边框）
+        with Container(classes="info-display"):
+            yield Static(
+                "[dim]使用 k/l 键选择分组\n使用 Space 键切换监控列表\n\n选择分组后将显示包含的股票详情[/dim]",
+                id="group_stocks_content"
+            )
 
 
 class ChartPanel(Container):
