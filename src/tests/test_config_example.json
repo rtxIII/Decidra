@@ -1,0 +1,23 @@
+{
+  "futu": {
+    "host": "127.0.0.1",
+    "port": 11111,
+    "trade_pwd": "your_trade_password_here",
+    "default_trd_env": "SIMULATE",
+    "timeout": 30,
+    "enable_proto_encrypt": true,
+    "log_level": "INFO",
+    "auto_reconnect": true,
+    "max_reconnect_attempts": 3,
+    "reconnect_interval": 5
+  },
+  "test_settings": {
+    "run_integration_tests": false,
+    "test_stocks": [
+      "HK.00700",
+      "HK.00388",
+      "HK.09988"
+    ],
+    "test_market": "HK"
+  }
+} 
