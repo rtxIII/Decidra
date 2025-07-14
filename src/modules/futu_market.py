@@ -399,7 +399,9 @@ class FutuMarket(FutuModuleBase):
         """修改自选股"""
         try:
             if hasattr(self.client.quote, 'modify_user_security'):
-                return self.client.quote.modify_user_security(group_name, codes, op_type)
+                # 修复参数顺序：确保与 api/futu_quote.py 中的期望一致
+                # api/futu_quote.py 期待的参数顺序：(group_name, operation, code_list)
+                return self.client.quote.modify_user_security(group_name, op_type, codes)
             else:
                 self.logger.warning("modify_user_security method not available")
                 return False

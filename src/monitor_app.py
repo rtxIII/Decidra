@@ -40,7 +40,11 @@ from monitor.ui import (
     MainLayoutTab, AnalysisLayoutTab, ResponsiveLayout
 )
 
-# 导入对话框组件已移除
+# 导入对话框组件
+from monitor.widgets.window_dialog import (
+    WindowInputDialog, show_input_dialog, show_confirm_dialog
+)
+from textual.validation import Function
 
 SNAPSHOT_REFRESH_INTERVAL = 300 
 
@@ -56,7 +60,7 @@ class MonitorApp(App):
         Binding("q", "quit", "退出", priority=True),
         Binding("h", "help", "帮助"),
         Binding("n", "add_stock", "添加股票"),
-        Binding("delete", "delete_stock", "删除股票"),
+        Binding("k", "delete_stock", "删除股票"),
         Binding("r", "refresh", "刷新数据"),
         Binding("escape", "go_back", "返回"),
         Binding("tab", "switch_tab", "切换标签"),
@@ -127,6 +131,18 @@ class MonitorApp(App):
         
         
         self.logger.info("MonitorApp 初始化完成")
+    
+    def _validate_stock_code(self, stock_code: str):
+        """验证股票代码格式"""
+        from textual.validation import ValidationResult
+        import re
+        
+        # 基本格式验证：市场.代码
+        pattern = r'^(HK|US|SH|SZ)\.[A-Z0-9]+$'
+        if not re.match(pattern, stock_code.upper()):
+            return ValidationResult.failure("股票代码格式错误。正确格式：HK.00700 (港股) 或 US.AAPL (美股)")
+        
+        return ValidationResult.success()
     
     def compose(self) -> ComposeResult:
         """构建用户界面 - 使用新的UI布局组件"""
@@ -568,8 +584,24 @@ class MonitorApp(App):
                 # 使用原生DataTable光标，无需延迟更新
                 await self._update_group_cursor()
     
+    async def _refresh_user_groups(self) -> None:
+        """刷新用户分组数据，用于添加/删除股票后更新stock_list"""
+        try:
+            self.logger.info("开始刷新用户分组数据...")
+            
+            # 重新加载用户分组数据
+            await self._load_user_groups()
+            
+            # 更新分组预览信息
+            await self._update_group_preview()
+            
+            self.logger.info("用户分组数据刷新完成")
+            await self.info_panel.log_info("分组数据已刷新", "系统")
+            
+        except Exception as e:
+            self.logger.error(f"刷新用户分组数据失败: {e}")
+            await self.info_panel.log_info(f"刷新分组数据失败: {e}", "系统")
 
-    
     async def _start_data_refresh(self) -> None:
         """启动数据刷新"""
         try:
@@ -1096,11 +1128,183 @@ class MonitorApp(App):
     # 动作方法
     async def action_add_stock(self) -> None:
         """添加股票动作"""
-        self.logger.info("添加股票功能暂时禁用（对话框已移除）")
+        # 使用 run_worker 来处理对话框
+        self.run_worker(self._add_stock_worker, exclusive=True)
+    
+    async def _add_stock_worker(self) -> None:
+        """添加股票的工作线程"""
+        try:
+            # 使用WindowInputDialog获取股票代码
+            stock_code = await show_input_dialog(
+                self,
+                message="请输入要添加的股票代码\n格式：HK.00700 (港股) 或 US.AAPL (美股)",
+                title="添加股票",
+                placeholder="例如：HK.00700",
+                validator=Function(self._validate_stock_code),
+                required=True
+            )
+            
+            if stock_code:
+                # 格式化股票代码
+                formatted_code = stock_code.upper().strip()
+                
+                # 检查是否已经存在
+                if formatted_code in self.monitored_stocks:
+                    await self.info_panel.log_info(f"股票 {formatted_code} 已在监控列表中", "添加股票")
+                    return
+                
+                # 确认添加
+                confirmed = await show_confirm_dialog(
+                    self,
+                    message=f"确定要添加股票 {formatted_code} 到监控列表吗？",
+                    title="确认添加",
+                    confirm_text="添加",
+                    cancel_text="取消"
+                )
+                
+                if confirmed:
+                    # 添加到监控列表
+                    self.monitored_stocks.append(formatted_code)
+                    
+                    # 更新股票表格
+                    if self.stock_table:
+                        self.stock_table.add_row(
+                            formatted_code,
+                            "加载中...",
+                            "0.00",
+                            "0.00%", 
+                            "0",
+                            "未更新",
+                            key=formatted_code
+                        )
+                    
+                    # 尝试将股票添加到当前选中的分组
+                    if self.selected_group_name:
+                        try:
+                            success = self.futu_market.modify_user_security(
+                                self.selected_group_name, 
+                                [formatted_code], 
+                                "ADD"
+                            )
+                            if success:
+                                await self.info_panel.log_info(f"股票 {formatted_code} 已添加到分组 {self.selected_group_name}", "添加股票")
+                            else:
+                                await self.info_panel.log_info(f"股票 {formatted_code} 添加到分组失败", "添加股票")
+                        except Exception as e:
+                            self.logger.error(f"添加股票到分组失败: {e}")
+                            await self.info_panel.log_info(f"添加股票到分组失败: {e}", "添加股票")
+                    
+                    # 刷新股票数据
+                    await self._refresh_stock_data()
+                    
+                    # 刷新用户分组数据以更新stock_list
+                    await self._refresh_user_groups()
+                    
+                    self.logger.info(f"成功添加股票: {formatted_code}")
+                    await self.info_panel.log_info(f"成功添加股票: {formatted_code}", "添加股票")
+                    
+        except Exception as e:
+            self.logger.error(f"添加股票失败: {e}")
+            await self.info_panel.log_info(f"添加股票失败: {e}", "添加股票")
     
     async def action_delete_stock(self) -> None:
         """删除股票动作"""
-        self.logger.info("删除股票功能暂时禁用（对话框已移除）")
+        # 使用 run_worker 来处理对话框
+        self.run_worker(self._delete_stock_worker, exclusive=True)
+    
+    async def _delete_stock_worker(self) -> None:
+        """删除股票的工作线程"""
+        try:
+            # 检查是否有可删除的股票
+            if not self.monitored_stocks:
+                await self.info_panel.log_info("监控列表为空，无法删除股票", "删除股票")
+                return
+                
+            # 获取当前选中的股票
+            current_stock = None
+            if 0 <= self.current_stock_cursor < len(self.monitored_stocks):
+                current_stock = self.monitored_stocks[self.current_stock_cursor]
+            
+            # 如果没有选中股票，让用户手动输入
+            if not current_stock:
+                stock_code = await show_input_dialog(
+                    self,
+                    message="请输入要删除的股票代码\n格式：HK.00700 (港股) 或 US.AAPL (美股)",
+                    title="删除股票",
+                    placeholder="例如：HK.00700",
+                    validator=Function(self._validate_stock_code),
+                    required=True
+                )
+                if stock_code:
+                    current_stock = stock_code.upper().strip()
+            
+            if not current_stock:
+                return
+                
+            # 检查股票是否在监控列表中
+            if current_stock not in self.monitored_stocks:
+                await self.info_panel.log_info(f"股票 {current_stock} 不在监控列表中", "删除股票")
+                return
+            
+            # 确认删除
+            confirmed = await show_confirm_dialog(
+                self,
+                message=f"确定要删除股票 {current_stock} 吗？\n\n[red]警告：此操作将从监控列表中移除该股票！[/red]",
+                title="确认删除",
+                confirm_text="删除",
+                cancel_text="取消"
+            )
+            
+            if confirmed:
+                # 从监控列表中移除
+                self.monitored_stocks.remove(current_stock)
+                
+                # 从股票表格中删除
+                if self.stock_table:
+                    try:
+                        self.stock_table.remove_row(current_stock)
+                    except Exception as e:
+                        self.logger.warning(f"从表格删除股票行失败: {e}")
+                
+                # 从股票数据中删除
+                if current_stock in self.stock_data:
+                    del self.stock_data[current_stock]
+                
+                # 尝试从当前选中的分组中删除
+                if self.selected_group_name:
+                    try:
+                        success = self.futu_market.modify_user_security(
+                            self.selected_group_name, 
+                            [current_stock], 
+                            "DEL"
+                        )
+                        if success:
+                            await self.info_panel.log_info(f"股票 {current_stock} 已从分组 {self.selected_group_name} 中删除", "删除股票")
+                        else:
+                            await self.info_panel.log_info(f"股票 {current_stock} 从分组中删除失败", "删除股票")
+                    except Exception as e:
+                        self.logger.error(f"从分组删除股票失败: {e}")
+                        await self.info_panel.log_info(f"从分组删除股票失败: {e}", "删除股票")
+                
+                # 更新光标位置
+                if self.current_stock_cursor >= len(self.monitored_stocks):
+                    self.current_stock_cursor = max(0, len(self.monitored_stocks) - 1)
+                
+                # 更新股票光标
+                if self.monitored_stocks:
+                    await self._update_stock_cursor()
+                else:
+                    self.current_stock_code = None
+                
+                # 刷新用户分组数据以更新stock_list
+                await self._refresh_user_groups()
+                
+                self.logger.info(f"成功删除股票: {current_stock}")
+                await self.info_panel.log_info(f"成功删除股票: {current_stock}", "删除股票")
+                
+        except Exception as e:
+            self.logger.error(f"删除股票失败: {e}")
+            await self.info_panel.log_info(f"删除股票失败: {e}", "删除股票")
     
     async def action_refresh(self) -> None:
         """手动刷新动作"""
