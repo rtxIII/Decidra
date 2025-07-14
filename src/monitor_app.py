@@ -180,6 +180,7 @@ class MonitorApp(App):
         try:
             # 获取股票表格组件
             self.stock_table = self.query_one("#stock_table", DataTable)
+            self.stock_table .cursor_type = 'row'
             
             # 获取用户分组相关组件
             self.group_table = self.query_one("#group_table", DataTable)

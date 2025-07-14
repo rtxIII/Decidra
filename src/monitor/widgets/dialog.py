@@ -41,10 +41,17 @@ class ConfirmDialog(Widget, can_focus_children=True):
             color: $text;
         }
         
+        Center {
+            width: 100%;
+            height: auto;
+            margin-top: 1;
+        }
+        
         .button-container {
             layout: horizontal;
             height: auto;
-            margin-top: 1;
+            width: auto;
+            align: center middle;
         }
         
         .button-container Button {
