@@ -129,8 +129,107 @@ class MonitorApp(App):
         # 定时器
         self.refresh_timer: Optional[asyncio.Task] = None
         
+        # 工作任务管理
+        self._current_workers: set = set()
+        self._worker_lock = asyncio.Lock()
+        
+        # 应用状态管理
+        self._is_quitting = False
+        
+        # 任务监控
+        self._task_monitor_timer: Optional[asyncio.Task] = None
         
         self.logger.info("MonitorApp 初始化完成")
+    
+    async def _log_task_queue_status(self) -> None:
+        """记录当前任务队列状态"""
+        try:
+            loop = asyncio.get_event_loop()
+            all_tasks = asyncio.all_tasks(loop)
+            
+            # 统计不同类型的任务
+            pending_tasks = [task for task in all_tasks if not task.done()]
+            running_tasks = [task for task in all_tasks if not task.done() and not task.cancelled()]
+            
+            # 获取任务名称和详细信息，过滤UI相关任务
+            task_info = []
+            ui_tasks_count = 0
+            app_tasks_count = 0
+            
+            # UI相关任务的关键词
+            ui_keywords = [
+                'message pump', 'animator', 'label', 'static', 'footer', 'tab',
+                'button', 'input', 'datatable', 'container', 'widget', 'textual'
+            ]
+            
+            for task in pending_tasks:
+                task_name = "Unknown"
+                if hasattr(task, 'get_name'):
+                    task_name = task.get_name()
+                elif hasattr(task, '_coro'):
+                    coro_name = getattr(task._coro, '__name__', None)
+                    if coro_name:
+                        task_name = coro_name
+                    else:
+                        task_name = str(task._coro)[:50]
+                
+                task_status = "PENDING"
+                if task.cancelled():
+                    task_status = "CANCELLED"
+                elif task.done():
+                    task_status = "DONE"
+                
+                # 判断是否为UI任务
+                is_ui_task = any(keyword in task_name.lower() for keyword in ui_keywords)
+                
+                if is_ui_task:
+                    ui_tasks_count += 1
+                else:
+                    app_tasks_count += 1
+                    task_info.append(f"{task_name}({task_status})")
+            
+            # 记录详细的任务信息
+            self.logger.info(f"任务队列状态:")
+            self.logger.info(f"  总任务数: {len(all_tasks)}")
+            self.logger.info(f"  待处理任务: {len(pending_tasks)} (UI任务: {ui_tasks_count}, 应用任务: {app_tasks_count})")
+            self.logger.info(f"  运行中任务: {len(running_tasks)}")
+            
+            # 只显示应用相关任务
+            if app_tasks_count > 0:
+                self.logger.info(f"  应用任务详情: {', '.join(task_info[:10])}")  # 只显示前10个
+                if app_tasks_count > 10:
+                    self.logger.info(f"  ... 还有 {app_tasks_count - 10} 个应用任务")
+            else:
+                self.logger.info(f"  无应用相关待处理任务")
+            
+            # 如果应用任务数量过多，发出警告
+            if app_tasks_count > 10:
+                self.logger.warning(f"检测到大量应用任务({app_tasks_count})，可能存在任务积累问题")
+            elif len(pending_tasks) > 50:  # UI任务过多也要警告
+                self.logger.warning(f"检测到大量UI任务({ui_tasks_count})，可能存在界面更新问题")
+                
+        except Exception as e:
+            self.logger.error(f"记录任务队列状态失败: {e}")
+    
+    async def _start_task_monitoring(self) -> None:
+        """启动任务监控"""
+        if self._task_monitor_timer and not self._task_monitor_timer.done():
+            return
+            
+        self._task_monitor_timer = asyncio.create_task(self._task_monitor_loop())
+        self.logger.info("任务监控已启动")
+    
+    async def _task_monitor_loop(self) -> None:
+        """任务监控循环"""
+        while not self._is_quitting:
+            try:
+                await self._log_task_queue_status()
+                await asyncio.sleep(30)  # 每30秒记录一次任务状态
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"任务监控循环错误: {e}")
+                await asyncio.sleep(30)
     
     def _validate_stock_code(self, stock_code: str):
         """验证股票代码格式"""
@@ -189,6 +288,9 @@ class MonitorApp(App):
         
         # 初始化InfoPanel
         await self._initialize_info_panel()
+        
+        # 启动任务监控
+        await self._start_task_monitoring()
         
         self.logger.info("MonitorApp 启动完成")
         
@@ -667,6 +769,19 @@ class MonitorApp(App):
     
     async def _start_snapshot_refresh(self) -> None:
         """启动快照数据刷新"""
+        # 检查是否已有刷新任务在运行
+        if self.refresh_timer and not self.refresh_timer.done():
+            self.logger.info("快照数据刷新已在运行，跳过重复启动")
+            return
+            
+        # 取消现有任务（如果存在）
+        if self.refresh_timer:
+            self.refresh_timer.cancel()
+            try:
+                await self.refresh_timer
+            except asyncio.CancelledError:
+                pass
+        
         # 创建定时刷新任务
         self.refresh_timer = asyncio.create_task(self._snapshot_refresh_loop())
         self.logger.info("快照数据刷新启动")
@@ -710,7 +825,7 @@ class MonitorApp(App):
                 
                 # 更新界面
                 await self._update_stock_table()
-                await self._update_stock_info()
+                
                 await self._update_status_display()
                 
                 self.logger.info("股票数据刷新成功")
@@ -800,7 +915,7 @@ class MonitorApp(App):
                 
                 # 更新界面
                 await self._update_stock_table()
-                await self._update_stock_info()
+                
                 
         except Exception as e:
             self.logger.error(f"处理实时数据失败: {e}")
@@ -844,31 +959,6 @@ class MonitorApp(App):
                     
         except Exception as e:
             self.logger.error(f"更新股票表格失败: {e}")
-    
-    async def _update_stock_info(self) -> None:
-        """更新股票信息面板"""
-        if not self.current_stock_code:
-            return
-            
-        try:
-            stock_info = self.stock_data.get(self.current_stock_code)
-            if stock_info:
-                # 确定涨跌颜色
-                change_color = "green" if stock_info.change_rate > 0 else "red" if stock_info.change_rate < 0 else "white"
-                change_symbol = "▲" if stock_info.change_rate > 0 else "▼" if stock_info.change_rate < 0 else "■"
-                
-                # 市场状态颜色
-                market_color = "green" if stock_info.market_status == MarketStatus.OPEN else "yellow"
-                
-                # 记录股票信息更新（用于调试）
-                
-                # 暂时记录到日志，后续可以添加专门的UI组件来显示
-                self.logger.debug(f"股票信息更新: {stock_info.code} - {stock_info.current_price:.2f} ({stock_info.change_rate:.2f}%)")
-            
-        except Exception as e:
-            self.logger.error(f"更新股票信息失败: {e}")
-    
-    # 对话框事件处理方法已移除
 
     # 事件处理方法
     async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
@@ -880,7 +970,7 @@ class MonitorApp(App):
                 row_index = event.cursor_row
                 if 0 <= row_index < len(self.monitored_stocks):
                     self.current_stock_code = self.monitored_stocks[row_index]
-                    await self._update_stock_info()
+                    
                     self.logger.info(f"选择股票: {self.current_stock_code}")
             elif event.data_table.id == "group_table":
                 # 分组表格选择 - 同步光标位置并更新预览
@@ -1046,7 +1136,7 @@ class MonitorApp(App):
             # 更新当前选中的股票代码
             if 0 <= self.current_stock_cursor < len(self.monitored_stocks):
                 self.current_stock_code = self.monitored_stocks[self.current_stock_cursor]
-                await self._update_stock_info()
+                
                 self.logger.debug(f"股票光标移动到行 {self.current_stock_cursor}, 股票: {self.current_stock_code}")
             
         except Exception as e:
@@ -1054,7 +1144,7 @@ class MonitorApp(App):
             # 降级处理：仅更新当前股票代码
             if 0 <= self.current_stock_cursor < len(self.monitored_stocks):
                 self.current_stock_code = self.monitored_stocks[self.current_stock_cursor]
-                await self._update_stock_info()
+                
     
     async def _update_table_focus(self) -> None:
         """更新表格焦点显示，确保同一时间只有一个表格显示光标"""
@@ -1469,8 +1559,16 @@ class MonitorApp(App):
                 self.refresh_timer = None
                 self.logger.info("刷新定时器已停止")
             
+            if self._task_monitor_timer:
+                self._task_monitor_timer.cancel()
+                self._task_monitor_timer = None
+                self.logger.info("任务监控定时器已停止")
+            
             # 2. 取消所有异步任务
             try:
+                # 记录退出前的任务状态
+                await self._log_task_queue_status()
+                
                 # 获取当前事件循环中的所有任务
                 loop = asyncio.get_event_loop()
                 pending_tasks = [task for task in asyncio.all_tasks(loop) 
@@ -1478,16 +1576,19 @@ class MonitorApp(App):
                 
                 if pending_tasks:
                     self.logger.info(f"取消 {len(pending_tasks)} 个待处理任务")
+                    # 取消所有待处理任务，不只是包含'refresh'的任务
                     for task in pending_tasks:
-                        if hasattr(task, 'get_name') and 'refresh' in task.get_name():
+                        if not task.cancelled():
                             task.cancel()
                     
                     # 等待任务取消完成
                     await asyncio.wait_for(
                         asyncio.gather(*pending_tasks, return_exceptions=True),
-                        timeout=1.0  # 缩短到1秒
+                        timeout=2.0  # 稍微延长到2秒
                     )
                     self.logger.info("异步任务取消完成")
+                else:
+                    self.logger.info("没有待处理任务需要取消")
             except asyncio.TimeoutError:
                 self.logger.warning("部分异步任务取消超时")
             except Exception as e:
