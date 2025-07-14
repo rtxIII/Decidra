@@ -7,7 +7,7 @@
 
 import logging
 from typing import Optional, Dict, Any, TYPE_CHECKING
-
+from utils.logger import get_logger
 if TYPE_CHECKING:
     from .futu_client import FutuClient
 
@@ -32,7 +32,8 @@ class TradeManager:
             client: 富途客户端实例
         """
         self.client = client
-        self.logger = logging.getLogger(f"{__name__}.TradeManager")
+        #self.logger = logging.getLogger(f"{__name__}.TradeManager")
+        self.logger = get_logger(__name__)
     
     def _get_trade_context(self, market: str = "HK"):
         """获取交易上下文"""

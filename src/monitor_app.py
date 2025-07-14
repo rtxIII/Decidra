@@ -281,9 +281,11 @@ class MonitorApp(App):
                 if connect_success:
                     self.connection_status = ConnectionStatus.CONNECTED
                     self.logger.info("富途API连接成功")
+                    await self.info_panel.log_info("富途API连接成功", "系统")
                 else:
                     self.connection_status = ConnectionStatus.DISCONNECTED
                     self.logger.warning("富途API连接失败")
+                    await self.info_panel.log_info("富途API连接失败", "系统")
                     
             except Exception as e:
                 self.connection_status = ConnectionStatus.ERROR
@@ -363,7 +365,7 @@ class MonitorApp(App):
                 )
         
         self.logger.info(f"加载默认股票列表: {self.monitored_stocks}")
-    
+        await self.info_panel.log_info(f"加载默认股票列表: {self.monitored_stocks}", "系统")
     
     async def _load_user_groups(self) -> None:
         """加载用户分组数据"""
@@ -895,6 +897,7 @@ class MonitorApp(App):
                     self.group_stocks_content.update(f"[yellow]{group_name}[/yellow]\n\n[dim]该分组暂无股票[/dim]")
             
             self.logger.info(f"选择分组: {group_name}, 包含 {len(group_stocks) if group_stocks else 0} 只股票")
+            await self.info_panel.log_info(f"选择分组: {group_name}, 包含 {len(group_stocks) if group_stocks else 0} 只股票", "分组选择")
             
         except Exception as e:
             self.logger.error(f"处理分组选择失败: {e}")

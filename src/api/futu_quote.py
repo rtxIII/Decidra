@@ -9,6 +9,7 @@ import logging
 import threading
 from typing import Optional, Dict, Any, List, Callable, TYPE_CHECKING
 from collections import defaultdict
+from utils.logger import get_logger
 
 if TYPE_CHECKING:
     from .futu_client import FutuClient
@@ -39,8 +40,8 @@ class QuoteManager:
             client: 富途客户端实例
         """
         self.client = client
-        self.logger = logging.getLogger(f"{__name__}.QuoteManager")
-        
+        #self.logger = logging.getLogger(f"{__name__}.QuoteManager")
+        self.logger = get_logger(__name__)
         # 订阅管理
         self._subscriptions: Dict[str, Dict[str, List[str]]] = defaultdict(lambda: defaultdict(list))
         self._handlers: Dict[str, Callable] = {}

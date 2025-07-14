@@ -6,7 +6,7 @@
 
 import logging
 from typing import Optional
-
+from utils.logger import get_logger
 from base.futu_class import FutuException, FutuConnectException, FutuTradeException, FutuConfig
 
 try:
@@ -50,7 +50,8 @@ class FutuClient:
         self._quote_manager = None
         self._trade_manager = None
         
-        self.logger = logging.getLogger(__name__)
+        #self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         self.logger.info(f"FutuClient initialized with config: {self.config.host}:{self.config.port}")
     
     @property

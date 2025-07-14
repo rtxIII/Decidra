@@ -37,10 +37,10 @@ class ColorFormatter(logging.Formatter):
 class ColorLogger(logging.Logger):
     def __init__(self, name):
         logging.Logger.__init__(self, name, logging.DEBUG)
-        color_formatter = ColorFormatter("%(name)-10s %(levelname)-18s %(message)s")
-        console = logging.StreamHandler()
-        console.setFormatter(color_formatter)
-        self.addHandler(console)
+        #color_formatter = ColorFormatter("%(name)-10s %(levelname)-18s %(message)s")
+        #console = logging.StreamHandler()
+        #console.setFormatter(color_formatter)
+        #self.addHandler(console)
         file_handler = TimedRotatingFileHandler(LOG_FILE, when='midnight')
         file_handler.setFormatter(FORMATTER)
         self.addHandler(file_handler)
