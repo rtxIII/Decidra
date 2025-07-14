@@ -55,14 +55,16 @@ class MonitorApp(App):
     BINDINGS = [
         Binding("q", "quit", "退出", priority=True),
         Binding("h", "help", "帮助"),
-        Binding("a", "add_stock", "添加股票"),
-        Binding("d", "delete_stock", "删除股票"),
+        Binding("n", "add_stock", "添加股票"),
+        Binding("delete", "delete_stock", "删除股票"),
         Binding("r", "refresh", "刷新数据"),
         Binding("escape", "go_back", "返回"),
         Binding("tab", "switch_tab", "切换标签"),
         Binding("enter", "enter_analysis", "进入分析"),
-        Binding("k", "group_cursor_up", "分组向上"),
-        Binding("l", "group_cursor_down", "分组向下"),
+        Binding("w", "cursor_up", "向上移动"),
+        Binding("s", "cursor_down", "向下移动"),
+        Binding("a", "focus_left_table", "焦点左移"),
+        Binding("d", "focus_right_table", "焦点右移"),
         Binding("space", "select_group", "选择分组"),
         Binding("ctrl+c", "quit", "强制退出", priority=True),
     ]
@@ -73,6 +75,8 @@ class MonitorApp(App):
     market_status: reactive[MarketStatus] = reactive(MarketStatus.CLOSE)
     refresh_mode: reactive[str] = reactive("快照模式")
     current_group_cursor: reactive[int] = reactive(0)  # 当前分组光标位置
+    current_stock_cursor: reactive[int] = reactive(0)  # 当前股票表格光标位置
+    active_table: reactive[str] = reactive("stock")  # 当前活跃的表格: "stock" 或 "group"
     selected_group_name: reactive[Optional[str]] = reactive(None)  # 当前选中的分组名
     
     def __init__(self):
@@ -180,7 +184,8 @@ class MonitorApp(App):
         try:
             # 获取股票表格组件
             self.stock_table = self.query_one("#stock_table", DataTable)
-            self.stock_table .cursor_type = 'row'
+            self.stock_table.cursor_type = 'row'
+            self.stock_table.show_cursor = True   # 显示光标
             
             # 获取用户分组相关组件
             self.group_table = self.query_one("#group_table", DataTable)
@@ -367,6 +372,14 @@ class MonitorApp(App):
         
         self.logger.info(f"加载默认股票列表: {self.monitored_stocks}")
         await self.info_panel.log_info(f"加载默认股票列表: {self.monitored_stocks}", "系统")
+        
+        # 初始化股票光标位置
+        self.current_stock_cursor = 0
+        if self.stock_table and len(self.monitored_stocks) > 0:
+            await self._update_stock_cursor()
+        
+        # 初始化表格焦点状态
+        await self._update_table_focus()
     
     async def _load_user_groups(self) -> None:
         """加载用户分组数据"""
@@ -978,6 +991,63 @@ class MonitorApp(App):
             if self.group_stocks_content:
                 self.group_stocks_content.update("[red]信息加载失败[/red]")
     
+    async def _update_stock_cursor(self) -> None:
+        """更新股票表格的光标显示"""
+        if not self.stock_table or len(self.monitored_stocks) == 0:
+            return
+            
+        try:
+            # 确保光标位置在有效范围内
+            if self.current_stock_cursor < 0:
+                self.current_stock_cursor = 0
+            elif self.current_stock_cursor >= len(self.monitored_stocks):
+                self.current_stock_cursor = len(self.monitored_stocks) - 1
+            
+            # 使用DataTable的原生光标移动功能
+            self.stock_table.move_cursor(
+                row=self.current_stock_cursor, 
+                column=0,  # 移动到第一列
+                animate=False,  # 不使用动画，避免延迟
+                scroll=True     # 确保光标可见
+            )
+            
+            # 更新当前选中的股票代码
+            if 0 <= self.current_stock_cursor < len(self.monitored_stocks):
+                self.current_stock_code = self.monitored_stocks[self.current_stock_cursor]
+                await self._update_stock_info()
+                self.logger.debug(f"股票光标移动到行 {self.current_stock_cursor}, 股票: {self.current_stock_code}")
+            
+        except Exception as e:
+            self.logger.error(f"更新股票光标失败: {e}")
+            # 降级处理：仅更新当前股票代码
+            if 0 <= self.current_stock_cursor < len(self.monitored_stocks):
+                self.current_stock_code = self.monitored_stocks[self.current_stock_cursor]
+                await self._update_stock_info()
+    
+    async def _update_table_focus(self) -> None:
+        """更新表格焦点显示，确保同一时间只有一个表格显示光标"""
+        try:
+            if self.active_table == "stock":
+                # 激活股票表格光标，隐藏分组表格光标
+                if self.stock_table:
+                    self.stock_table.show_cursor = True
+                    await self._update_stock_cursor()
+                if self.group_table:
+                    self.group_table.show_cursor = False
+                    self.group_table.refresh()
+                self.logger.debug("激活股票表格焦点")
+            elif self.active_table == "group":
+                # 激活分组表格光标，隐藏股票表格光标
+                if self.group_table:
+                    self.group_table.show_cursor = True
+                    await self._update_group_cursor()
+                if self.stock_table:
+                    self.stock_table.show_cursor = False
+                    self.stock_table.refresh()
+                self.logger.debug("激活分组表格焦点")
+        except Exception as e:
+            self.logger.error(f"更新表格焦点失败: {e}")
+    
     async def _switch_to_group_stocks(self, group_data: Dict[str, Any]) -> None:
         """切换主界面监控的股票为指定分组的股票"""
         try:
@@ -1000,6 +1070,9 @@ class MonitorApp(App):
                     
                     # 清空现有股票数据
                     self.stock_data.clear()
+                    
+                    # 重置股票光标位置
+                    self.current_stock_cursor = 0
                     
                     # 重新加载股票表格
                     await self._load_default_stocks()
@@ -1060,33 +1133,45 @@ class MonitorApp(App):
         else:
             tabs.active = "main"
     
-    async def action_group_cursor_up(self) -> None:
-        """分组光标向上移动"""
+    async def action_cursor_up(self) -> None:
+        """光标向上移动 - 根据当前活跃表格决定移动哪个光标"""
         try:
-            if len(self.group_data) > 0:
+            if self.active_table == "stock" and len(self.monitored_stocks) > 0:
+                # 移动股票表格光标
+                self.current_stock_cursor = (self.current_stock_cursor - 1) % len(self.monitored_stocks)
+                await self._update_stock_cursor()
+                self.logger.debug(f"股票光标向上移动到: {self.current_stock_cursor}")
+            elif self.active_table == "group" and len(self.group_data) > 0:
+                # 移动分组表格光标
                 self.current_group_cursor = (self.current_group_cursor - 1) % len(self.group_data)
                 await self._update_group_cursor()
                 self.logger.debug(f"分组光标向上移动到: {self.current_group_cursor}")
             else:
-                self.logger.debug("无分组数据，无法移动光标")
+                self.logger.debug(f"当前表格({self.active_table})无数据或非活跃状态，无法移动光标")
         except Exception as e:
-            self.logger.error(f"分组光标向上移动失败: {e}")
+            self.logger.error(f"光标向上移动失败: {e}")
     
-    async def action_group_cursor_down(self) -> None:
-        """分组光标向下移动"""
+    async def action_cursor_down(self) -> None:
+        """光标向下移动 - 根据当前活跃表格决定移动哪个光标"""
         try:
-            if len(self.group_data) > 0:
+            if self.active_table == "stock" and len(self.monitored_stocks) > 0:
+                # 移动股票表格光标
+                self.current_stock_cursor = (self.current_stock_cursor + 1) % len(self.monitored_stocks)
+                await self._update_stock_cursor()
+                self.logger.debug(f"股票光标向下移动到: {self.current_stock_cursor}")
+            elif self.active_table == "group" and len(self.group_data) > 0:
+                # 移动分组表格光标
                 self.current_group_cursor = (self.current_group_cursor + 1) % len(self.group_data)
                 await self._update_group_cursor()
                 self.logger.debug(f"分组光标向下移动到: {self.current_group_cursor}")
             else:
-                self.logger.debug("无分组数据，无法移动光标")
+                self.logger.debug(f"当前表格({self.active_table})无数据或非活跃状态，无法移动光标")
         except Exception as e:
-            self.logger.error(f"分组光标向下移动失败: {e}")
+            self.logger.error(f"光标向下移动失败: {e}")
     
     async def action_select_group(self) -> None:
         """选择当前光标所在的分组"""
-        if 0 <= self.current_group_cursor < len(self.group_data):
+        if self.active_table == "group" and 0 <= self.current_group_cursor < len(self.group_data):
             group_data = self.group_data[self.current_group_cursor]
             self.selected_group_name = group_data['name']
             
@@ -1097,6 +1182,26 @@ class MonitorApp(App):
             await self._handle_group_selection(self.current_group_cursor)
             
             self.logger.info(f"选择分组: {group_data['name']}, 包含 {group_data['stock_count']} 只股票")
+    
+    async def action_focus_left_table(self) -> None:
+        """左移焦点到股票表格"""
+        try:
+            if self.active_table != "stock":
+                self.active_table = "stock"
+                await self._update_table_focus()
+                self.logger.debug("焦点切换到股票表格")
+        except Exception as e:
+            self.logger.error(f"切换焦点到股票表格失败: {e}")
+    
+    async def action_focus_right_table(self) -> None:
+        """右移焦点到分组表格"""
+        try:
+            if self.active_table != "group":
+                self.active_table = "group"
+                await self._update_table_focus()
+                self.logger.debug("焦点切换到分组表格")
+        except Exception as e:
+            self.logger.error(f"切换焦点到分组表格失败: {e}")
     
     async def action_enter_analysis(self) -> None:
         """进入分析界面动作"""

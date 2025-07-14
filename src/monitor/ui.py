@@ -316,6 +316,7 @@ class MainLayoutTab(Container):
         row-span: 1;
     }
     """
+    BINDINGS = []
     
     def compose(self) -> ComposeResult:
         """组合主界面布局"""
