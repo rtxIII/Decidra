@@ -296,18 +296,19 @@ class MainLayoutTab(Container):
         layout: grid;
         grid-size: 2 2;
         grid-columns: 7fr 3fr;
+        grid-rows: 3fr 2fr;
         grid-gutter: 1;
         height: 1fr;
     }
     
     MainLayoutTab #stock_list_panel {
         column-span: 1;
-        row-span: 2;
+        row-span: 1;
     }
     
     MainLayoutTab #user_group_panel {
         column-span: 1;
-        row-span: 1;
+        row-span: 2;
     }
     
     MainLayoutTab #info_panel {
