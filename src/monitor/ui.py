@@ -5,7 +5,7 @@ Monitor UI Layout Module
 """
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Vertical, Grid
+from textual.containers import Container, Vertical, Grid, Horizontal
 from textual.widgets import (
     Header, Footer, Static, DataTable, Label, 
     TabbedContent, TabPane, Input, ProgressBar
@@ -29,7 +29,6 @@ class StockListPanel(Container):
     
     DEFAULT_CSS = """
     StockListPanel {
-        width: 70%;
         border: solid $accent;
         border-title-color: $text;
         border-title-background: $surface;
@@ -37,6 +36,24 @@ class StockListPanel(Container):
     
     StockListPanel DataTable {
         height: 1fr;
+        
+        padding: 1;
+    }
+    
+    StockListPanel DataTable > .datatable--header {
+        
+        height: 3;
+        padding: 1;
+    }
+    
+    StockListPanel DataTable > .datatable--body {
+        
+        padding: 1;
+    }
+    
+    StockListPanel DataTable > .datatable--row {
+        height: 3;
+        padding: 0 1;
     }
     
     StockListPanel .button-bar {
@@ -44,6 +61,7 @@ class StockListPanel(Container):
         dock: bottom;
         background: $surface;
         text-align: center;
+        
     }
     """
     
@@ -82,7 +100,6 @@ class UserGroupPanel(Container):
     
     DEFAULT_CSS = """
     UserGroupPanel {
-        width: 30%;
         border: solid $accent;
         border-title-color: $text;
         border-title-background: $surface;
@@ -276,8 +293,26 @@ class MainLayoutTab(Container):
     
     DEFAULT_CSS = """
     MainLayoutTab {
-        layout: horizontal;
+        layout: grid;
+        grid-size: 2 2;
+        grid-columns: 7fr 3fr;
+        grid-gutter: 1;
         height: 1fr;
+    }
+    
+    MainLayoutTab #stock_list_panel {
+        column-span: 1;
+        row-span: 2;
+    }
+    
+    MainLayoutTab #user_group_panel {
+        column-span: 1;
+        row-span: 1;
+    }
+    
+    MainLayoutTab #info_panel {
+        column-span: 1;
+        row-span: 1;
     }
     """
     
@@ -285,6 +320,9 @@ class MainLayoutTab(Container):
         """组合主界面布局"""
         yield StockListPanel(id="stock_list_panel")
         yield UserGroupPanel(id="user_group_panel")
+        # 导入InfoPanel并添加到布局中
+        from monitor.widgets.line_panel import InfoPanel
+        yield InfoPanel(title="系统信息", id="info_panel")
 
 
 class AnalysisLayoutTab(Container):
@@ -446,36 +484,31 @@ class ResponsiveLayout(Container):
     }
     
     /* 小屏幕布局 */
+    ResponsiveLayout.-small MainLayoutTab {
+        layout: vertical;
+        grid-columns: 1fr;
+    }
+    
     ResponsiveLayout.-small StockListPanel {
-        width: 100%;
         height: 60%;
     }
     
-    ResponsiveLayout.-small StockInfoPanel {
-        width: 100%;
-        height: 40%;
+    ResponsiveLayout.-small UserGroupPanel {
+        height: 25%;
     }
     
-    ResponsiveLayout.-small MainLayoutTab {
-        layout: vertical;
+    ResponsiveLayout.-small InfoPanel {
+        height: 15%;
     }
     
     /* 中等屏幕布局 */
-    ResponsiveLayout.-medium StockListPanel {
-        width: 65%;
-    }
-    
-    ResponsiveLayout.-medium StockInfoPanel {
-        width: 35%;
+    ResponsiveLayout.-medium MainLayoutTab {
+        grid-columns: 6.5fr 3.5fr;
     }
     
     /* 大屏幕布局 (默认) */
-    ResponsiveLayout.-large StockListPanel {
-        width: 70%;
-    }
-    
-    ResponsiveLayout.-large StockInfoPanel {
-        width: 30%;
+    ResponsiveLayout.-large MainLayoutTab {
+        grid-columns: 7fr 3fr;
     }
     """
     

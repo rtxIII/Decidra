@@ -40,11 +40,7 @@ from monitor.ui import (
     MainLayoutTab, AnalysisLayoutTab, ResponsiveLayout
 )
 
-# 导入对话框组件
-from monitor.widgets.dialog import (
-    AddStockDialog, DeleteStockConfirmDialog, 
-    InputDialog, ConfirmDialog
-)
+# 导入对话框组件已移除
 
 SNAPSHOT_REFRESH_INTERVAL = 300 
 
@@ -114,10 +110,9 @@ class MonitorApp(App):
         self.group_stocks_content: Optional[Static] = None
         self.chart_panel: Optional[Static] = None
         self.ai_analysis_panel: Optional[Static] = None
+        self.info_panel: Optional = None  # InfoPanel引用
         
-        # 对话框组件引用
-        self.add_stock_dialog: Optional[AddStockDialog] = None
-        self.delete_confirm_dialog: Optional[DeleteStockConfirmDialog] = None
+        # 对话框组件引用已移除
         
         # 分组相关状态
         self.group_data: List[Dict[str, Any]] = []  # 存储分组数据
@@ -134,9 +129,7 @@ class MonitorApp(App):
         # 使用新的MonitorLayout组件，包含完整的布局结构
         yield MonitorLayout(id="monitor_layout")
         
-        # 添加对话框组件（默认隐藏）
-        yield AddStockDialog(id="add_stock_dialog")
-        yield DeleteStockConfirmDialog("", "", id="delete_confirm_dialog")
+        # 对话框组件已移除
 
     def on_key(self, event: Key) -> None:
         """处理按键事件"""
@@ -174,6 +167,9 @@ class MonitorApp(App):
         # 启动数据刷新
         await self._start_data_refresh()
         
+        # 初始化InfoPanel
+        await self._initialize_info_panel()
+        
         self.logger.info("MonitorApp 启动完成")
         
         # 更新状态显示
@@ -200,14 +196,38 @@ class MonitorApp(App):
             # 获取AI分析面板
             self.ai_analysis_panel = self.query_one("#ai_content", Static)
             
-            # 获取对话框组件引用
-            self.add_stock_dialog = self.query_one("#add_stock_dialog", AddStockDialog)
-            self.delete_confirm_dialog = self.query_one("#delete_confirm_dialog", DeleteStockConfirmDialog)
+            # 获取InfoPanel引用
+            from monitor.widgets.line_panel import InfoPanel
+            self.info_panel = self.query_one("#info_panel", InfoPanel)
+            
+            # 对话框组件引用已移除
             
             self.logger.info("UI组件引用设置完成")
             
         except Exception as e:
             self.logger.error(f"设置UI组件引用失败: {e}")
+    
+    async def _initialize_info_panel(self) -> None:
+        """初始化InfoPanel"""
+        try:
+            if self.info_panel:
+                from monitor.widgets.line_panel import InfoType, InfoLevel
+                # 添加启动信息
+                await self.info_panel.log_info("应用程序启动成功", "系统")
+                await self.info_panel.log_info(f"监控股票数量: {len(self.monitored_stocks)}", "系统")
+                await self.info_panel.log_info(f"连接状态: {self.connection_status.value}", "系统")
+                
+                # 添加操作提示
+                await self.info_panel.add_info(
+                    "使用快捷键: A-添加股票 D-删除股票 R-刷新数据 Q-退出",
+                    InfoType.USER_ACTION,
+                    InfoLevel.INFO,
+                    "系统提示"
+                )
+                
+                self.logger.info("InfoPanel 初始化完成")
+        except Exception as e:
+            self.logger.error(f"初始化InfoPanel失败: {e}")
     
     async def _load_configuration(self) -> None:
         """加载配置"""
@@ -800,52 +820,7 @@ class MonitorApp(App):
         except Exception as e:
             self.logger.error(f"更新股票信息失败: {e}")
     
-    # 对话框事件处理方法
-    async def on_add_stock_dialog_result(self, event: AddStockDialog.Result) -> None:
-        """处理添加股票对话框结果"""
-        if event.confirmed and event.value:
-            stock_code = event.value.upper().strip()
-            if stock_code not in self.monitored_stocks:
-                self.monitored_stocks.append(stock_code)
-                await self._load_default_stocks()
-                await self._refresh_stock_data()
-                await self._update_status_display()
-                
-                # 添加股票后刷新分组数据，因为可能影响用户分组
-                await self._load_user_groups()
-                
-                self.logger.info(f"成功添加股票: {stock_code}")
-            else:
-                self.logger.warning(f"股票 {stock_code} 已在监控列表中")
-        else:
-            self.logger.info("取消添加股票")
-    
-    async def on_delete_stock_confirm_dialog_result(self, event: DeleteStockConfirmDialog.Result) -> None:
-        """处理删除股票确认对话框结果"""
-        if event.confirmed and self.current_stock_code:
-            if self.current_stock_code in self.monitored_stocks:
-                deleted_stock = self.current_stock_code
-                self.monitored_stocks.remove(self.current_stock_code)
-                # 清除相关数据
-                if self.current_stock_code in self.stock_data:
-                    del self.stock_data[self.current_stock_code]
-                if self.current_stock_code in self.technical_indicators:
-                    del self.technical_indicators[self.current_stock_code]
-                
-                await self._load_default_stocks()
-                await self._update_status_display()
-                
-                # 删除股票后刷新分组数据，因为可能影响用户分组
-                await self._load_user_groups()
-                
-                # 清除当前选中的股票
-                self.current_stock_code = None
-                
-                self.logger.info(f"成功删除股票: {deleted_stock}")
-            else:
-                self.logger.warning(f"股票 {self.current_stock_code} 不在监控列表中")
-        else:
-            self.logger.info("取消删除股票")
+    # 对话框事件处理方法已移除
 
     # 事件处理方法
     async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
@@ -1044,32 +1019,11 @@ class MonitorApp(App):
     # 动作方法
     async def action_add_stock(self) -> None:
         """添加股票动作"""
-        if self.add_stock_dialog:
-            self.add_stock_dialog.show()
-            self.logger.info("显示添加股票对话框")
+        self.logger.info("添加股票功能暂时禁用（对话框已移除）")
     
     async def action_delete_stock(self) -> None:
         """删除股票动作"""
-        if self.current_stock_code and self.current_stock_code in self.monitored_stocks:
-            # 获取股票名称
-            stock_info = self.stock_data.get(self.current_stock_code)
-            stock_name = stock_info.name if stock_info else ""
-            
-            # 创建新的删除确认对话框
-            if self.delete_confirm_dialog:
-                # 重新创建对话框以更新股票信息
-                self.delete_confirm_dialog.remove()
-                
-            delete_dialog = DeleteStockConfirmDialog(
-                stock_code=self.current_stock_code,
-                stock_name=stock_name,
-                id="delete_confirm_dialog"
-            )
-            await self.mount(delete_dialog)
-            self.delete_confirm_dialog = delete_dialog
-            self.delete_confirm_dialog.show()
-            
-            self.logger.info(f"显示删除确认对话框: {self.current_stock_code}")
+        self.logger.info("删除股票功能暂时禁用（对话框已移除）")
     
     async def action_refresh(self) -> None:
         """手动刷新动作"""
