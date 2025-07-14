@@ -13,8 +13,7 @@ from textual.events import Key
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
 from textual.widgets import (
-    Header, Footer, TabbedContent, TabPane, DataTable, Static, 
-    Button, Label
+    Header, Footer, TabbedContent, TabPane, DataTable, Static
 )
 from textual.widget import Widget
 from textual.reactive import reactive
@@ -41,6 +40,12 @@ from monitor.ui import (
     MainLayoutTab, AnalysisLayoutTab, ResponsiveLayout
 )
 
+# 导入对话框组件
+from monitor.widgets.dialog import (
+    AddStockDialog, DeleteStockConfirmDialog, 
+    InputDialog, ConfirmDialog
+)
+
 SNAPSHOT_REFRESH_INTERVAL = 300 
 
 class MonitorApp(App):
@@ -56,6 +61,7 @@ class MonitorApp(App):
         Binding("h", "help", "帮助"),
         Binding("a", "add_stock", "添加股票"),
         Binding("d", "delete_stock", "删除股票"),
+        Binding("r", "refresh", "刷新数据"),
         Binding("escape", "go_back", "返回"),
         Binding("tab", "switch_tab", "切换标签"),
         Binding("enter", "enter_analysis", "进入分析"),
@@ -97,6 +103,7 @@ class MonitorApp(App):
         self.monitored_stocks: List[str] = []
         self.stock_data: Dict[str, StockData] = {}
         self.technical_indicators: Dict[str, TechnicalIndicators] = {}
+        self.stock_names_cache: Dict[str, str] = {}  # 股票名称缓存
         
         # 重连控制
         self._reconnect_attempts = 0
@@ -109,6 +116,10 @@ class MonitorApp(App):
         self.chart_panel: Optional[Static] = None
         self.ai_analysis_panel: Optional[Static] = None
         
+        # 对话框组件引用
+        self.add_stock_dialog: Optional[AddStockDialog] = None
+        self.delete_confirm_dialog: Optional[DeleteStockConfirmDialog] = None
+        
         # 分组相关状态
         self.group_data: List[Dict[str, Any]] = []  # 存储分组数据
         self.group_cursor_visible: bool = True  # 光标是否可见
@@ -116,12 +127,20 @@ class MonitorApp(App):
         # 定时器
         self.refresh_timer: Optional[asyncio.Task] = None
         
+        # API调用频率控制
+        self._last_user_groups_load_time = 0  # 上次加载分组数据的时间戳
+        self._user_groups_cache_duration = 30  # 分组数据缓存时间（秒）
+        
         self.logger.info("MonitorApp 初始化完成")
     
     def compose(self) -> ComposeResult:
         """构建用户界面 - 使用新的UI布局组件"""
         # 使用新的MonitorLayout组件，包含完整的布局结构
         yield MonitorLayout(id="monitor_layout")
+        
+        # 添加对话框组件（默认隐藏）
+        yield AddStockDialog(id="add_stock_dialog")
+        yield DeleteStockConfirmDialog("", "", id="delete_confirm_dialog")
 
     def on_key(self, event: Key) -> None:
         """处理按键事件"""
@@ -151,6 +170,9 @@ class MonitorApp(App):
         
         # 加载默认股票列表
         await self._load_default_stocks()
+        
+        # 加载股票名称信息
+        await self._load_stock_names()
         
         # 加载用户分组数据
         await self._load_user_groups()
@@ -183,6 +205,10 @@ class MonitorApp(App):
             
             # 获取AI分析面板
             self.ai_analysis_panel = self.query_one("#ai_content", Static)
+            
+            # 获取对话框组件引用
+            self.add_stock_dialog = self.query_one("#add_stock_dialog", AddStockDialog)
+            self.delete_confirm_dialog = self.query_one("#delete_confirm_dialog", DeleteStockConfirmDialog)
             
             self.logger.info("UI组件引用设置完成")
             
@@ -290,8 +316,8 @@ class MonitorApp(App):
                 self._reconnect_attempts = 0  # 重置重连计数
                 self.logger.info("富途API重连成功")
                 
-                # 重新加载用户分组数据
-                await self._load_user_groups()
+                # 重连成功后不自动刷新分组数据，避免API频率限制
+                # 分组数据在需要时会动态加载
                 return True
             else:
                 self.connection_status = ConnectionStatus.DISCONNECTED
@@ -323,6 +349,65 @@ class MonitorApp(App):
                 )
         
         self.logger.info(f"加载默认股票列表: {self.monitored_stocks}")
+    
+    async def _load_stock_names(self) -> None:
+        """加载股票名称信息到缓存"""
+        if not self.monitored_stocks:
+            return
+            
+        try:
+            # 过滤出还没有缓存名称的股票
+            uncached_stocks = [stock for stock in self.monitored_stocks 
+                             if stock not in self.stock_names_cache]
+            
+            if not uncached_stocks:
+                self.logger.info("所有股票名称已缓存")
+                return
+                
+            self.logger.info(f"获取 {len(uncached_stocks)} 只股票的名称信息")
+            
+            # 在线程池中执行同步的富途API调用
+            loop = asyncio.get_event_loop()
+            stock_info_list = await loop.run_in_executor(
+                None, 
+                self.futu_market.get_stock_basicinfo,
+                "HK",  # 市场
+                "STOCK",  # 股票类型
+                uncached_stocks  # 股票代码列表
+            )
+            
+            # 处理返回结果
+            if stock_info_list:
+                import pandas as pd
+                # 处理不同的返回格式
+                processed_info = []
+                if isinstance(stock_info_list, pd.DataFrame):
+                    if not stock_info_list.empty:
+                        processed_info = stock_info_list.to_dict('records')
+                elif isinstance(stock_info_list, list):
+                    processed_info = stock_info_list
+                elif isinstance(stock_info_list, dict):
+                    processed_info = [stock_info_list]
+                
+                # 提取股票名称并缓存
+                for info in processed_info:
+                    if isinstance(info, dict):
+                        stock_code = info.get('code', '')
+                        stock_name = info.get('name', '') or info.get('stock_name', '')
+                        if stock_code and stock_name:
+                            self.stock_names_cache[stock_code] = stock_name
+                            self.logger.debug(f"缓存股票名称: {stock_code} -> {stock_name}")
+                
+                self.logger.info(f"成功缓存 {len([k for k in self.stock_names_cache.keys() if k in uncached_stocks])} 只股票的名称")
+            else:
+                self.logger.warning("未获取到股票基本信息")
+                
+        except Exception as e:
+            self.logger.error(f"加载股票名称失败: {e}")
+            # 失败时为未缓存的股票使用代码作为名称
+            for stock_code in uncached_stocks:
+                if stock_code not in self.stock_names_cache:
+                    self.stock_names_cache[stock_code] = stock_code
     
     async def _load_user_groups(self) -> None:
         """加载用户分组数据"""
@@ -659,9 +744,12 @@ class MonitorApp(App):
             # 计算涨跌额
             change_amount = current_price - prev_close
             
+            # 从缓存获取股票名称，如果没有则使用股票代码
+            stock_name = self.stock_names_cache.get(snapshot.code, snapshot.code)
+            
             return StockData(
                 code=snapshot.code,
-                name=snapshot.code,  # MarketSnapshot没有股票名称，使用代码
+                name=stock_name,
                 current_price=current_price,
                 open_price=snapshot.open_price,
                 prev_close=prev_close,
@@ -717,7 +805,6 @@ class MonitorApp(App):
         """更新股票表格"""
         if not self.stock_table:
             return
-        #self.logger.info('stock_table rows key: %s ' % [x for x in self.stock_table.rows])
         
         try:
             # 更新表格数据
@@ -730,9 +817,8 @@ class MonitorApp(App):
                     change_str = f"{stock_info.change_rate:.2f}%"
                     volume_str = f"{stock_info.volume:,}"
                     time_str = stock_info.update_time.strftime("%H:%M:%S")
-                    self.logger.info(self.stock_table.get_row(stock_code))
-                    self.logger.info(self.stock_table.columns)
-                    #self.logger.info([x for x in self.stock_table.get_column('code')])
+                    #self.logger.info(self.stock_table.get_row(stock_code))
+                    #self.logger.info(self.stock_table.columns)
                     self.logger.info('updating %s' % stock_code)
                     
                     # 添加行
@@ -792,6 +878,54 @@ class MonitorApp(App):
         except Exception as e:
             self.logger.error(f"更新股票信息失败: {e}")
     
+    # 对话框事件处理方法
+    async def on_add_stock_dialog_result(self, event: AddStockDialog.Result) -> None:
+        """处理添加股票对话框结果"""
+        if event.confirmed and event.value:
+            stock_code = event.value.upper().strip()
+            if stock_code not in self.monitored_stocks:
+                self.monitored_stocks.append(stock_code)
+                await self._load_default_stocks()
+                await self._load_stock_names()
+                await self._refresh_stock_data()
+                await self._update_status_display()
+                
+                # 添加股票后刷新分组数据，因为可能影响用户分组
+                await self._load_user_groups()
+                
+                self.logger.info(f"成功添加股票: {stock_code}")
+            else:
+                self.logger.warning(f"股票 {stock_code} 已在监控列表中")
+        else:
+            self.logger.info("取消添加股票")
+    
+    async def on_delete_stock_confirm_dialog_result(self, event: DeleteStockConfirmDialog.Result) -> None:
+        """处理删除股票确认对话框结果"""
+        if event.confirmed and self.current_stock_code:
+            if self.current_stock_code in self.monitored_stocks:
+                deleted_stock = self.current_stock_code
+                self.monitored_stocks.remove(self.current_stock_code)
+                # 清除相关数据
+                if self.current_stock_code in self.stock_data:
+                    del self.stock_data[self.current_stock_code]
+                if self.current_stock_code in self.technical_indicators:
+                    del self.technical_indicators[self.current_stock_code]
+                
+                await self._load_default_stocks()
+                await self._update_status_display()
+                
+                # 删除股票后刷新分组数据，因为可能影响用户分组
+                await self._load_user_groups()
+                
+                # 清除当前选中的股票
+                self.current_stock_code = None
+                
+                self.logger.info(f"成功删除股票: {deleted_stock}")
+            else:
+                self.logger.warning(f"股票 {self.current_stock_code} 不在监控列表中")
+        else:
+            self.logger.info("取消删除股票")
+
     # 事件处理方法
     async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """处理表格行选择事件"""
@@ -831,27 +965,19 @@ class MonitorApp(App):
                     self.group_stocks_content.update("[dim]无可用数据[/dim]")
                 return
             
-            # 直接尝试获取分组股票，不检查连接状态
-            
-            # 获取分组中的股票列表
-            loop = asyncio.get_event_loop()
-            group_stocks_result = await loop.run_in_executor(
-                None,
-                self.futu_market.get_user_security,
-                group_name
-            )
-            
-            # 处理返回的DataFrame
+            # 从已缓存的分组数据中获取股票列表，避免重复API调用
             group_stocks = []
-            if group_stocks_result is not None:
-                import pandas as pd
-                if isinstance(group_stocks_result, pd.DataFrame) and not group_stocks_result.empty:
-                    # DataFrame转换为字典列表
-                    group_stocks = group_stocks_result.to_dict('records')
-                elif isinstance(group_stocks_result, list):
-                    group_stocks = group_stocks_result
-                elif isinstance(group_stocks_result, dict):
-                    group_stocks = [group_stocks_result]
+            
+            # 在self.group_data中查找对应的分组数据
+            for group_data in self.group_data:
+                if group_data.get('name') == group_name:
+                    group_stocks = group_data.get('stock_list', [])
+                    self.logger.debug(f"从缓存获取分组 '{group_name}' 的股票列表，共 {len(group_stocks)} 只")
+                    break
+            
+            # 如果缓存中没有找到，记录警告但不再调用API
+            if not group_stocks:
+                self.logger.warning(f"缓存中未找到分组 '{group_name}' 的股票数据，可能需要重新加载分组信息")
             
             # 更新分组股票显示
             if self.group_stocks_content:
@@ -922,7 +1048,7 @@ class MonitorApp(App):
                     stock_list = current_group.get('stock_list', [])
                     if stock_list and len(stock_list) > 0:
                         # 使用列表格式显示股票
-                        for i, stock in enumerate(stock_list[:12]):  # 显示前12只股票以充分利用空间
+                        for stock in stock_list[:12]:  # 显示前12只股票以充分利用空间
                             if isinstance(stock, dict):
                                 stock_code = stock.get('code', 'Unknown')
                                 stock_name = stock.get('name', '')
@@ -978,6 +1104,9 @@ class MonitorApp(App):
                     # 重新加载股票表格
                     await self._load_default_stocks()
                     
+                    # 加载新股票的名称信息
+                    await self._load_stock_names()
+                    
                     # 等待一个事件循环，确保UI更新完成
                     await asyncio.sleep(0.1)
 
@@ -993,32 +1122,35 @@ class MonitorApp(App):
         except Exception as e:
             self.logger.error(f"切换到分组股票失败: {e}")
     
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
-        """处理按钮点击事件"""
-        try:
-            if event.button.id == "btn_add":
-                await self.action_add_stock()
-            elif event.button.id == "btn_delete":
-                await self.action_delete_stock()
-            elif event.button.id == "btn_refresh":
-                await self.action_refresh()
-        except Exception as e:
-            self.logger.error(f"处理按钮事件失败: {e}")
     
     # 动作方法
     async def action_add_stock(self) -> None:
         """添加股票动作"""
-        # TODO: 实现添加股票对话框
-        self.logger.info("添加股票功能待实现")
+        if self.add_stock_dialog:
+            self.add_stock_dialog.show()
+            self.logger.info("显示添加股票对话框")
     
     async def action_delete_stock(self) -> None:
         """删除股票动作"""
         if self.current_stock_code and self.current_stock_code in self.monitored_stocks:
-            # TODO: 实现确认对话框
-            self.monitored_stocks.remove(self.current_stock_code)
-            await self._load_default_stocks()
-            await self._update_status_display()
-            self.logger.info(f"删除股票: {self.current_stock_code}")
+            # 获取股票名称
+            stock_name = self.stock_names_cache.get(self.current_stock_code, "")
+            
+            # 创建新的删除确认对话框
+            if self.delete_confirm_dialog:
+                # 重新创建对话框以更新股票信息
+                self.delete_confirm_dialog.remove()
+                
+            delete_dialog = DeleteStockConfirmDialog(
+                stock_code=self.current_stock_code,
+                stock_name=stock_name,
+                id="delete_confirm_dialog"
+            )
+            await self.mount(delete_dialog)
+            self.delete_confirm_dialog = delete_dialog
+            self.delete_confirm_dialog.show()
+            
+            self.logger.info(f"显示删除确认对话框: {self.current_stock_code}")
     
     async def action_refresh(self) -> None:
         """手动刷新动作"""
@@ -1027,8 +1159,8 @@ class MonitorApp(App):
         # 直接执行数据刷新，不检查连接状态
         await self._refresh_stock_data()
         
-        # 同时刷新用户分组数据
-        await self._load_user_groups()
+        # 用户分组动态更新 不要定时刷新
+        # await self._load_user_groups()
         
         self.logger.info("手动刷新数据和分组信息完成")
     
