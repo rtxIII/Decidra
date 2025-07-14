@@ -5,9 +5,9 @@ Monitor UI Layout Module
 """
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, Grid
+from textual.containers import Container, Vertical, Grid
 from textual.widgets import (
-    Header, Footer, Static, DataTable, Button, Label, 
+    Header, Footer, Static, DataTable, Label, 
     TabbedContent, TabPane, Input, ProgressBar
 )
 from textual.reactive import reactive
@@ -43,10 +43,7 @@ class StockListPanel(Container):
         height: 3;
         dock: bottom;
         background: $surface;
-    }
-    
-    StockListPanel Button {
-        margin: 0 1;
+        text-align: center;
     }
     """
     
@@ -66,19 +63,18 @@ class StockListPanel(Container):
             id="stock_table"
         )
         # 添加表格列
-        stock_table.add_columns("代码", "名称", "价格", "涨跌幅", "成交量", "更新时间")
         for column_key, column_data in STOCK_COLUMNS.items():
-                column_width = column_data["width"]
-                column_label = column_data["label"]
-                stock_table.add_column(column_label, key=column_key, width=column_width)
+            column_width = column_data["width"]
+            column_label = column_data["label"]
+            stock_table.add_column(column_label, key=column_key, width=column_width)
         yield stock_table
         
-        # 底部按钮区域
+        # 快捷键提示区域
         with Container(classes="button-bar"):
-            with Horizontal():
-                yield Button("添加股票 [A]", id="btn_add", variant="success")
-                yield Button("删除股票 [D]", id="btn_delete", variant="error")
-                yield Button("刷新数据 [R]", id="btn_refresh", variant="primary")
+            yield Static(
+                "[bold green]A[/bold green] 添加股票  [bold red]D[/bold red] 删除股票  [bold blue]R[/bold blue] 刷新数据  [bold yellow]Space[/bold yellow] 选择分组",
+                id="hotkey_hints"
+            )
 
 
 class UserGroupPanel(Container):
@@ -196,13 +192,12 @@ class ChartPanel(Container):
                 id="volume_chart"
             )
         
-        # 图表控制按钮
+        # 图表控制快捷键提示
         with Container(classes="chart-controls"):
-            with Horizontal():
-                yield Button("日线 [D]", id="btn_daily", variant="default")
-                yield Button("周线 [W]", id="btn_weekly", variant="default")
-                yield Button("月线 [M]", id="btn_monthly", variant="default")
-                yield Static("时间范围: 最近30天", id="time_range_label")
+            yield Static(
+                "[bold blue]D[/bold blue] 日线  [bold green]W[/bold green] 周线  [bold yellow]M[/bold yellow] 月线  [dim]时间范围: 最近30天[/dim]",
+                id="chart_hotkey_hints"
+            )
 
 
 class AnalysisPanel(Container):

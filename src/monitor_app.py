@@ -103,7 +103,6 @@ class MonitorApp(App):
         self.monitored_stocks: List[str] = []
         self.stock_data: Dict[str, StockData] = {}
         self.technical_indicators: Dict[str, TechnicalIndicators] = {}
-        self.stock_names_cache: Dict[str, str] = {}  # 股票名称缓存
         
         # 重连控制
         self._reconnect_attempts = 0
@@ -127,9 +126,6 @@ class MonitorApp(App):
         # 定时器
         self.refresh_timer: Optional[asyncio.Task] = None
         
-        # API调用频率控制
-        self._last_user_groups_load_time = 0  # 上次加载分组数据的时间戳
-        self._user_groups_cache_duration = 30  # 分组数据缓存时间（秒）
         
         self.logger.info("MonitorApp 初始化完成")
     
@@ -171,8 +167,6 @@ class MonitorApp(App):
         # 加载默认股票列表
         await self._load_default_stocks()
         
-        # 加载股票名称信息
-        await self._load_stock_names()
         
         # 加载用户分组数据
         await self._load_user_groups()
@@ -350,64 +344,6 @@ class MonitorApp(App):
         
         self.logger.info(f"加载默认股票列表: {self.monitored_stocks}")
     
-    async def _load_stock_names(self) -> None:
-        """加载股票名称信息到缓存"""
-        if not self.monitored_stocks:
-            return
-            
-        try:
-            # 过滤出还没有缓存名称的股票
-            uncached_stocks = [stock for stock in self.monitored_stocks 
-                             if stock not in self.stock_names_cache]
-            
-            if not uncached_stocks:
-                self.logger.info("所有股票名称已缓存")
-                return
-                
-            self.logger.info(f"获取 {len(uncached_stocks)} 只股票的名称信息")
-            
-            # 在线程池中执行同步的富途API调用
-            loop = asyncio.get_event_loop()
-            stock_info_list = await loop.run_in_executor(
-                None, 
-                self.futu_market.get_stock_basicinfo,
-                "HK",  # 市场
-                "STOCK",  # 股票类型
-                uncached_stocks  # 股票代码列表
-            )
-            
-            # 处理返回结果
-            if stock_info_list:
-                import pandas as pd
-                # 处理不同的返回格式
-                processed_info = []
-                if isinstance(stock_info_list, pd.DataFrame):
-                    if not stock_info_list.empty:
-                        processed_info = stock_info_list.to_dict('records')
-                elif isinstance(stock_info_list, list):
-                    processed_info = stock_info_list
-                elif isinstance(stock_info_list, dict):
-                    processed_info = [stock_info_list]
-                
-                # 提取股票名称并缓存
-                for info in processed_info:
-                    if isinstance(info, dict):
-                        stock_code = info.get('code', '')
-                        stock_name = info.get('name', '') or info.get('stock_name', '')
-                        if stock_code and stock_name:
-                            self.stock_names_cache[stock_code] = stock_name
-                            self.logger.debug(f"缓存股票名称: {stock_code} -> {stock_name}")
-                
-                self.logger.info(f"成功缓存 {len([k for k in self.stock_names_cache.keys() if k in uncached_stocks])} 只股票的名称")
-            else:
-                self.logger.warning("未获取到股票基本信息")
-                
-        except Exception as e:
-            self.logger.error(f"加载股票名称失败: {e}")
-            # 失败时为未缓存的股票使用代码作为名称
-            for stock_code in uncached_stocks:
-                if stock_code not in self.stock_names_cache:
-                    self.stock_names_cache[stock_code] = stock_code
     
     async def _load_user_groups(self) -> None:
         """加载用户分组数据"""
@@ -744,8 +680,8 @@ class MonitorApp(App):
             # 计算涨跌额
             change_amount = current_price - prev_close
             
-            # 从缓存获取股票名称，如果没有则使用股票代码
-            stock_name = self.stock_names_cache.get(snapshot.code, snapshot.code)
+            # 从snapshot获取股票名称，如果没有则使用股票代码
+            stock_name = getattr(snapshot, 'name', snapshot.code) or snapshot.code
             
             return StockData(
                 code=snapshot.code,
@@ -808,7 +744,7 @@ class MonitorApp(App):
         
         try:
             # 更新表格数据
-            for row_index, stock_code in enumerate(self.monitored_stocks):
+            for stock_code in self.monitored_stocks:
                 stock_info = self.stock_data.get(stock_code)
                 
                 if stock_info:
@@ -819,7 +755,7 @@ class MonitorApp(App):
                     time_str = stock_info.update_time.strftime("%H:%M:%S")
                     #self.logger.info(self.stock_table.get_row(stock_code))
                     #self.logger.info(self.stock_table.columns)
-                    self.logger.info('updating %s' % stock_code)
+                    self.logger.info('updating %s' % stock_info)
                     
                     # 添加行
                     #self.stock_table.add_row(
@@ -856,21 +792,7 @@ class MonitorApp(App):
                 # 市场状态颜色
                 market_color = "green" if stock_info.market_status == MarketStatus.OPEN else "yellow"
                 
-                # 构建美化的信息文本
-                info_text = f"""[bold white]股票代码:[/bold white] [bold cyan]{stock_info.code}[/bold cyan]
-[bold white]股票名称:[/bold white] [bold]{stock_info.name}[/bold]
-
-[bold white]当前价格:[/bold white] [bold yellow]{stock_info.current_price:.2f}[/bold yellow]
-[bold white]涨跌幅:[/bold white] [{change_color}]{change_symbol} {stock_info.change_rate:.2f}%[/{change_color}]
-[bold white]成交量:[/bold white] [cyan]{stock_info.volume:,}[/cyan]
-
-[bold white]市场状态:[/bold white] [{market_color}]{stock_info.market_status.value}[/{market_color}]
-[bold white]更新时间:[/bold white] [dim]{stock_info.update_time.strftime('%H:%M:%S')}[/dim]
-
-[dim]操作提示：
-• Enter: 进入分析界面
-• D: 删除此股票
-• R: 刷新数据[/dim]"""
+                # 记录股票信息更新（用于调试）
                 
                 # 暂时记录到日志，后续可以添加专门的UI组件来显示
                 self.logger.debug(f"股票信息更新: {stock_info.code} - {stock_info.current_price:.2f} ({stock_info.change_rate:.2f}%)")
@@ -886,7 +808,6 @@ class MonitorApp(App):
             if stock_code not in self.monitored_stocks:
                 self.monitored_stocks.append(stock_code)
                 await self._load_default_stocks()
-                await self._load_stock_names()
                 await self._refresh_stock_data()
                 await self._update_status_display()
                 
@@ -1104,9 +1025,6 @@ class MonitorApp(App):
                     # 重新加载股票表格
                     await self._load_default_stocks()
                     
-                    # 加载新股票的名称信息
-                    await self._load_stock_names()
-                    
                     # 等待一个事件循环，确保UI更新完成
                     await asyncio.sleep(0.1)
 
@@ -1134,7 +1052,8 @@ class MonitorApp(App):
         """删除股票动作"""
         if self.current_stock_code and self.current_stock_code in self.monitored_stocks:
             # 获取股票名称
-            stock_name = self.stock_names_cache.get(self.current_stock_code, "")
+            stock_info = self.stock_data.get(self.current_stock_code)
+            stock_name = stock_info.name if stock_info else ""
             
             # 创建新的删除确认对话框
             if self.delete_confirm_dialog:
