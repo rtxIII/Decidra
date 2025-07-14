@@ -14,6 +14,15 @@ from textual.reactive import reactive
 from textual.binding import Binding
 from typing import List, Dict, Optional
 
+STOCK_COLUMNS = {
+            "code": {"label": "代码", "width": 10},
+            "name": {"label": "名称", "width": 10},
+            "price": {"label": "价格", "width": 10},
+            "change": {"label": "涨跌", "width": 10},
+            "volume": {"label": "成交量", "width": 10},
+            "time": {"label": "时间", "width": 10},
+        }
+
 
 class StockListPanel(Container):
     """股票列表面板 - 左侧70%区域"""
@@ -58,6 +67,10 @@ class StockListPanel(Container):
         )
         # 添加表格列
         stock_table.add_columns("代码", "名称", "价格", "涨跌幅", "成交量", "更新时间")
+        for column_key, column_data in STOCK_COLUMNS.items():
+                column_width = column_data["width"]
+                column_label = column_data["label"]
+                stock_table.add_column(column_label, key=column_key, width=column_width)
         yield stock_table
         
         # 底部按钮区域

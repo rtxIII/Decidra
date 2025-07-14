@@ -30,6 +30,9 @@ from monitor.indicators import IndicatorsManager
 from monitor.performance import PerformanceMonitor
 from utils.config_manager import ConfigManager
 from utils.logger import get_logger
+from base.futu_class import (
+    FutuException, FutuConnectException, FutuQuoteException,
+    StockInfo, KLineData, StockQuote, MarketSnapshot)
 
 # 导入新的UI布局组件
 from monitor.ui import (
@@ -38,6 +41,7 @@ from monitor.ui import (
     MainLayoutTab, AnalysisLayoutTab, ResponsiveLayout
 )
 
+SNAPSHOT_REFRESH_INTERVAL = 300 
 
 class MonitorApp(App):
     """
@@ -206,13 +210,11 @@ class MonitorApp(App):
                 self.monitored_stocks = monitored_stocks if monitored_stocks else [
                     'HK.00700',  # 腾讯
                     'HK.09988',  # 阿里巴巴
-                    'US.AAPL',   # 苹果
                 ]
             else:
                 self.monitored_stocks = stocks_config if isinstance(stocks_config, list) else [
                     'HK.00700',  # 腾讯
                     'HK.09988',  # 阿里巴巴
-                    'US.AAPL',   # 苹果
                 ]
             
             self.logger.info(f"加载配置完成，监控股票: {self.monitored_stocks}")
@@ -220,7 +222,7 @@ class MonitorApp(App):
         except Exception as e:
             self.logger.error(f"加载配置失败: {e}")
             # 使用默认配置
-            self.monitored_stocks = ['HK.00700', 'HK.09988', 'US.AAPL']
+            self.monitored_stocks = ['HK.00700', 'HK.09988']
     
     async def _initialize_data_managers(self) -> None:
         """初始化数据管理器"""
@@ -303,6 +305,7 @@ class MonitorApp(App):
     
     async def _load_default_stocks(self) -> None:
         """加载默认股票到表格"""
+            
         if self.stock_table:
             # 清空现有数据
             self.stock_table.clear()
@@ -315,7 +318,8 @@ class MonitorApp(App):
                     "0.00",
                     "0.00%",
                     "0",
-                    "未更新"
+                    "未更新",
+                    key=stock_code
                 )
         
         self.logger.info(f"加载默认股票列表: {self.monitored_stocks}")
@@ -332,7 +336,7 @@ class MonitorApp(App):
             user_groups = await loop.run_in_executor(
                 None, 
                 self.futu_market.get_user_security_group,
-                "ALL"  # 获取所有分组
+                "CUSTOM"  # 获取所有分组
             )
             
             # 清空现有数据
@@ -583,12 +587,12 @@ class MonitorApp(App):
         while True:
             try:
                 await self._refresh_stock_data()
-                await asyncio.sleep(10)  # 10秒刷新一次
+                await asyncio.sleep(SNAPSHOT_REFRESH_INTERVAL)  # 10秒刷新一次
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 self.logger.error(f"快照数据刷新错误: {e}")
-                await asyncio.sleep(30)  # 错误时延长间隔
+                await asyncio.sleep(SNAPSHOT_REFRESH_INTERVAL)  # 错误时延长间隔
     
     async def _refresh_stock_data(self) -> None:
         """刷新股票数据"""
@@ -600,7 +604,7 @@ class MonitorApp(App):
                 self.futu_market.get_market_snapshot,
                 self.monitored_stocks
             )
-            
+            self.logger.info("%s" % market_snapshots)
             # 转换数据格式并更新
             if market_snapshots:
                 # 更新连接状态为已连接
@@ -611,7 +615,9 @@ class MonitorApp(App):
                     if hasattr(snapshot, 'code'):
                         stock_code = snapshot.code
                         stock_info = self._convert_snapshot_to_stock_data(snapshot)
-                        self.stock_data[stock_code] = stock_info
+                        # 只有转换成功的数据才存储
+                        if stock_info is not None:
+                            self.stock_data[stock_code] = stock_info
                 
                 # 更新界面
                 await self._update_stock_table()
@@ -631,64 +637,49 @@ class MonitorApp(App):
             await self._update_status_display()
             self.logger.error(f"刷新股票数据失败: {e}")
     
-    def _convert_snapshot_to_stock_data(self, snapshot) -> StockData:
+    def _convert_snapshot_to_stock_data(self, snapshot: MarketSnapshot) -> StockData:
         """将富途快照数据转换为标准StockData格式"""
         try:
-            # 修复：处理MarketSnapshot对象而不是字典
-            if hasattr(snapshot, '__dict__'):
-                # 如果是MarketSnapshot对象，使用正确的属性名
-                code = getattr(snapshot, 'code', '')
-                name = ''  # MarketSnapshot可能没有股票名称，需要单独获取
-                current_price = float(getattr(snapshot, 'last_price', 0))  # 使用last_price
-                prev_close = float(getattr(snapshot, 'prev_close_price', 0))
-                volume = int(getattr(snapshot, 'volume', 0))
-            else:
-                # 如果是字典，使用原有逻辑
-                code = snapshot.get('code', '')
-                name = snapshot.get('stock_name', '')
-                current_price = float(snapshot.get('cur_price', 0))
-                prev_close = float(snapshot.get('prev_close_price', 0))
-                volume = int(snapshot.get('volume', 0))
+            # 数据清理和验证
+            current_price = snapshot.last_price
+            prev_close = snapshot.prev_close_price
             
-            # 计算涨跌幅
+            if current_price <= 0:
+                self.logger.warning(f"股票 {snapshot.code} 价格数据异常: {current_price}, 跳过此次更新")
+                return None
+                
+            if prev_close <= 0:
+                prev_close = current_price  # 如果昨收价异常，使用当前价格
+                
+            # 计算涨跌幅，并限制在合理范围内
             change_rate = 0.0
             if prev_close > 0:
                 change_rate = ((current_price - prev_close) / prev_close) * 100
             
+            # 计算涨跌额
+            change_amount = current_price - prev_close
+            
             return StockData(
-                code=code,
-                name=name or code,  # 如果没有名称，使用代码
+                code=snapshot.code,
+                name=snapshot.code,  # MarketSnapshot没有股票名称，使用代码
                 current_price=current_price,
+                open_price=snapshot.open_price,
+                prev_close=prev_close,
                 change_rate=change_rate,
-                volume=volume,
-                market_status=MarketStatus.OPEN,
-                last_update=datetime.now()
+                change_amount=change_amount,
+                volume=max(0, snapshot.volume),  # 确保成交量非负
+                turnover=snapshot.turnover,
+                high_price=snapshot.high_price,
+                low_price=snapshot.low_price,
+                update_time=datetime.now(),
+                market_status=MarketStatus.OPEN
             )
             
         except Exception as e:
             self.logger.error(f"转换股票数据时发生错误: {e}")
-            # 错误处理也要适配对象和字典两种情况
-            fallback_code = ''
-            fallback_name = ''
-            try:
-                if hasattr(snapshot, '__dict__'):
-                    fallback_code = getattr(snapshot, 'code', '')
-                    fallback_name = fallback_code  # 使用代码作为名称
-                else:
-                    fallback_code = snapshot.get('code', '')
-                    fallback_name = snapshot.get('stock_name', '')
-            except:
-                pass
+            return None
                 
-            return StockData(
-                code=fallback_code,
-                name=fallback_name or fallback_code,
-                current_price=0.0,
-                change_rate=0.0,
-                volume=0,
-                market_status=MarketStatus.CLOSE,
-                last_update=datetime.now()
-            )
+        
     
     async def _on_realtime_data_received(self, data: Dict[str, Any]) -> None:
         """处理实时数据回调"""
@@ -701,10 +692,16 @@ class MonitorApp(App):
                     code=stock_code,
                     name=data.get('name', ''),
                     current_price=data.get('price', 0.0),
+                    open_price=data.get('open_price', 0.0),
+                    prev_close=data.get('prev_close', 0.0),
                     change_rate=data.get('change_rate', 0.0),
+                    change_amount=data.get('change_amount', 0.0),
                     volume=data.get('volume', 0),
-                    market_status=MarketStatus.OPEN,
-                    last_update=datetime.now()
+                    turnover=data.get('turnover', 0.0),
+                    high_price=data.get('high_price', 0.0),
+                    low_price=data.get('low_price', 0.0),
+                    update_time=datetime.now(),
+                    market_status=MarketStatus.OPEN
                 )
                 
                 self.stock_data[stock_code] = stock_info
@@ -720,7 +717,8 @@ class MonitorApp(App):
         """更新股票表格"""
         if not self.stock_table:
             return
-            
+        #self.logger.info('stock_table rows key: %s ' % [x for x in self.stock_table.rows])
+        
         try:
             # 更新表格数据
             for row_index, stock_code in enumerate(self.monitored_stocks):
@@ -731,21 +729,35 @@ class MonitorApp(App):
                     price_str = f"{stock_info.current_price:.2f}"
                     change_str = f"{stock_info.change_rate:.2f}%"
                     volume_str = f"{stock_info.volume:,}"
-                    time_str = stock_info.last_update.strftime("%H:%M:%S")
+                    time_str = stock_info.update_time.strftime("%H:%M:%S")
+                    self.logger.info(self.stock_table.get_row(stock_code))
+                    self.logger.info(self.stock_table.columns)
+                    #self.logger.info([x for x in self.stock_table.get_column('code')])
+                    self.logger.info('updating %s' % stock_code)
                     
+                    # 添加行
+                    #self.stock_table.add_row(
+                    #    stock_code,
+                    #    stock_info.name,
+                    #    price_str,
+                    #    change_str,
+                    #    volume_str,
+                    #    time_str,
+                    #    key=stock_code
+                    #)
                     # 更新行数据
-                    self.stock_table.update_cell(row_index, 1, stock_info.name)
-                    self.stock_table.update_cell(row_index, 2, price_str)
-                    self.stock_table.update_cell(row_index, 3, change_str)
-                    self.stock_table.update_cell(row_index, 4, volume_str)
-                    self.stock_table.update_cell(row_index, 5, time_str)
+                    self.stock_table.update_cell(stock_code, 'name', stock_info.name)
+                    self.stock_table.update_cell(stock_code, 'price', price_str)
+                    self.stock_table.update_cell(stock_code, 'change', change_str)
+                    self.stock_table.update_cell(stock_code, 'volume', volume_str)
+                    self.stock_table.update_cell(stock_code, 'time', time_str)
                     
         except Exception as e:
             self.logger.error(f"更新股票表格失败: {e}")
     
     async def _update_stock_info(self) -> None:
         """更新股票信息面板"""
-        if not self.stock_info_panel or not self.current_stock_code:
+        if not self.current_stock_code:
             return
             
         try:
@@ -767,14 +779,15 @@ class MonitorApp(App):
 [bold white]成交量:[/bold white] [cyan]{stock_info.volume:,}[/cyan]
 
 [bold white]市场状态:[/bold white] [{market_color}]{stock_info.market_status.value}[/{market_color}]
-[bold white]更新时间:[/bold white] [dim]{stock_info.last_update.strftime('%H:%M:%S')}[/dim]
+[bold white]更新时间:[/bold white] [dim]{stock_info.update_time.strftime('%H:%M:%S')}[/dim]
 
 [dim]操作提示：
 • Enter: 进入分析界面
 • D: 删除此股票
 • R: 刷新数据[/dim]"""
                 
-                self.stock_info_panel.update(info_text)
+                # 暂时记录到日志，后续可以添加专门的UI组件来显示
+                self.logger.debug(f"股票信息更新: {stock_info.code} - {stock_info.current_price:.2f} ({stock_info.change_rate:.2f}%)")
             
         except Exception as e:
             self.logger.error(f"更新股票信息失败: {e}")
@@ -965,6 +978,9 @@ class MonitorApp(App):
                     # 重新加载股票表格
                     await self._load_default_stocks()
                     
+                    # 等待一个事件循环，确保UI更新完成
+                    await asyncio.sleep(0.1)
+
                     # 刷新股票数据
                     await self._refresh_stock_data()
                     

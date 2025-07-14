@@ -68,8 +68,7 @@ class StockData:
             raise ValueError(f"当前价格必须大于0: {self.current_price}")
         if self.volume < 0:
             raise ValueError(f"成交量不能为负数: {self.volume}")
-        if abs(self.change_rate) > 0.2:  # 涨跌幅超过20%
-            raise ValueError(f"涨跌幅异常: {self.change_rate}")
+
 
 
 @dataclass 
