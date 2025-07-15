@@ -309,10 +309,10 @@ class FutuMarket(FutuModuleBase):
             self.logger.error(f"Get plate list error: {e}")
             return []
 
-    def get_stock_basicinfo(self, market: str = "HK", stock_type: str = "STOCK", code_list: Optional[List[str]] = None) -> List:
+    def get_stock_basicinfo(self, market: str = "HK", stock_type: str = "STOCK") -> List:
         """获取股票基本信息"""
         try:
-            return self.client.quote.get_stock_basicinfo(market, stock_type, code_list)
+            return self.client.quote.get_stock_info(market, stock_type)
         except Exception as e:
             self.logger.error(f"Get stock basicinfo error: {e}")
             return []
