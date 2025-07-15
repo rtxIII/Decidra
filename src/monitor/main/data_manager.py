@@ -216,6 +216,12 @@ class DataManager:
     async def refresh_stock_data(self) -> None:
         """刷新股票数据"""
         try:
+            if not self.app_core.monitored_stocks:
+                self.logger.warning("没有监控的股票，跳过数据刷新")
+                return
+            
+            self.logger.info(f"开始刷新 {len(self.app_core.monitored_stocks)} 只股票的数据")
+            
             # 直接调用API获取实时行情数据
             loop = asyncio.get_event_loop()
             market_snapshots = await loop.run_in_executor(
@@ -223,14 +229,15 @@ class DataManager:
                 self.futu_market.get_market_snapshot,
                 self.app_core.monitored_stocks
             )
-            self.logger.info("%s" % market_snapshots)
             
             # 转换数据格式并更新
             if market_snapshots:
                 # 更新连接状态为已连接
                 self.app_core.connection_status = ConnectionStatus.CONNECTED
                 
+                updated_count = 0
                 for snapshot in market_snapshots:
+                    self.logger.debug(f'股票数据: {snapshot.code} {snapshot}')
                     # 修复：snapshot现在是MarketSnapshot对象，不是字典
                     if hasattr(snapshot, 'code'):
                         stock_code = snapshot.code
@@ -238,8 +245,14 @@ class DataManager:
                         # 只有转换成功的数据才存储
                         if stock_info is not None:
                             self.app_core.stock_data[stock_code] = stock_info
+                            updated_count += 1
+                            self.logger.debug(f"更新股票数据: {stock_code} - {stock_info.current_price}")
+                        else:
+                            self.logger.warning(f"股票 {stock_code} 数据转换失败")
                 
-                self.logger.info("股票数据刷新成功")
+                await self.app_core.app.ui_manager.update_stock_table()
+                
+                self.logger.info(f"股票数据刷新成功，共更新 {updated_count} 只股票")
             else:
                 # API调用返回空数据，可能是连接问题
                 self.app_core.connection_status = ConnectionStatus.DISCONNECTED
@@ -249,6 +262,17 @@ class DataManager:
             # API调用失败，更新连接状态
             self.app_core.connection_status = ConnectionStatus.ERROR
             self.logger.error(f"刷新股票数据失败: {e}")
+            # 尝试重连
+            if self.app_core.connection_status == ConnectionStatus.ERROR:
+                self.logger.info("尝试重新连接...")
+                reconnect_success = await self.attempt_reconnect()
+                if reconnect_success:
+                    self.logger.info("重连成功，重新尝试获取数据")
+                    # 递归重试一次
+                    try:
+                        await self.refresh_stock_data()
+                    except Exception as retry_e:
+                        self.logger.error(f"重连后重试失败: {retry_e}")
     
     def convert_snapshot_to_stock_data(self, snapshot: MarketSnapshot) -> StockData:
         """将富途快照数据转换为标准StockData格式"""
@@ -460,159 +484,9 @@ class DataManager:
             self.logger.error(f"从缓存获取股票基本信息失败: {e}")
             return None
     
-    def search_stock_by_text(self, search_text: str, max_results: int = 3) -> List[Dict[str, Any]]:
-        """
-        根据用户输入的文本搜索股票代码
-        
-        Args:
-            search_text: 用户输入的搜索文本
-            max_results: 最大返回结果数量
-            
-        Returns:
-            包含匹配股票信息的列表，按相似度排序
-        """
+    def get_stock_code_from_cache_full(self):
         try:
-            if not search_text or not search_text.strip():
-                return []
-            
-            search_text = search_text.strip().upper()
-            matches = []
-            
-            # 遍历缓存中的股票信息
-            for stock_code, basic_info in self.app_core.stock_basicinfo_cache.items():
-                if not basic_info:
-                    continue
-                    
-                stock_name = basic_info.get('name', '').upper()
-                stock_code_upper = stock_code.upper()
-                
-                # 计算相似度分数
-                similarity_score = self._calculate_similarity(search_text, stock_code_upper, stock_name)
-                
-                if similarity_score > 0:
-                    matches.append({
-                        'stock_code': stock_code,
-                        'stock_name': basic_info.get('name', ''),
-                        'similarity_score': similarity_score,
-                        'basic_info': basic_info
-                    })
-            
-            # 按相似度分数排序（降序）
-            matches.sort(key=lambda x: x['similarity_score'], reverse=True)
-            
-            # 返回最多max_results个结果
-            return matches[:max_results]
-            
+            return [ x for x in self.app_core.stock_basicinfo_cache.keys()]
         except Exception as e:
-            self.logger.error(f"搜索股票失败: {e}")
-            return []
-    
-    def _calculate_similarity(self, search_text: str, stock_code: str, stock_name: str) -> float:
-        """
-        计算搜索文本与股票代码/名称的相似度
-        
-        Args:
-            search_text: 搜索文本
-            stock_code: 股票代码
-            stock_name: 股票名称
-            
-        Returns:
-            相似度分数（0-100）
-        """
-        try:
-            # 精确匹配股票代码（最高权重）
-            if search_text == stock_code:
-                return 100.0
-            
-            # 股票代码包含搜索文本
-            if search_text in stock_code:
-                return 90.0
-            
-            # 股票代码开头匹配
-            if stock_code.startswith(search_text):
-                return 85.0
-            
-            # 股票名称精确匹配
-            if search_text == stock_name:
-                return 95.0
-            
-            # 股票名称包含搜索文本
-            if search_text in stock_name:
-                return 80.0
-            
-            # 股票名称开头匹配
-            if stock_name.startswith(search_text):
-                return 75.0
-            
-            # 计算编辑距离相似度
-            code_similarity = self._levenshtein_similarity(search_text, stock_code)
-            name_similarity = self._levenshtein_similarity(search_text, stock_name)
-            
-            # 股票代码相似度权重更高
-            max_similarity = max(code_similarity * 0.7, name_similarity * 0.6)
-            
-            # 只返回相似度超过阈值的结果
-            return max_similarity if max_similarity > 30 else 0.0
-            
-        except Exception as e:
-            self.logger.error(f"计算相似度失败: {e}")
-            return 0.0
-    
-    def _levenshtein_similarity(self, s1: str, s2: str) -> float:
-        """
-        计算两个字符串的编辑距离相似度
-        
-        Args:
-            s1: 第一个字符串
-            s2: 第二个字符串
-            
-        Returns:
-            相似度百分比（0-100）
-        """
-        try:
-            if not s1 or not s2:
-                return 0.0
-            
-            # 计算编辑距离
-            distance = self._levenshtein_distance(s1, s2)
-            max_len = max(len(s1), len(s2))
-            
-            if max_len == 0:
-                return 100.0
-            
-            # 转换为相似度百分比
-            similarity = ((max_len - distance) / max_len) * 100
-            return max(0.0, similarity)
-            
-        except Exception as e:
-            self.logger.error(f"计算编辑距离相似度失败: {e}")
-            return 0.0
-    
-    def _levenshtein_distance(self, s1: str, s2: str) -> int:
-        """
-        计算两个字符串的编辑距离
-        
-        Args:
-            s1: 第一个字符串
-            s2: 第二个字符串
-            
-        Returns:
-            编辑距离
-        """
-        if len(s1) < len(s2):
-            return self._levenshtein_distance(s2, s1)
-        
-        if len(s2) == 0:
-            return len(s1)
-        
-        previous_row = list(range(len(s2) + 1))
-        for i, c1 in enumerate(s1):
-            current_row = [i + 1]
-            for j, c2 in enumerate(s2):
-                insertions = previous_row[j + 1] + 1
-                deletions = current_row[j] + 1
-                substitutions = previous_row[j] + (c1 != c2)
-                current_row.append(min(insertions, deletions, substitutions))
-            previous_row = current_row
-        
-        return previous_row[-1]
+            self.logger.error(f"从缓存获取股票基本信息失败: {e}")
+            return None

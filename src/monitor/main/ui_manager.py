@@ -121,13 +121,15 @@ class UIManager:
     async def update_stock_table(self) -> None:
         """更新股票表格"""
         if not self.stock_table:
+            self.logger.warning("股票表格引用为空，无法更新")
             return
         
         try:
+            updated_count = 0
             # 更新表格数据
             for stock_code in self.app_core.monitored_stocks:
                 stock_info = self.app_core.stock_data.get(stock_code)
-                
+                self.logger.debug(f'UI股票数据: {stock_code} {stock_info}')
                 if stock_info:
                     # 格式化数据
                     price_str = f"{stock_info.current_price:.2f}"
@@ -135,7 +137,7 @@ class UIManager:
                     volume_str = f"{stock_info.volume:,}"
                     time_str = stock_info.update_time.strftime("%H:%M:%S")
                     
-                    self.logger.info('updating %s' % stock_info)
+                    self.logger.debug(f'UI更新股票数据: {stock_code} - {stock_info.name} {price_str} {change_str}')
                     
                     # 更新行数据
                     self.stock_table.update_cell(stock_code, 'name', stock_info.name)
@@ -144,8 +146,19 @@ class UIManager:
                     self.stock_table.update_cell(stock_code, 'volume', volume_str)
                     self.stock_table.update_cell(stock_code, 'time', time_str)
                     
+                    updated_count += 1
+                else:
+                    self.logger.warning(f"股票 {stock_code} 没有数据，跳过更新")
+            
+            # 强制刷新表格显示
+            #self.stock_table.refresh()
+            self.logger.info(f"股票表格更新完成，共更新 {updated_count} 只股票")
+                    
         except Exception as e:
             self.logger.error(f"更新股票表格失败: {e}")
+            # 尝试强制刷新以确保UI同步
+            if self.stock_table:
+                self.stock_table.refresh()
     
     async def update_stock_cursor(self) -> None:
         """更新股票表格的光标显示"""
@@ -309,6 +322,7 @@ class UIManager:
     
     async def add_stock_to_table(self, stock_code: str) -> None:
         """添加股票到表格"""
+
         if self.stock_table:
             self.stock_table.add_row(
                 stock_code,

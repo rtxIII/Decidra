@@ -53,7 +53,7 @@ class EventHandler:
             elif event.data_table.id == "group_table":
                 # 分组表格选择 - 同步光标位置并更新预览
                 self.app_core.current_group_cursor = event.cursor_row
-                ui_manager = getattr(self.app_core, 'ui_manager', None)
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
                 if ui_manager:
                     await ui_manager.update_group_preview()
                 self.logger.debug(f"用户点击选择分组行: {event.cursor_row}")
@@ -84,7 +84,7 @@ class EventHandler:
                 
                 # 检查是否已经存在
                 if formatted_code in self.app_core.monitored_stocks:
-                    ui_manager = getattr(self.app_core, 'ui_manager', None)
+                    ui_manager = getattr(self.app_core.app, 'ui_manager', None)
                     if ui_manager and ui_manager.info_panel:
                         await ui_manager.info_panel.log_info(f"股票 {formatted_code} 已在监控列表中", "添加股票")
                     return
@@ -103,13 +103,13 @@ class EventHandler:
                     self.app_core.monitored_stocks.append(formatted_code)
                     
                     # 更新股票表格
-                    ui_manager = getattr(self.app_core, 'ui_manager', None)
+                    ui_manager = getattr(self.app_core.app, 'ui_manager', None)
                     if ui_manager:
                         await ui_manager.add_stock_to_table(formatted_code)
                     
                     # 尝试将股票添加到当前选中的分组
                     if self.app_core.selected_group_name:
-                        group_manager = getattr(self.app_core, 'group_manager', None)
+                        group_manager = getattr(self.app_core.app, 'group_manager', None)
                         if group_manager:
                             success = await group_manager.add_stock_to_group(
                                 self.app_core.selected_group_name, 
@@ -122,12 +122,12 @@ class EventHandler:
                                     await ui_manager.info_panel.log_info(f"股票 {formatted_code} 添加到分组失败", "添加股票")
                     
                     # 刷新股票数据
-                    data_manager = getattr(self.app_core, 'data_manager', None)
+                    data_manager = getattr(self.app_core.app, 'data_manager', None)
                     if data_manager:
                         await data_manager.refresh_stock_data()
                     
                     # 刷新用户分组数据以更新stock_list
-                    group_manager = getattr(self.app_core, 'group_manager', None)
+                    group_manager = getattr(self.app_core.app, 'group_manager', None)
                     if group_manager:
                         await group_manager.refresh_user_groups()
                     
@@ -137,7 +137,7 @@ class EventHandler:
                     
         except Exception as e:
             self.logger.error(f"添加股票失败: {e}")
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager and ui_manager.info_panel:
                 await ui_manager.info_panel.log_info(f"添加股票失败: {e}", "添加股票")
     
@@ -151,7 +151,7 @@ class EventHandler:
         try:
             # 检查是否有可删除的股票
             if not self.app_core.monitored_stocks:
-                ui_manager = getattr(self.app_core, 'ui_manager', None)
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
                 if ui_manager and ui_manager.info_panel:
                     await ui_manager.info_panel.log_info("监控列表为空，无法删除股票", "删除股票")
                 return
@@ -179,7 +179,7 @@ class EventHandler:
                 
             # 检查股票是否在监控列表中
             if current_stock not in self.app_core.monitored_stocks:
-                ui_manager = getattr(self.app_core, 'ui_manager', None)
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
                 if ui_manager and ui_manager.info_panel:
                     await ui_manager.info_panel.log_info(f"股票 {current_stock} 不在监控列表中", "删除股票")
                 return
@@ -198,7 +198,7 @@ class EventHandler:
                 self.app_core.monitored_stocks.remove(current_stock)
                 
                 # 从股票表格中删除
-                ui_manager = getattr(self.app_core, 'ui_manager', None)
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
                 if ui_manager:
                     await ui_manager.remove_stock_from_table(current_stock)
                 
@@ -208,7 +208,7 @@ class EventHandler:
                 
                 # 尝试从当前选中的分组中删除
                 if self.app_core.selected_group_name:
-                    group_manager = getattr(self.app_core, 'group_manager', None)
+                    group_manager = getattr(self.app_core.app, 'group_manager', None)
                     if group_manager:
                         success = await group_manager.remove_stock_from_group(
                             self.app_core.selected_group_name, 
@@ -232,7 +232,7 @@ class EventHandler:
                     self.app_core.current_stock_code = None
                 
                 # 刷新用户分组数据以更新stock_list
-                group_manager = getattr(self.app_core, 'group_manager', None)
+                group_manager = getattr(self.app_core.app, 'group_manager', None)
                 if group_manager:
                     await group_manager.refresh_user_groups()
                 
@@ -242,7 +242,7 @@ class EventHandler:
                 
         except Exception as e:
             self.logger.error(f"删除股票失败: {e}")
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager and ui_manager.info_panel:
                 await ui_manager.info_panel.log_info(f"删除股票失败: {e}", "删除股票")
     
@@ -251,7 +251,7 @@ class EventHandler:
         self.logger.info("开始手动刷新数据...")
         
         # 直接执行数据刷新，不检查连接状态
-        data_manager = getattr(self.app_core, 'data_manager', None)
+        data_manager = getattr(self.app_core.app, 'data_manager', None)
         if data_manager:
             await data_manager.refresh_stock_data()
         
@@ -259,7 +259,7 @@ class EventHandler:
         await self.app_core.update_status_display()
         
         # 更新UI界面
-        ui_manager = getattr(self.app_core, 'ui_manager', None)
+        ui_manager = getattr(self.app, 'ui_manager', None)
         if ui_manager:
             await ui_manager.update_stock_table()
         
@@ -287,7 +287,7 @@ class EventHandler:
     async def action_cursor_up(self) -> None:
         """光标向上移动 - 根据当前活跃表格决定移动哪个光标"""
         try:
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if self.app_core.active_table == "stock" and len(self.app_core.monitored_stocks) > 0:
                 # 移动股票表格光标
                 self.app_core.current_stock_cursor = (self.app_core.current_stock_cursor - 1) % len(self.app_core.monitored_stocks)
@@ -308,7 +308,7 @@ class EventHandler:
     async def action_cursor_down(self) -> None:
         """光标向下移动 - 根据当前活跃表格决定移动哪个光标"""
         try:
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if self.app_core.active_table == "stock" and len(self.app_core.monitored_stocks) > 0:
                 # 移动股票表格光标
                 self.app_core.current_stock_cursor = (self.app_core.current_stock_cursor + 1) % len(self.app_core.monitored_stocks)
@@ -333,7 +333,7 @@ class EventHandler:
             self.app_core.selected_group_name = group_data['name']
             
             # 切换主界面监控的股票为该分组的股票
-            group_manager = getattr(self.app_core, 'group_manager', None)
+            group_manager = getattr(self.app_core.app, 'group_manager', None)
             if group_manager:
                 await group_manager.switch_to_group_stocks(group_data)
                 
@@ -347,7 +347,7 @@ class EventHandler:
         try:
             if self.app_core.active_table != "stock":
                 self.app_core.active_table = "stock"
-                ui_manager = getattr(self.app_core, 'ui_manager', None)
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
                 if ui_manager:
                     await ui_manager.update_table_focus()
                 self.logger.debug("焦点切换到股票表格")
@@ -359,7 +359,7 @@ class EventHandler:
         try:
             if self.app_core.active_table != "group":
                 self.app_core.active_table = "group"
-                ui_manager = getattr(self.app_core, 'ui_manager', None)
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
                 if ui_manager:
                     await ui_manager.update_table_focus()
                 self.logger.debug("焦点切换到分组表格")
@@ -374,7 +374,7 @@ class EventHandler:
             tabs.active = "analysis"
             
             # 更新分析界面内容
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager:
                 await ui_manager.update_analysis_interface()
             

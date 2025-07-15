@@ -38,12 +38,12 @@ class LifecycleManager:
         await self.app_core.load_configuration()
         
         # 初始化数据管理器
-        data_manager = getattr(self.app_core, 'data_manager', None)
+        data_manager = getattr(self.app_core.app, 'data_manager', None)
         if data_manager:
             await data_manager.initialize_data_managers()
         
         # 获取新UI组件的引用
-        ui_manager = getattr(self.app_core, 'ui_manager', None)
+        ui_manager = getattr(self.app_core.app, 'ui_manager', None)
         if ui_manager:
             await ui_manager.setup_ui_references()
         
@@ -52,7 +52,7 @@ class LifecycleManager:
             await ui_manager.load_default_stocks()
         
         # 加载用户分组数据
-        group_manager = getattr(self.app_core, 'group_manager', None)
+        group_manager = getattr(self.app_core.app, 'group_manager', None)
         if group_manager:
             await group_manager.load_user_groups()
         
@@ -171,7 +171,7 @@ class LifecycleManager:
         
         try:
             # 1. 立即停止所有定时器和循环任务
-            data_manager = getattr(self.app_core, 'data_manager', None)
+            data_manager = getattr(self.app_core.app, 'data_manager', None)
             if data_manager and data_manager.refresh_timer:
                 data_manager.refresh_timer.cancel()
                 data_manager.refresh_timer = None
@@ -275,7 +275,7 @@ class LifecycleManager:
             cleanup_tasks = []
             
             # 断开富途连接
-            data_manager = getattr(self.app_core, 'data_manager', None)
+            data_manager = getattr(self.app_core.app, 'data_manager', None)
             if data_manager and data_manager.futu_market:
                 loop = asyncio.get_event_loop()
                 cleanup_task = loop.run_in_executor(None, data_manager.cleanup_futu_market)

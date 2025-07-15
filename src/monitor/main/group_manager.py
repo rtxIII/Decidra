@@ -28,7 +28,7 @@ class GroupManager:
     async def load_user_groups(self) -> None:
         """加载用户分组数据"""
         # 引用UI管理器，避免循环导入
-        ui_manager = getattr(self.app_core, 'ui_manager', None)
+        ui_manager = getattr(self.app_core.app, 'ui_manager', None)
         if not ui_manager or not ui_manager.group_table:
             self.logger.warning("group_table 未初始化，跳过加载用户分组")
             return
@@ -186,7 +186,7 @@ class GroupManager:
         except Exception as e:
             self.logger.warning(f"加载用户分组失败: {e}")
             # API调用失败时不更新连接状态，只显示错误信息
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager and ui_manager.group_table:
                 ui_manager.group_table.clear()
                 self.app_core.group_data.clear()
@@ -213,7 +213,7 @@ class GroupManager:
             await self.load_user_groups()
             
             # 更新分组预览信息
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager:
                 await ui_manager.update_group_preview()
             
@@ -223,14 +223,14 @@ class GroupManager:
             
         except Exception as e:
             self.logger.error(f"刷新用户分组数据失败: {e}")
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager and ui_manager.info_panel:
                 await ui_manager.info_panel.log_info(f"刷新分组数据失败: {e}", "系统")
     
     async def handle_group_selection(self, row_index: int) -> None:
         """处理分组选择事件"""
         try:
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if not ui_manager or not ui_manager.group_table:
                 return
                 
@@ -286,7 +286,7 @@ class GroupManager:
             
         except Exception as e:
             self.logger.error(f"处理分组选择失败: {e}")
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager and ui_manager.group_stocks_content:
                 ui_manager.group_stocks_content.update("[red]加载分组股票失败[/red]")
     
@@ -317,7 +317,7 @@ class GroupManager:
                     self.app_core.current_stock_cursor = 0
                     
                     # 重新加载股票表格
-                    ui_manager = getattr(self.app_core, 'ui_manager', None)
+                    ui_manager = getattr(self.app_core.app, 'ui_manager', None)
                     if ui_manager:
                         await ui_manager.load_default_stocks()
                     
@@ -325,7 +325,7 @@ class GroupManager:
                     await asyncio.sleep(0.1)
 
                     # 刷新股票数据
-                    data_manager = getattr(self.app_core, 'data_manager', None)
+                    data_manager = getattr(self.app_core.app, 'data_manager', None)
                     if data_manager:
                         await data_manager.refresh_stock_data()
                     
@@ -379,7 +379,7 @@ class GroupManager:
         try:
             # 需要引入FutuTrade来获取持仓数据
             # 引用app中的futu_trade实例
-            futu_trade = getattr(self.app_core, 'futu_trade', None)
+            futu_trade = getattr(self.app_core.app, 'futu_trade', None)
             if not futu_trade:
                 self.logger.error("FutuTrade实例未找到")
                 return
@@ -440,7 +440,7 @@ class GroupManager:
             await self.load_user_positions()
             
             # 更新UI显示
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager:
                 await ui_manager.update_position_display()
             
@@ -450,7 +450,7 @@ class GroupManager:
             
         except Exception as e:
             self.logger.error(f"刷新用户持仓数据失败: {e}")
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager and ui_manager.info_panel:
                 await ui_manager.info_panel.log_info(f"刷新持仓数据失败: {e}", "系统")
     
@@ -467,7 +467,7 @@ class GroupManager:
             self.logger.info(f"选择持仓: {stock_code}")
             
             # 更新持仓详情显示
-            ui_manager = getattr(self.app_core, 'ui_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager and ui_manager.info_panel:
                 await ui_manager.info_panel.log_info(f"选择持仓: {stock_code}", "持仓选择")
             
