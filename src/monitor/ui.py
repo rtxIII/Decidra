@@ -107,15 +107,30 @@ class UserGroupPanel(Container):
         layout: vertical;
     }
     
-    UserGroupPanel .compact-table {
+    UserGroupPanel .group-info-combined {
+        height: 50%;
+        background: $surface;
+        overflow-y: auto;
+        padding: 1;
+        margin-bottom: 1;
+    }
+    
+    UserGroupPanel .group-info-combined DataTable {
         height: 40%;
         margin-bottom: 1;
     }
     
-    UserGroupPanel .info-display {
+    UserGroupPanel .group-info-combined .info-content {
         height: 60%;
+        padding: 1;
+    }
+    
+    UserGroupPanel .position-info {
+        height: 50%;
         background: $surface;
-        overflow-y: auto;
+        border: solid $accent;
+        border-title-color: $text;
+        border-title-background: $surface;
         padding: 1;
     }
     
@@ -130,8 +145,9 @@ class UserGroupPanel(Container):
         
     def compose(self) -> ComposeResult:
         """组合完全统一的单一窗口"""
-        # 紧凑的分组表格（40%空间）
-        with Container(classes="compact-table"):
+        # 合并的分组表格和信息显示区域（50%空间）
+        with Container(classes="group-info-combined"):
+            # 分组表格
             group_table = DataTable(
                 show_cursor=True,
                 zebra_stripes=True,
@@ -142,12 +158,25 @@ class UserGroupPanel(Container):
             )
             group_table.add_columns("分组名称", "股票数量", "类型")
             yield group_table
+            
+            # 信息显示内容
+            with Container(classes="info-content"):
+                yield Static(
+                    "[dim]使用 k/l 键选择分组\n使用 Space 键切换监控列表\n\n选择分组后将显示包含的股票详情[/dim]",
+                    id="group_stocks_content"
+                )
         
-        # 信息显示区域（60%空间，无额外边框）
-        with Container(classes="info-display"):
+        # 持仓信息区域（30%空间，位于最下面）
+        with Container(classes="position-info"):
+            yield Static("持仓订单信息", id="position_title")
             yield Static(
-                "[dim]使用 k/l 键选择分组\n使用 Space 键切换监控列表\n\n选择分组后将显示包含的股票详情[/dim]",
-                id="group_stocks_content"
+                "[bold white]持仓情况:[/bold white]\n" +
+                "数量: --\n" +
+                "成本价: --\n" +
+                "盈亏: --\n\n" +
+                "[bold white]挂单情况:[/bold white]\n" +
+                "无挂单",
+                id="position_content"
             )
 
 
@@ -223,20 +252,12 @@ class AnalysisPanel(Container):
     DEFAULT_CSS = """
     AnalysisPanel {
         height: 20%;
-        layout: horizontal;
-    }
-    
-    AnalysisPanel .position-info {
-        width: 40%;
-        border: solid $accent;
-        border-title-color: $text;
-        border-title-background: $surface;
-        margin-right: 1;
-        padding: 1;
+        layout: vertical;
     }
     
     AnalysisPanel .ai-analysis {
-        width: 60%;
+        width: 100%;
+        height: 1fr;
         border: solid $accent;
         border-title-color: $text;
         border-title-background: $surface;
@@ -253,19 +274,6 @@ class AnalysisPanel(Container):
     
     def compose(self) -> ComposeResult:
         """组合分析面板组件"""
-        # 持仓订单信息区域
-        with Container(classes="position-info"):
-            yield Static("持仓订单信息", id="position_title")
-            yield Static(
-                "[bold white]持仓情况:[/bold white]\n" +
-                "数量: --\n" +
-                "成本价: --\n" +
-                "盈亏: --\n\n" +
-                "[bold white]挂单情况:[/bold white]\n" +
-                "无挂单",
-                id="position_content"
-            )
-        
         # AI分析和操作计划区域
         with Container(classes="ai-analysis"):
             yield Static("AI分析建议", id="ai_title")

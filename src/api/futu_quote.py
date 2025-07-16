@@ -1080,12 +1080,20 @@ class QuoteManager:
             df = self._handle_response(ret, data, f"获取{code}的买卖盘数据")
             
             # 转换为OrderBookData对象
-            if len(df) > 0:
-                order_book = OrderBookData.from_dict(df.iloc[0].to_dict())
+            import pandas as pd
+            if isinstance(df, pd.DataFrame):
+                if len(df) > 0:
+                    order_book = OrderBookData.from_dict(df.iloc[0].to_dict())
+                    self.logger.info(f"获取到 {code} 的买卖盘数据")
+                    return order_book
+                else:
+                    raise FutuQuoteException(-1, f"没有获取到{code}的买卖盘数据")
+            elif isinstance(df, dict):
+                order_book = OrderBookData.from_dict(df)
                 self.logger.info(f"获取到 {code} 的买卖盘数据")
                 return order_book
             else:
-                raise FutuQuoteException(-1, f"没有获取到{code}的买卖盘数据")
+                raise FutuQuoteException(-1, f"获取到意外的数据格式: {type(df)}")
                 
         except Exception as e:
             if isinstance(e, FutuException):
@@ -1130,16 +1138,25 @@ class QuoteManager:
             code: 股票代码
         
         Returns:
-            Dict: 经纪队列数据
+            Dict: 经纪队列数据，包含bid_frame_table和ask_frame_table
         """
         try:
             quote_ctx = self._get_quote_context()
-            ret, data = quote_ctx.get_broker_queue(code)
+            ret, bid_frame_table, ask_frame_table = quote_ctx.get_broker_queue(code)
             
-            result = self._handle_response(ret, data, f"获取{code}的经纪队列")
+            # 检查返回状态
+            if ret != 0:
+                raise FutuQuoteException(ret, f"获取{code}的经纪队列失败")
             
             self.logger.info(f"获取到 {code} 的经纪队列数据")
-            return result.to_dict() if hasattr(result, 'to_dict') else result
+            
+            # 返回包含买盘和卖盘队列的字典
+            result = {
+                'bid_frame_table': bid_frame_table.to_dict() if hasattr(bid_frame_table, 'to_dict') else bid_frame_table,
+                'ask_frame_table': ask_frame_table.to_dict() if hasattr(ask_frame_table, 'to_dict') else ask_frame_table
+            }
+            
+            return result
             
         except Exception as e:
             if isinstance(e, FutuException):

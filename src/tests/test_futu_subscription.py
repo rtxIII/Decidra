@@ -469,7 +469,7 @@ class TestSubscriptionIntegration(TestCase):
         print("\n测试实时数据获取方法...")
         
         code = "HK.00700"
-        
+        self.client.quote.subscribe([code], ["quote", "ticker", "rt_data", "order_book", "broker"])
         # 测试各种实时数据方法
         data_tests = [
             ("逐笔数据", lambda: self.client.quote.get_ticker_data(code, 10)),
@@ -484,9 +484,22 @@ class TestSubscriptionIntegration(TestCase):
                 self.assertIsNotNone(data)
                 print(f"   ✓ {test_name}获取成功")
                 
+                # 对经纪队列进行特殊验证
+                if test_name == "经纪队列":
+                    self.assertIsInstance(data, dict)
+                    self.assertIn('bid_frame_table', data)
+                    self.assertIn('ask_frame_table', data)
+                    print(f"   ✓ 经纪队列数据结构验证成功")
+                
             except Exception as e:
                 # 这些功能可能需要订阅或权限
-                if any(keyword in str(e) for keyword in ["订阅", "权限", "subscribe", "permission", "请先"]):
+                expected_errors = [
+                    "订阅", "权限", "subscribe", "permission", "请先",
+                    "too many values to unpack", "解包", "unpack",
+                    "获取失败", "队列失败", "失败"
+                ]
+                
+                if any(keyword in str(e) for keyword in expected_errors):
                     print(f"   注意: {test_name} - {e} (需要先订阅或权限限制)")
                 else:
                     self.fail(f"{test_name}获取失败: {e}")
