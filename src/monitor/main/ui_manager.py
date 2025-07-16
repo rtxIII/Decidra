@@ -40,6 +40,7 @@ class UIManager:
             # 获取股票表格组件
             self.stock_table = self.app.query_one("#stock_table", DataTable)
             self.stock_table.cursor_type = 'row'
+            # 默认激活股票表格光标
             self.stock_table.show_cursor = True
             
             # 获取用户分组相关组件
@@ -49,7 +50,8 @@ class UIManager:
             # 配置分组表格的光标特性
             if self.group_table:
                 self.group_table.cursor_type = "row"
-                self.group_table.show_cursor = True
+                # 默认不显示分组表格光标
+                self.group_table.show_cursor = False
             
             # 获取图表面板
             self.chart_panel = self.app.query_one("#kline_chart", Static)
