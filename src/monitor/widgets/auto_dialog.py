@@ -96,7 +96,7 @@ class WindowInputDialog(ModalScreen):
     
     # 键盘绑定
     BINDINGS = [
-        Binding("enter", "submit", "提交", priority=True),
+        Binding("space", "submit", "提交", priority=True),
         Binding("escape", "cancel", "取消", priority=True),
         Binding("ctrl+c", "cancel", "取消"),
     ]
@@ -179,7 +179,7 @@ class WindowInputDialog(ModalScreen):
                 # 输入字段
                 if self.enable_autocomplete and self.candidates_callback:
                     # 启用自动补全的输入字段
-                    input_widget = Input(
+                    self._input_widget = Input(
                         value=self.default_value,
                         placeholder=self.placeholder,
                         password=self.password,
@@ -187,18 +187,19 @@ class WindowInputDialog(ModalScreen):
                         classes="input-field",
                         id="input-field"
                     )
-                    yield input_widget
+                    yield self._input_widget
                     # 用 AutoComplete 包装 Input
-                    yield AutoComplete(
-                        input_widget,
+                    self._autocomplete_widget = AutoComplete(
+                        self._input_widget,
                         candidates=self.candidates_callback,
                         prevent_default_enter=False,
                         prevent_default_tab=False,
-                        id="autocomplete-wrapper"
+                        #id="autocomplete-wrapper"
                     )
+                    yield self._autocomplete_widget
                 else:
                     # 普通输入字段
-                    yield Input(
+                    self._input_widget = Input(
                         value=self.default_value,
                         placeholder=self.placeholder,
                         password=self.password,
@@ -206,6 +207,7 @@ class WindowInputDialog(ModalScreen):
                         classes="input-field",
                         id="input-field"
                     )
+                    yield self._input_widget
                 
                 # 错误消息区域
                 yield Static("", classes="error-message", id="error-message")
@@ -232,11 +234,9 @@ class WindowInputDialog(ModalScreen):
         # 获取错误组件
         self._error_widget = self.query_one("#error-message", Static)
         
-        # 如果启用了自动补全，需要从AutoComplete组件中获取Input
-       
-                
-
-        
+        # 输入组件已经在compose中设置，这里只需要聚焦
+        if self._input_widget:
+            self._input_widget.focus()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """处理输入变化，实时验证"""
@@ -339,3 +339,86 @@ class WindowInputDialog(ModalScreen):
         
         # 关闭对话框并返回结果
         self.dismiss(None)
+
+
+# 便利函数，用于快速创建和显示输入对话框
+async def show_auto_input_dialog(
+    app,
+    message: str,
+    title: Optional[str] = None,
+    placeholder: str = "",
+    default_value: str = "",
+    input_type: str = "text",
+    password: bool = False,
+    submit_text: str = "确认",
+    cancel_text: str = "取消",
+    dialog_id: Optional[str] = None,
+    validator: Optional[Validator] = None,
+    required: bool = True,
+    submit_callback: Optional[Callable[[str], None]] = None,
+    cancel_callback: Optional[Callable] = None,
+    candidates_callback:  Optional[Callable] = None,
+    enable_autocomplete: bool = True,
+    ) -> Optional[str]:
+    """显示输入对话框并等待用户响应
+        
+        Args:
+            app: Textual应用实例
+            message: 提示消息
+            title: 对话框标题
+            placeholder: 输入框占位符
+            default_value: 默认值
+            input_type: 输入类型
+            password: 是否为密码输入
+            submit_text: 提交按钮文本
+            cancel_text: 取消按钮文本
+            dialog_id: 对话框ID
+            validator: 验证器
+            required: 是否必填
+            submit_callback: 提交回调
+            cancel_callback: 取消回调
+            candidates_callback: 自动补全回调
+            enable_autocomplete: 是否启用自动补全
+            
+        Returns:
+            Optional[str]: 用户输入的值，如果取消则返回None
+        """
+    def _candidates_callback(state: TargetState) -> list[DropdownItem]:
+        if not candidates_callback:
+            return []
+            
+        try:
+            candidates = candidates_callback()
+            if not candidates:
+                return []
+            
+            # 根据输入过滤股票代码
+            filtered = [x for x in candidates if state.text.lower() in x.lower()]
+            
+            return [
+                DropdownItem(x, prefix="")
+                for x in filtered
+            ]
+        except Exception:
+            # 如果回调函数出错，返回空列表
+            return []
+    dialog = WindowInputDialog(
+        message=message,
+        title=title,
+        placeholder=placeholder,
+        default_value=default_value,
+        input_type=input_type,
+        password=password,
+        submit_text=submit_text,
+        cancel_text=cancel_text,
+        dialog_id=dialog_id,
+        validator=validator,
+        required=required,
+        submit_callback=submit_callback,
+        cancel_callback=cancel_callback,
+        candidates_callback=_candidates_callback,
+        enable_autocomplete=enable_autocomplete
+    )
+    
+    result = await app.push_screen_wait(dialog)
+    return result

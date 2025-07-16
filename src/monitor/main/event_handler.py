@@ -10,7 +10,8 @@ from textual.events import Key
 from textual.widgets import DataTable, TabbedContent
 from textual.validation import Function
 
-from monitor.widgets.window_dialog import show_input_dialog, show_confirm_dialog
+from monitor.widgets.window_dialog import show_confirm_dialog
+from monitor.widgets.auto_dialog import show_auto_input_dialog
 from utils.logger import get_logger
 
 
@@ -68,14 +69,19 @@ class EventHandler:
     async def _add_stock_worker(self) -> None:
         """添加股票的工作线程"""
         try:
+            # 获取data_manager以便提供自动补全候选项
+            data_manager = getattr(self.app_core.app, 'data_manager', None)
+            candidates_callback = data_manager.get_stock_code_from_cache_full if data_manager else None
+            
             # 使用WindowInputDialog获取股票代码
-            stock_code = await show_input_dialog(
+            stock_code = await show_auto_input_dialog(
                 self.app,
                 message="请输入要添加的股票代码\n格式：HK.00700 (港股) 或 US.AAPL (美股)",
                 title="添加股票",
                 placeholder="例如：HK.00700",
                 validator=Function(self.app_core.validate_stock_code),
-                required=True
+                required=True,
+                candidates_callback=candidates_callback
             )
             
             if stock_code:
@@ -163,13 +169,18 @@ class EventHandler:
             
             # 如果没有选中股票，让用户手动输入
             if not current_stock:
-                stock_code = await show_input_dialog(
+                # 获取data_manager以便提供自动补全候选项
+                data_manager = getattr(self.app_core.app, 'data_manager', None)
+                candidates_callback = data_manager.get_stock_code_from_cache_full if data_manager else None
+                
+                stock_code = await show_auto_input_dialog(
                     self.app,
                     message="请输入要删除的股票代码\n格式：HK.00700 (港股) 或 US.AAPL (美股)",
                     title="删除股票",
                     placeholder="例如：HK.00700",
                     validator=Function(self.app_core.validate_stock_code),
-                    required=True
+                    required=True,
+                    candidates_callback=candidates_callback
                 )
                 if stock_code:
                     current_stock = stock_code.upper().strip()

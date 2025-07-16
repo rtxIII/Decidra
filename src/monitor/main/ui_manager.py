@@ -98,7 +98,7 @@ class UIManager:
             for stock_code in self.app_core.monitored_stocks:
                 self.stock_table.add_row(
                     stock_code,
-                    "加载中...",
+                    stock_code,
                     "0.00",
                     "0.00%",
                     "0",
@@ -112,8 +112,8 @@ class UIManager:
         
         # 初始化股票光标位置
         self.app_core.current_stock_cursor = 0
-        if self.stock_table and len(self.app_core.monitored_stocks) > 0:
-            await self.update_stock_cursor()
+        #if self.stock_table and len(self.app_core.monitored_stocks) > 0:
+        #    await self.update_stock_cursor()
         
         # 初始化表格焦点状态
         await self.update_table_focus()
@@ -326,7 +326,7 @@ class UIManager:
         if self.stock_table:
             self.stock_table.add_row(
                 stock_code,
-                "加载中...",
+                stock_code,
                 "0.00",
                 "0.00%", 
                 "0",

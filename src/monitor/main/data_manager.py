@@ -297,7 +297,8 @@ class DataManager:
             change_amount = current_price - prev_close
             
             # 从snapshot获取股票名称，如果没有则使用股票代码
-            stock_name = getattr(snapshot, 'name', snapshot.code) or snapshot.code
+            basic_info = self.get_stock_basicinfo_from_cache(snapshot.code)
+            stock_name = basic_info.get('name', snapshot.code)
             
             return StockData(
                 code=snapshot.code,
