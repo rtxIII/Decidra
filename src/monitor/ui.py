@@ -7,7 +7,7 @@ Monitor UI Layout Module
 from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, Grid, Horizontal
 from textual.widgets import (
-    Header, Footer, Static, DataTable, Label, 
+    Static, DataTable, Label, 
     TabbedContent, TabPane, Input, ProgressBar
 )
 from textual.reactive import reactive
@@ -180,120 +180,256 @@ class UserGroupPanel(Container):
             )
 
 
-class ChartPanel(Container):
-    """图表面板 - 分析界面上部80%"""
-    
-    DEFAULT_CSS = """
-    ChartPanel {
-        height: 80%;
-        border: solid $accent;
-        border-title-color: $text;
-        border-title-background: $surface;
-        padding: 1;
-    }
-    
-    ChartPanel .chart-container {
-        height: 60%;
-        background: $surface;
-        border: solid $primary;
-        margin-bottom: 1;
-    }
-    
-    ChartPanel .volume-container {
-        height: 40%;
-        background: $surface;
-        border: solid $secondary;
-    }
-    
-    ChartPanel .chart-controls {
-        height: 3;
-        dock: bottom;
-        background: $panel;
-    }
-    """
-    
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.border_title = "K线图表分析"
-        
-    def compose(self) -> ComposeResult:
-        """组合图表组件"""
-        # K线图表区域
-        with Container(classes="chart-container"):
-            yield Static(
-                "[bold blue]K线图表显示区域[/bold blue]\n\n" +
-                "[dim]图表功能：\n" +
-                "• D: 切换到日线图\n" +
-                "• W: 切换到周线图\n" +
-                "• M: 切换到月线图\n" +
-                "• ←→: 调整时间范围[/dim]",
-                id="kline_chart"
-            )
-        
-        # 成交量区域
-        with Container(classes="volume-container"):
-            yield Static(
-                "[bold green]成交量柱状图[/bold green]\n" +
-                "显示成交量数据...",
-                id="volume_chart"
-            )
-        
-        # 图表控制快捷键提示
-        with Container(classes="chart-controls"):
-            yield Static(
-                "[bold blue]D[/bold blue] 日线  [bold green]W[/bold green] 周线  [bold yellow]M[/bold yellow] 月线  [dim]时间范围: 最近30天[/dim]",
-                id="chart_hotkey_hints"
-            )
 
 
 class AnalysisPanel(Container):
-    """分析面板 - 分析界面下部20%"""
+    """分析面板 - 严格按照MVP设计的完整实现"""
     
     DEFAULT_CSS = """
     AnalysisPanel {
-        height: 20%;
+        height: 1fr;
         layout: vertical;
+        overflow-y: auto;
     }
     
-    AnalysisPanel .ai-analysis {
-        width: 100%;
-        height: 1fr;
+    AnalysisPanel .basic-info-area {
+        height: 15%;
         border: solid $accent;
         border-title-color: $text;
         border-title-background: $surface;
+        padding: 0;
+        margin-bottom: 0;
+    }
+    
+    AnalysisPanel .quote-area {
+        height: 15%;
+        border: solid $accent;
+        border-title-color: $text;
+        border-title-background: $surface;
+        padding: 0;
+        margin-bottom: 0;
+    }
+    
+    AnalysisPanel .three-column-area {
+        height: 55%;
+        layout: horizontal;
+        margin-bottom: 0;
+    }
+    
+    AnalysisPanel .order-book-column {
+        width: 24%;
+        border: solid $accent;
+        border-title-color: $text;
+        border-title-background: $surface;
+        padding: 0;
+        margin-right: 0;
+    }
+    
+    AnalysisPanel .realtime-data-column {
+        width: 37%;
+        border: solid $accent;
+        border-title-color: $text;
+        border-title-background: $surface;
+        padding: 0;
+        margin-right: 0;
+    }
+    
+    AnalysisPanel .money-flow-column {
+        width: 39%;
+        border: solid $accent;
+        border-title-color: $text;
+        border-title-background: $surface;
+        padding: 0;
+        layout: vertical;
+    }
+    
+    AnalysisPanel .ai-interaction-area {
+        height: 15%;
+        border: solid $accent;
+        border-title-color: $text;
+        border-title-background: $surface;
+        padding: 0;
+        layout: horizontal;
+    }
+    
+    AnalysisPanel .realtime-data-column TabbedContent {
+        height: 1fr;
+    }
+    
+    AnalysisPanel .realtime-data-column TabPane {
+        padding: 0;
+    }
+    
+    /* AI交互区域样式 - 现在在第4层水平布局 */
+    AnalysisPanel .ai-interaction-area .ai-assistant-title {
+        width: 15%;
+        background: $primary;
+        color: $text;
+        content-align: center middle;
+        margin-right: 1;
+    }
+    
+    AnalysisPanel .ai-interaction-area .ai-analysis-section {
+        width: 40%;
+        overflow-y: auto;
+        background: $surface;
+        padding: 1;
+        margin-right: 1;
+    }
+    
+    AnalysisPanel .ai-interaction-area .ai-chat-section {
+        width: 30%;
+        overflow-y: auto;
+        background: $surface;
+        border: solid $secondary;
+        padding: 1;
+        margin-right: 1;
+    }
+    
+    AnalysisPanel .ai-interaction-area .ai-input-section {
+        width: 15%;
+        layout: vertical;
+        background: $surface;
         padding: 1;
     }
     
-    AnalysisPanel .input-area {
-        height: 3;
-        dock: bottom;
-        background: $panel;
-        margin-top: 1;
+    AnalysisPanel .ai-interaction-area .shortcut-buttons {
+        height: 50%;
+        margin-bottom: 1;
+        content-align: center middle;
+    }
+    
+    AnalysisPanel .ai-interaction-area Input {
+        height: 50%;
     }
     """
     
     def compose(self) -> ComposeResult:
-        """组合分析面板组件"""
-        # AI分析和操作计划区域
-        with Container(classes="ai-analysis"):
-            yield Static("AI分析建议", id="ai_title")
+        """严格按照MVP设计组合分析面板的完整布局"""
+        # 1. 基础信息区域
+        with Container(classes="basic-info-area"):
             yield Static(
-                "[bold green]AI智能分析[/bold green]\n\n" +
-                "[dim]分析维度：\n" +
-                "• 技术指标分析 (MA, RSI, MACD)\n" +
-                "• 买卖信号推荐\n" +
-                "• 支撑位和阻力位\n" +
-                "• 风险评估等级[/dim]\n\n" +
-                "[yellow]正在生成AI分析报告...[/yellow]",
-                id="ai_content"
+                "股票代码: 000001    名称: 平安银行    市场: 深交所    行业: 银行业    市值: 2847.3亿    流通股: 193.6亿股    PE: 5.2    PB: 0.65    ROE: 12.8%    更新时间: 2025-07-17 14:32:25",
+                id="basic_info_content"
             )
-            
-            # 用户输入区域
-            with Container(classes="input-area"):
-                yield Input(
-                    placeholder="输入操作计划...",
-                    id="plan_input"
+        
+        # 2. 报价区域  
+        with Container(classes="quote-area"):
+            yield Static(
+                "最新价: 12.85 ↑    涨跌幅: +2.35%    涨跌额: +0.29    开盘: 12.58    最高: 12.96    最低: 12.51    成交量: 1.2亿手    成交额: 153.7亿    换手率: 0.62%    振幅: 3.58%",
+                id="quote_info_content"
+            )
+        
+        # 3. 三栏布局区域
+        with Container(classes="three-column-area"):
+            # 3.1 摆盘区域（25%宽度）
+            with Container(classes="order-book-column"):
+                yield Static("摆盘区域", id="order_book_title")
+                yield Static(
+                    "[bold red]卖五: 12.89  1250手[/bold red]\n" +
+                    "[bold red]卖四: 12.88  2100手[/bold red]\n" +
+                    "[bold red]卖三: 12.87  3400手[/bold red]\n" +
+                    "[bold red]卖二: 12.86  4200手[/bold red]\n" +
+                    "[bold red]卖一: 12.85  5800手[/bold red]\n" +
+                    "──────────────────\n" +
+                    "[bold green]买一: 12.84  6200手[/bold green]\n" +
+                    "[bold green]买二: 12.83  4900手[/bold green]\n" +
+                    "[bold green]买三: 12.82  3100手[/bold green]\n" +
+                    "[bold green]买四: 12.81  2800手[/bold green]\n" +
+                    "[bold green]买五: 12.80  1900手[/bold green]\n\n" +
+                    "📈 委比: +8.2%\n" +
+                    "📊 委差: +1.8万手",
+                    id="order_book_content"
                 )
+            
+            # 3.2 实时数据区域（37%宽度）
+            with Container(classes="realtime-data-column"):
+                yield Static("实时数据区域", id="realtime_data_title")
+                with TabbedContent(initial="kline"):
+                    # K线数据标签页
+                    with TabPane("K线数据", id="kline"):
+                        yield Static(
+                            "[bold blue]K线数据[/bold blue]\n" +
+                            "开盘:12.58  最高:12.96\n" +
+                            "最低:12.51  收盘:12.85\n" +
+                            "成交:1.2亿  涨跌:+2.35%",
+                            id="kline_content"
+                        )
+                    
+                    # 逐笔数据标签页
+                    with TabPane("逐笔数据", id="tick"):
+                        yield Static(
+                            "[bold yellow]逐笔数据[/bold yellow]\n" +
+                            "14:32:15  12.85↑125  89手\n" +
+                            "14:32:18  12.84↓89   45手\n" +
+                            "14:32:20  12.85↑201  156手\n" +
+                            "14:32:22  12.86↑67   67手",
+                            id="tick_content"
+                        )
+                    
+                    # 经纪队列数据标签页
+                    with TabPane("经纪队列", id="broker"):
+                        yield Static(
+                            "[bold cyan]经纪队列[/bold cyan]\n" +
+                            "中信证券 买入排队 1.2万手\n" +
+                            "平安证券 卖出排队 8.9千手\n" +
+                            "招商证券 买入排队 6.8千手",
+                            id="broker_content"
+                        )
+            
+            # 3.3 资金流向区域（38%宽度） - 与第4层互换位置
+            with Container(classes="money-flow-column"):
+                yield Static("资金流向/分布区域", id="money_flow_title")
+                yield Static(
+                    "主力净流入: +2.3亿 ↑    超大单: +1.8亿(+3.2%)    大单: +0.5亿(+0.9%)    中单: -1.2亿(-2.1%)    小单: -1.1亿(-1.9%)    │    大单占比: 45.2%    中单: 32.1%    小单: 22.7%    │    北向资金: +0.85亿     融资余额: 25.6亿(-0.3%)     融券余额: 1.2亿(+2.1%)     资金净流入排名: 17/4832     活跃度: 中等     │    换手率排名: 456/4832    热度: ★★★☆☆",
+                    id="money_flow_content_column"
+                )
+        
+        # 4. AI交互区域 - 与第3.3栏互换位置
+        with Container(classes="ai-interaction-area"):
+            # AI助手标题
+            yield Static("💬 AI智能分析助手", classes="ai-assistant-title", id="ai_assistant_title")
+            
+            # AI分析区域
+            with Container(classes="ai-analysis-section"):
+                yield Static(
+                    "[bold cyan]🤖 AI:[/bold cyan] 根据技术面分析，该股票处于上升通道中，建议关注：\n\n" +
+                    "[bold yellow]📊 技术指标:[/bold yellow]\n" +
+                    "• RSI(14): 65.2 ➤ 偏强势，注意回调风险\n" +
+                    "• MACD: 金叉信号，动能向上\n" +
+                    "• 均线: 突破20日线，多头排列\n\n" +
+                    "[bold green]🎯 关键价位:[/bold green]\n" +
+                    "• 支撑位: 12.45 (重要支撑)\n" +
+                    "• 阻力位: 13.15 (前高压力)\n" +
+                    "• 目标价: 13.20-13.50\n\n" +
+                    "[bold blue]🔮 AI预测 (置信度75%):[/bold blue]\n" +
+                    "短期(1-3天): 看涨 ↗ 预期涨幅 2-4%\n" +
+                    "中期(1-2周): 震荡上行，关注量能",
+                    id="ai_analysis_content"
+                )
+            
+            # AI对话历史区域 - MVP设计的核心功能
+            with Container(classes="ai-chat-section"):
+                yield Static(
+                    "[bold white]💭 智能问答 (输入'?'查看命令)[/bold white]\n" +
+                    "[bold green]> 用户:[/bold green] 这只股票适合长期持有吗？\n" +
+                    "[bold cyan]🤖 AI:[/bold cyan] 从基本面看，平安银行ROE12.8%，PB0.65倍，估值偏低。银行股适合\n" +
+                    "      长期价值投资，建议分批建仓，关注利率政策变化...\n\n" +
+                    "[bold green]> 用户:[/bold green] 目前技术面风险大吗？\n" +
+                    "[bold cyan]🤖 AI:[/bold cyan] RSI65.2偏高，短期存在回调风险，建议等待回调至支撑位...",
+                    id="ai_chat_history"
+                )
+            
+            # AI输入区域
+            with Container(classes="ai-input-section"):
+                # 快捷功能按键（按MVP设计添加F4、F5）
+                yield Static(
+                    "[bold cyan]🎛️ 快捷功能:[/bold cyan] [F1]技术分析 [F2]基本面 [F3]资金面 [F4]同行对比 [F5]风险评估",
+                    classes="shortcut-buttons",
+                    id="ai_shortcut_buttons"
+                )
+                # 输入框
+                yield Input(placeholder="输入问题...", id="ai_input_field")
 
 
 class MainLayoutTab(Container):
@@ -347,7 +483,6 @@ class AnalysisLayoutTab(Container):
     
     def compose(self) -> ComposeResult:
         """组合分析界面布局"""
-        yield ChartPanel(id="chart_panel")
         yield AnalysisPanel(id="analysis_panel")
 
 
@@ -462,8 +597,7 @@ class MonitorLayout(Container):
     
     def compose(self) -> ComposeResult:
         """组合完整监控界面"""
-        # 头部状态栏
-        yield Header()
+        # 状态栏保留，但去除Header和Footer让界面更紧凑
         yield StatusBar(id="status_bar")
         
         # 主体标签页内容
@@ -475,9 +609,6 @@ class MonitorLayout(Container):
             # 分析界面标签页
             with TabPane("分析界面", id="analysis"):
                 yield AnalysisLayoutTab(id="analysis_layout")
-        
-        # 底部导航栏
-        yield Footer()
 
 
 class ResponsiveLayout(Container):
@@ -556,7 +687,6 @@ class ResponsiveLayout(Container):
 __all__ = [
     "StockListPanel",
     "UserGroupPanel", 
-    "ChartPanel",
     "AnalysisPanel",
     "MainLayoutTab",
     "AnalysisLayoutTab",
