@@ -211,7 +211,7 @@ class AnalysisPanel(Container):
     }
     
     AnalysisPanel .three-column-area {
-        height: 55%;
+        height: 40%;
         layout: horizontal;
         margin-bottom: 0;
     }
@@ -244,7 +244,7 @@ class AnalysisPanel(Container):
     }
     
     AnalysisPanel .ai-interaction-area {
-        height: 15%;
+        height: 30%;
         border: solid $accent;
         border-title-color: $text;
         border-title-background: $surface;
