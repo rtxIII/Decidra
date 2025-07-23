@@ -59,19 +59,21 @@ class UIManager:
         except Exception as e:
             self.logger.error(f"获取分组表格引用失败: {e}")
         
-        # 获取图表面板
+        # 获取图表面板（可能在分析界面标签页中）
         try:
-            self.chart_panel = self.app.query_one("#kline_chart", Static)
+            self.chart_panel = self.app.query_one("#kline_content", Static)
             self.logger.debug("图表面板引用设置成功")
         except Exception as e:
-            self.logger.error(f"获取图表面板引用失败: {e}")
+            self.logger.debug(f"图表面板不在当前标签页中: {e}")
+            self.chart_panel = None
         
-        # 获取AI分析面板
+        # 获取AI分析面板（可能在分析界面标签页中）
         try:
-            self.ai_analysis_panel = self.app.query_one("#ai_content", Static)
+            self.ai_analysis_panel = self.app.query_one("#ai_analysis_content", Static)
             self.logger.debug("AI分析面板引用设置成功")
         except Exception as e:
-            self.logger.error(f"获取AI分析面板引用失败: {e}")
+            self.logger.debug(f"AI分析面板不在当前标签页中: {e}")
+            self.ai_analysis_panel = None
         
         # 获取InfoPanel引用
         try:
