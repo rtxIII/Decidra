@@ -316,6 +316,39 @@ class FutuMarket(FutuModuleBase):
         except Exception as e:
             self.logger.error(f"Get stock basicinfo error: {e}")
             return []
+    
+    def get_stock_basicinfo_multi_types(self, market: str = "HK", stock_types: List[str] = None) -> List:
+        """获取多种类型证券的基本信息并合并结果
+        
+        Args:
+            market: 市场代码，如 "HK", "US", "SH", "SZ"
+            stock_types: 证券类型列表，如 ["STOCK", "IDX", "ETF"]
+            
+        Returns:
+            List: 合并后的证券基本信息列表
+        """
+        if stock_types is None:
+            stock_types = ["STOCK", "IDX", "ETF"]
+        
+        all_results = []
+        
+        for stock_type in stock_types:
+            try:
+                self.logger.debug(f"获取 {market} 市场 {stock_type} 类型证券信息")
+                results = self.client.quote.get_stock_info(market, stock_type)
+                
+                if results:
+                    all_results.extend(results)
+                    self.logger.debug(f"获取到 {len(results)} 只 {stock_type} 类型证券")
+                else:
+                    self.logger.debug(f"{market} 市场 {stock_type} 类型证券信息为空")
+                    
+            except Exception as e:
+                self.logger.error(f"获取 {market} 市场 {stock_type} 类型证券信息失败: {e}")
+                continue
+        
+        self.logger.info(f"合并 {market} 市场证券信息完成，共获取 {len(all_results)} 只证券")
+        return all_results
 
     def get_ipo_list(self, market: str = "HK") -> List:
         """获取IPO列表"""

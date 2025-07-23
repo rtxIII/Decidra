@@ -5,6 +5,9 @@ DataManager - 股票数据和API管理模块
 """
 
 import asyncio
+import json
+import os
+import time
 from datetime import datetime
 from typing import Dict, Optional, Any, List
 
@@ -15,8 +18,11 @@ from monitor.indicators import IndicatorsManager
 from monitor.performance import PerformanceMonitor
 from base.futu_class import MarketSnapshot
 from utils.logger import get_logger
+from utils.global_vars import PATH_DATA
 
 SNAPSHOT_REFRESH_INTERVAL = 300
+CACHE_EXPIRY_HOURS = 8
+BASICINFO_CACHE_FILE = "stock_basicinfo_cache.json"
 
 
 class DataManager:
@@ -374,19 +380,96 @@ class DataManager:
         except Exception as e:
             self.logger.warning(f"清理富途市场连接时出错: {e}")
     
+    def _load_basicinfo_cache_from_file(self) -> bool:
+        """从本地文件加载股票基本信息缓存
+        
+        Returns:
+            bool: 如果成功加载有效缓存返回True，否则返回False
+        """
+        try:
+            cache_file_path = PATH_DATA / BASICINFO_CACHE_FILE
+            
+            if not cache_file_path.exists():
+                self.logger.info("本地股票基本信息缓存文件不存在")
+                return False
+            
+            file_mtime = os.path.getmtime(cache_file_path)
+            current_time = time.time()
+            cache_age_hours = (current_time - file_mtime) / 3600
+            
+            if cache_age_hours > CACHE_EXPIRY_HOURS:
+                self.logger.info(f"股票基本信息缓存已过期 ({cache_age_hours:.1f}小时 > {CACHE_EXPIRY_HOURS}小时)")
+                return False
+            
+            with open(cache_file_path, 'r', encoding='utf-8') as f:
+                cache_data = json.load(f)
+            
+            if not isinstance(cache_data, dict) or 'data' not in cache_data:
+                self.logger.warning("缓存文件格式无效")
+                return False
+            
+            cached_stocks = set(cache_data['data'].keys())
+            monitored_stocks = set(self.app_core.monitored_stocks)
+            
+            if not monitored_stocks.issubset(cached_stocks):
+                missing_stocks = monitored_stocks - cached_stocks
+                self.logger.info(f"缓存中缺少部分股票信息: {missing_stocks}")
+                return False
+            
+            self.app_core.stock_basicinfo_cache.clear()
+            self.app_core.stock_basicinfo_cache.update(cache_data['data'])
+            
+            self.logger.info(f"成功从本地缓存加载 {len(cache_data['data'])} 只股票基本信息")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"加载本地股票基本信息缓存失败: {e}")
+            return False
+    
+    def _save_basicinfo_cache_to_file(self) -> None:
+        """将股票基本信息缓存保存到本地文件"""
+        try:
+            if not self.app_core.stock_basicinfo_cache:
+                self.logger.warning("没有可保存的股票基本信息缓存")
+                return
+            
+            os.makedirs(PATH_DATA, exist_ok=True)
+            
+            cache_data = {
+                'timestamp': datetime.now().isoformat(),
+                'cache_expiry_hours': CACHE_EXPIRY_HOURS,
+                'data': self.app_core.stock_basicinfo_cache
+            }
+            
+            cache_file_path = PATH_DATA / BASICINFO_CACHE_FILE
+            
+            with open(cache_file_path, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=2)
+            
+            self.logger.info(f"成功保存 {len(cache_data['data'])} 只股票基本信息到本地缓存")
+            
+        except Exception as e:
+            self.logger.error(f"保存股票基本信息缓存失败: {e}")
+    
     async def load_stock_basicinfo(self) -> None:
         """加载股票基本信息并缓存"""
         try:
-            if self.app_core.connection_status != ConnectionStatus.CONNECTED:
-                self.logger.warning("富途API未连接，无法加载股票基本信息")
-                return
-            
             # 为监控的股票加载基本信息
             if not self.app_core.monitored_stocks:
                 self.logger.info("没有监控的股票，跳过基本信息加载")
                 return
             
-            self.logger.info(f"开始加载 {len(self.app_core.monitored_stocks)} 只股票的基本信息...")
+            # 首先尝试从本地缓存加载
+            if self._load_basicinfo_cache_from_file():
+                self.logger.info("使用本地缓存的股票基本信息")
+                return
+            
+            # 本地缓存无效，需要API连接来获取数据
+            if self.app_core.connection_status != ConnectionStatus.CONNECTED:
+                self.logger.warning("富途API未连接且本地缓存无效，无法加载股票基本信息")
+                return
+            
+            self.logger.info(f"开始从API加载 {len(self.app_core.monitored_stocks)} 只股票的基本信息...")
             
             # 在线程池中执行同步的富途API调用
             loop = asyncio.get_event_loop()
@@ -411,17 +494,19 @@ class DataManager:
                     continue
                     
                 try:
+                    # 使用新的合并方法获取STOCK、IDX、ETF三种类型的证券信息
                     basicinfo_list = await loop.run_in_executor(
                         None,
-                        self.futu_market.get_stock_basicinfo,
+                        self.futu_market.get_stock_basicinfo_multi_types,
                         market,
-                        "STOCK"
+                        ["STOCK", "IDX", "ETF"]
                     )
                     
                     if basicinfo_list:
                         for basicinfo in basicinfo_list:
                             if hasattr(basicinfo, 'code'):
                                 stock_code = basicinfo.code
+                                # 缓存所有获取到的证券信息
                                 self.app_core.stock_basicinfo_cache[stock_code] = {
                                     'code': basicinfo.code,
                                     'name': getattr(basicinfo, 'name', ''),
@@ -437,6 +522,7 @@ class DataManager:
                             elif isinstance(basicinfo, dict):
                                 stock_code = basicinfo.get('code', '')
                                 if stock_code:
+                                    # 缓存所有获取到的证券信息
                                     self.app_core.stock_basicinfo_cache[stock_code] = {
                                         'code': stock_code,
                                         'name': basicinfo.get('name', ''),
@@ -450,13 +536,18 @@ class DataManager:
                                     }
                                     total_loaded += 1
                     
-                    self.logger.info(f"加载 {market} 市场 {len(stocks)} 只股票基本信息完成")
+                    self.logger.info(f"加载 {market} 市场证券基本信息完成，共缓存 {len(basicinfo_list) if basicinfo_list else 0} 只证券（支持STOCK/IDX/ETF类型）")
                     
                 except Exception as e:
                     self.logger.error(f"加载 {market} 市场股票基本信息失败: {e}")
                     continue
             
-            self.logger.info(f"股票基本信息加载完成，共缓存 {total_loaded} 只股票")
+            if total_loaded > 0:
+                # API调用成功，保存到本地缓存
+                self._save_basicinfo_cache_to_file()
+                self.logger.info(f"股票基本信息加载完成，共缓存 {total_loaded} 只股票并保存到本地")
+            else:
+                self.logger.warning("未能从API获取到任何股票基本信息")
             
         except Exception as e:
             self.logger.error(f"加载股票基本信息失败: {e}")
