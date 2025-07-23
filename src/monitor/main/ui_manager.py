@@ -36,37 +36,52 @@ class UIManager:
     
     async def setup_ui_references(self) -> None:
         """设置UI组件引用"""
+        # 获取股票表格组件
         try:
-            # 获取股票表格组件
             self.stock_table = self.app.query_one("#stock_table", DataTable)
             self.stock_table.cursor_type = 'row'
             # 默认激活股票表格光标
             self.stock_table.show_cursor = True
-            
-            # 获取用户分组相关组件
+            self.logger.debug("股票表格引用设置成功")
+        except Exception as e:
+            self.logger.error(f"获取股票表格引用失败: {e}")
+        
+        # 获取用户分组相关组件
+        try:
             self.group_table = self.app.query_one("#group_table", DataTable)
             self.group_stocks_content = self.app.query_one("#group_stocks_content", Static)
-            
             # 配置分组表格的光标特性
             if self.group_table:
                 self.group_table.cursor_type = "row"
                 # 默认不显示分组表格光标
                 self.group_table.show_cursor = False
-            
-            # 获取图表面板
+            self.logger.debug("分组表格引用设置成功")
+        except Exception as e:
+            self.logger.error(f"获取分组表格引用失败: {e}")
+        
+        # 获取图表面板
+        try:
             self.chart_panel = self.app.query_one("#kline_chart", Static)
-            
-            # 获取AI分析面板
+            self.logger.debug("图表面板引用设置成功")
+        except Exception as e:
+            self.logger.error(f"获取图表面板引用失败: {e}")
+        
+        # 获取AI分析面板
+        try:
             self.ai_analysis_panel = self.app.query_one("#ai_content", Static)
-            
-            # 获取InfoPanel引用
+            self.logger.debug("AI分析面板引用设置成功")
+        except Exception as e:
+            self.logger.error(f"获取AI分析面板引用失败: {e}")
+        
+        # 获取InfoPanel引用
+        try:
             from monitor.widgets.line_panel import InfoPanel
             self.info_panel = self.app.query_one("#info_panel", InfoPanel)
-            
-            self.logger.info("UI组件引用设置完成")
-            
+            self.logger.info("InfoPanel引用设置成功")
         except Exception as e:
-            self.logger.error(f"设置UI组件引用失败: {e}")
+            self.logger.error(f"获取InfoPanel引用失败: {e}")
+        
+        self.logger.info("UI组件引用设置完成")
     
     async def initialize_info_panel(self) -> None:
         """初始化InfoPanel"""
