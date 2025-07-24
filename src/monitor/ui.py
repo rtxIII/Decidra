@@ -452,33 +452,38 @@ class StatusBar(Container):
     
     DEFAULT_CSS = """
     StatusBar {
-        height: 1;
-        dock: top;
-        background: $accent;
+        height: 3;
+        background: $surface;
         color: $text;
         layout: horizontal;
+        border: solid $accent;
+        margin-bottom: 0;
     }
     
     StatusBar .status-item {
-        margin: 0 2;
+        width: 1fr;
+        margin: 0 1;
+        padding: 0 1;
         content-align: center middle;
+        background: $accent;
+        color: $text;
     }
     
     StatusBar .connection-status {
         background: $success;
-        color: $text;
+        color: $text-success;
         padding: 0 1;
     }
     
     StatusBar .market-status {
         background: $warning;
-        color: $text;
+        color: $text-warning;
         padding: 0 1;
     }
     
     StatusBar .refresh-mode {
         background: $primary;
-        color: $text;
+        color: $text-primary;
         padding: 0 1;
     }
     """
@@ -488,7 +493,6 @@ class StatusBar(Container):
         yield Static("🟢 已连接", classes="status-item connection-status", id="connection_status")
         yield Static("📈 开盘", classes="status-item market-status", id="market_status")
         yield Static("🔄 实时模式", classes="status-item refresh-mode", id="refresh_mode")
-        yield Static("📊 监控3只股票", classes="status-item", id="stock_count")
         yield Static("更新: 刚刚", classes="status-item", id="last_update")
 
 
@@ -510,6 +514,11 @@ class MonitorLayout(Container):
     DEFAULT_CSS = """
     MonitorLayout {
         layout: vertical;
+    }
+    
+    MonitorLayout StatusBar {
+        dock: top;
+        height: 3;
     }
     
     MonitorLayout TabbedContent {

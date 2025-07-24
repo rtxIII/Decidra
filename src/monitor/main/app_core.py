@@ -155,5 +155,10 @@ class AppCore:
             # 更新应用标题
             self.app.title = f"Decidra股票监控 | {connection_status} | {market_status} | {refresh_info} | {stock_count}"
             
+            # 更新状态栏组件
+            ui_manager = getattr(self.app, 'ui_manager', None)
+            if ui_manager and hasattr(ui_manager, 'update_status_bar'):
+                await ui_manager.update_status_bar()
+            
         except Exception as e:
             self.logger.error(f"更新状态显示失败: {e}")

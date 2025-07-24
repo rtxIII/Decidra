@@ -32,6 +32,12 @@ class UIManager:
         self.ai_analysis_panel: Optional[Static] = None
         self.info_panel: Optional = None
         
+        # 状态栏组件引用
+        self.connection_status: Optional[Static] = None
+        self.market_status: Optional[Static] = None
+        self.refresh_mode: Optional[Static] = None
+        self.last_update: Optional[Static] = None
+        
         self.logger.info("UIManager 初始化完成")
     
     async def setup_ui_references(self) -> None:
@@ -82,6 +88,32 @@ class UIManager:
             self.logger.info("InfoPanel引用设置成功")
         except Exception as e:
             self.logger.error(f"获取InfoPanel引用失败: {e}")
+        
+        # 获取状态栏组件引用
+        try:
+            self.connection_status = self.app.query_one("#connection_status", Static)
+            self.logger.debug("连接状态组件引用设置成功")
+        except Exception as e:
+            self.logger.error(f"获取连接状态组件引用失败: {e}")
+            
+        try:
+            self.market_status = self.app.query_one("#market_status", Static)
+            self.logger.debug("市场状态组件引用设置成功") 
+        except Exception as e:
+            self.logger.error(f"获取市场状态组件引用失败: {e}")
+            
+        try:
+            self.refresh_mode = self.app.query_one("#refresh_mode", Static)
+            self.logger.debug("刷新模式组件引用设置成功")
+        except Exception as e:
+            self.logger.error(f"获取刷新模式组件引用失败: {e}")
+            
+            
+        try:
+            self.last_update = self.app.query_one("#last_update", Static)
+            self.logger.debug("最后更新时间组件引用设置成功")
+        except Exception as e:
+            self.logger.error(f"获取最后更新时间组件引用失败: {e}")
         
         self.logger.info("UI组件引用设置完成")
     
@@ -360,3 +392,42 @@ class UIManager:
                 self.stock_table.remove_row(stock_code)
             except Exception as e:
                 self.logger.warning(f"从表格删除股票行失败: {e}")
+    
+    async def update_status_bar(self) -> None:
+        """更新状态栏各个组件的显示内容"""
+        try:
+            from datetime import datetime
+            from base.monitor import ConnectionStatus, MarketStatus
+            
+            # 更新连接状态
+            if self.connection_status:
+                if self.app_core.connection_status == ConnectionStatus.CONNECTED:
+                    self.connection_status.update("🟢 已连接")
+                elif self.app_core.connection_status == ConnectionStatus.DISCONNECTED:
+                    self.connection_status.update("🟡 未连接")
+                else:
+                    self.connection_status.update("🔴 连接错误")
+            
+            # 更新市场状态
+            if self.market_status:
+                if self.app_core.market_status == MarketStatus.OPEN:
+                    self.market_status.update("📈 开盘")
+                else:
+                    self.market_status.update("📉 闭市")
+            
+            # 更新刷新模式
+            if self.refresh_mode:
+                mode_text = getattr(self.app_core, 'refresh_mode', '未知模式')
+                self.refresh_mode.update(f"🔄 {mode_text}")
+            
+            
+            # 更新最后更新时间
+            if self.last_update:
+                current_time = datetime.now()
+                time_str = current_time.strftime("%H:%M:%S")
+                self.last_update.update(f"更新: {time_str}")
+            
+            self.logger.debug("状态栏更新完成")
+            
+        except Exception as e:
+            self.logger.error(f"更新状态栏失败: {e}")
