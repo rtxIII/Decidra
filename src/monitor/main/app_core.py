@@ -7,7 +7,6 @@ AppCore - 应用核心和配置管理模块
 import asyncio
 from typing import List, Dict, Optional, Any
 
-from textual.reactive import reactive
 
 from base.monitor import ConnectionStatus, MarketStatus
 from utils.config_manager import ConfigManager
@@ -28,15 +27,15 @@ class AppCore:
         # 配置管理器
         self.config_manager = ConfigManager()
         
-        # 核心状态 - 使用响应式属性
-        self.current_stock_code: reactive[Optional[str]] = reactive(None)
-        self.connection_status: reactive[ConnectionStatus] = reactive(ConnectionStatus.DISCONNECTED)
-        self.market_status: reactive[MarketStatus] = reactive(MarketStatus.CLOSE)
-        self.refresh_mode: reactive[str] = reactive("快照模式")
-        self.current_group_cursor: reactive[int] = reactive(0)
-        self.current_stock_cursor: reactive[int] = reactive(0)
-        self.active_table: reactive[str] = reactive("stock")
-        self.selected_group_name: reactive[Optional[str]] = reactive(None)
+        # 核心状态 - 普通属性（AppCore不是Textual组件，不能使用reactive）
+        self.current_stock_code: Optional[str] = None
+        self.connection_status: ConnectionStatus = ConnectionStatus.DISCONNECTED
+        self.market_status: MarketStatus = MarketStatus.CLOSE
+        self.refresh_mode: str = "快照模式"
+        self.current_group_cursor: int = 0
+        self.current_stock_cursor: int = 0
+        self.active_table: str = "stock"
+        self.selected_group_name: Optional[str] = None
         
         # 数据存储
         self.monitored_stocks: List[str] = []
