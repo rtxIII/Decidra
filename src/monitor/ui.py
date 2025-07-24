@@ -8,7 +8,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, Grid, Horizontal
 from textual.widgets import (
     Static, DataTable, Label, 
-    TabbedContent, TabPane, Input, ProgressBar
+    TabbedContent, TabPane, ProgressBar
 )
 from textual.reactive import reactive
 from textual.binding import Binding
@@ -260,25 +260,9 @@ class AnalysisPanel(Container):
         padding: 0;
     }
     
-    /* AI交互区域样式 - 现在在第4层水平布局 */
-    AnalysisPanel .ai-interaction-area .ai-assistant-title {
-        width: 15%;
-        background: $primary;
-        color: $text;
-        content-align: center middle;
-        margin-right: 1;
-    }
-    
-    AnalysisPanel .ai-interaction-area .ai-analysis-section {
-        width: 40%;
-        overflow-y: auto;
-        background: $surface;
-        padding: 1;
-        margin-right: 1;
-    }
-    
+    /* AI交互区域样式 - 重新布局为左右两栏 */
     AnalysisPanel .ai-interaction-area .ai-chat-section {
-        width: 30%;
+        width: 50%;
         overflow-y: auto;
         background: $surface;
         border: solid $secondary;
@@ -286,21 +270,11 @@ class AnalysisPanel(Container):
         margin-right: 1;
     }
     
-    AnalysisPanel .ai-interaction-area .ai-input-section {
-        width: 15%;
-        layout: vertical;
+    AnalysisPanel .ai-interaction-area .ai-analysis-section {
+        width: 50%;
+        overflow-y: auto;
         background: $surface;
         padding: 1;
-    }
-    
-    AnalysisPanel .ai-interaction-area .shortcut-buttons {
-        height: 50%;
-        margin-bottom: 1;
-        content-align: center middle;
-    }
-    
-    AnalysisPanel .ai-interaction-area Input {
-        height: 50%;
     }
     """
     
@@ -385,12 +359,22 @@ class AnalysisPanel(Container):
                     id="money_flow_content_column"
                 )
         
-        # 4. AI交互区域 - 与第3.3栏互换位置
+        # 4. AI交互区域 - 重新布局为左右两栏
         with Container(classes="ai-interaction-area"):
-            # AI助手标题
-            yield Static("💬 AI智能分析助手", classes="ai-assistant-title", id="ai_assistant_title")
+            # AI对话历史区域 - 移到左边并扩展到最左边
+            with Container(classes="ai-chat-section"):
+                yield Static(
+                    "[bold white]💭 智能问答 (输入'?'查看命令)[/bold white]\n" +
+                    "[bold green]> 用户:[/bold green] 这只股票适合长期持有吗？\n" +
+                    "[bold cyan]🤖 AI:[/bold cyan] 从基本面看，平安银行ROE12.8%，PB0.65倍，估值偏低。银行股适合\n" +
+                    "      长期价值投资，建议分批建仓，关注利率政策变化...\n\n" +
+                    "[bold green]> 用户:[/bold green] 目前技术面风险大吗？\n" +
+                    "[bold cyan]🤖 AI:[/bold cyan] RSI65.2偏高，短期存在回调风险，建议等待回调至支撑位...\n\n" +
+                    "[bold cyan]🎛️ 快捷功能:[/bold cyan] [F1]技术分析 [F2]基本面 [F3]资金面 [F4]同行对比 [F5]风险评估",
+                    id="ai_chat_history"
+                )
             
-            # AI分析区域
+            # AI分析区域 - 移到右边并扩展到最右边
             with Container(classes="ai-analysis-section"):
                 yield Static(
                     "[bold cyan]🤖 AI:[/bold cyan] 根据技术面分析，该股票处于上升通道中，建议关注：\n\n" +
@@ -407,29 +391,6 @@ class AnalysisPanel(Container):
                     "中期(1-2周): 震荡上行，关注量能",
                     id="ai_analysis_content"
                 )
-            
-            # AI对话历史区域 - MVP设计的核心功能
-            with Container(classes="ai-chat-section"):
-                yield Static(
-                    "[bold white]💭 智能问答 (输入'?'查看命令)[/bold white]\n" +
-                    "[bold green]> 用户:[/bold green] 这只股票适合长期持有吗？\n" +
-                    "[bold cyan]🤖 AI:[/bold cyan] 从基本面看，平安银行ROE12.8%，PB0.65倍，估值偏低。银行股适合\n" +
-                    "      长期价值投资，建议分批建仓，关注利率政策变化...\n\n" +
-                    "[bold green]> 用户:[/bold green] 目前技术面风险大吗？\n" +
-                    "[bold cyan]🤖 AI:[/bold cyan] RSI65.2偏高，短期存在回调风险，建议等待回调至支撑位...",
-                    id="ai_chat_history"
-                )
-            
-            # AI输入区域
-            with Container(classes="ai-input-section"):
-                # 快捷功能按键（按MVP设计添加F4、F5）
-                yield Static(
-                    "[bold cyan]🎛️ 快捷功能:[/bold cyan] [F1]技术分析 [F2]基本面 [F3]资金面 [F4]同行对比 [F5]风险评估",
-                    classes="shortcut-buttons",
-                    id="ai_shortcut_buttons"
-                )
-                # 输入框
-                yield Input(placeholder="输入问题...", id="ai_input_field")
 
 
 class MainLayoutTab(Container):
