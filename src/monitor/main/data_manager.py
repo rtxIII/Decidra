@@ -21,6 +21,7 @@ from utils.logger import get_logger
 from utils.global_vars import PATH_DATA
 
 SNAPSHOT_REFRESH_INTERVAL = 300
+REALTIME_REFRESH_INTERVAL = 3
 CACHE_EXPIRY_HOURS = 8
 BASICINFO_CACHE_FILE = "stock_basicinfo_cache.json"
 
@@ -175,18 +176,118 @@ class DataManager:
                     None,
                     self.futu_market.subscribe,
                     self.app_core.monitored_stocks,
-                    ["QUOTE"],  # 订阅类型：实时报价
+                    ["quote"],  # 订阅类型：实时报价
                     True,       # is_first_push
                     True        # is_unlimit_push
                 )
                 if success:
-                    self.logger.info("实时数据订阅启动")
+                    self.logger.info("实时数据订阅成功")
+                    # 启动实时数据获取循环
+                    self.refresh_timer = asyncio.create_task(self.realtime_data_loop())
+                    self.logger.info("实时数据获取循环启动")
                 else:
                     raise Exception("订阅失败")
         except Exception as e:
             self.logger.error(f"实时数据订阅失败: {e}")
             # 降级到快照模式
             await self.start_snapshot_refresh()
+    
+    async def realtime_data_loop(self) -> None:
+        """实时数据获取循环"""
+        while True:
+            try:
+                # 通过get_stock_quote获取实时报价
+                await self.fetch_realtime_quotes()
+                # 实时模式更新频率更高，每REALTIME_REFRESH_INTERVAL秒更新一次
+                await asyncio.sleep(REALTIME_REFRESH_INTERVAL)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"实时数据获取错误: {e}")
+                await asyncio.sleep(REALTIME_REFRESH_INTERVAL)
+    
+    async def fetch_realtime_quotes(self) -> None:
+        """获取实时报价数据"""
+        try:
+            if not self.app_core.monitored_stocks:
+                return
+            
+            self.logger.debug(f"获取 {len(self.app_core.monitored_stocks)} 只股票的实时报价")
+            
+            # 调用get_stock_quote获取实时报价
+            loop = asyncio.get_event_loop()
+            quotes = await loop.run_in_executor(
+                None,
+                self.futu_market.get_stock_quote,
+                self.app_core.monitored_stocks
+            )
+            
+            if quotes:
+                self.app_core.connection_status = ConnectionStatus.CONNECTED
+                updated_count = 0
+                
+                for quote in quotes:
+                    if hasattr(quote, 'code'):
+                        stock_code = quote.code
+                        # 转换报价数据为StockData格式
+                        stock_info = self.convert_quote_to_stock_data(quote)
+                        if stock_info is not None:
+                            self.app_core.stock_data[stock_code] = stock_info
+                            updated_count += 1
+                            self.logger.debug(f"更新实时数据: {stock_code} - {stock_info.current_price}")
+                
+                # 更新UI
+                await self.app_core.app.ui_manager.update_stock_table()
+                self.logger.info(f"实时数据更新成功，共更新 {updated_count} 只股票")
+            else:
+                self.logger.warning("获取实时报价返回空数据")
+                
+        except Exception as e:
+            self.logger.error(f"获取实时报价失败: {e}")
+    
+    def convert_quote_to_stock_data(self, quote) -> Optional[StockData]:
+        """将富途报价数据转换为标准StockData格式"""
+        try:
+            # 获取价格数据
+            current_price = getattr(quote, 'cur_price', getattr(quote, 'last_price', 0))
+            prev_close = getattr(quote, 'prev_close_price', 0)
+            
+            if current_price <= 0:
+                self.logger.warning(f"股票 {quote.code} 价格数据异常: {current_price}")
+                return None
+                
+            if prev_close <= 0:
+                prev_close = current_price
+                
+            # 计算涨跌幅和涨跌额
+            change_rate = 0.0
+            if prev_close > 0:
+                change_rate = ((current_price - prev_close) / prev_close) * 100
+            change_amount = current_price - prev_close
+            
+            # 从缓存获取股票名称
+            basic_info = self.get_stock_basicinfo_from_cache(quote.code)
+            stock_name = basic_info.get('name', quote.code) if basic_info else quote.code
+            
+            return StockData(
+                code=quote.code,
+                name=stock_name,
+                current_price=current_price,
+                open_price=getattr(quote, 'open_price', current_price),
+                prev_close=prev_close,
+                change_rate=change_rate,
+                change_amount=change_amount,
+                volume=max(0, getattr(quote, 'volume', 0)),
+                turnover=getattr(quote, 'turnover', 0),
+                high_price=getattr(quote, 'high_price', current_price),
+                low_price=getattr(quote, 'low_price', current_price),
+                update_time=datetime.now(),
+                market_status=MarketStatus.OPEN
+            )
+            
+        except Exception as e:
+            self.logger.error(f"转换报价数据时发生错误: {e}")
+            return None
     
     async def start_snapshot_refresh(self) -> None:
         """启动快照数据刷新"""

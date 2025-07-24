@@ -754,7 +754,7 @@ class MonitorApp(App):
                     None,
                     self.futu_market.subscribe,
                     self.monitored_stocks,
-                    ["QUOTE"],  # 订阅类型：实时报价
+                    ["quote"],  # 订阅类型：实时报价
                     True,       # is_first_push
                     True        # is_unlimit_push
                 )

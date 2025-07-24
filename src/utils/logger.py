@@ -12,7 +12,7 @@ PATH = Path(__file__).parent.parent
 
 log_folder = os.path.join(PATH, ".runtime/log/")
 Path(log_folder).mkdir(parents=True, exist_ok=True)
-LOG_FILE =  os.path.join(log_folder, f"decidra_{str(datetime.date.today())}.log")
+LOG_FILE =  os.path.join(log_folder, f"decidra_{datetime.datetime.now().strftime('%Y%m%d')}.log")
 
 
 class ColorFormatter(logging.Formatter):
@@ -41,7 +41,7 @@ class ColorLogger(logging.Logger):
         #console = logging.StreamHandler()
         #console.setFormatter(color_formatter)
         #self.addHandler(console)
-        file_handler = TimedRotatingFileHandler(LOG_FILE, when='midnight')
+        file_handler = TimedRotatingFileHandler(LOG_FILE, when='h', interval=8, backupCount=0)
         file_handler.setFormatter(FORMATTER)
         self.addHandler(file_handler)
         self.propagate = False
