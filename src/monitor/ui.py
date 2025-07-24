@@ -454,7 +454,7 @@ class StatusBar(Container):
     StatusBar {
         height: 3;
         background: $surface;
-        color: $text;
+        color: black;
         layout: horizontal;
         border: solid $accent;
         margin-bottom: 0;
@@ -466,24 +466,24 @@ class StatusBar(Container):
         padding: 0 1;
         content-align: center middle;
         background: $accent;
-        color: $text;
+        color: black;
     }
     
     StatusBar .connection-status {
         background: $success;
-        color: $text-success;
+        color: black;
         padding: 0 1;
     }
     
     StatusBar .market-status {
         background: $warning;
-        color: $text-warning;
+        color: black;
         padding: 0 1;
     }
     
     StatusBar .refresh-mode {
         background: $primary;
-        color: $text-primary;
+        color: black;
         padding: 0 1;
     }
     """
