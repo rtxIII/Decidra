@@ -571,14 +571,10 @@ class MonitorLayout(Container):
         yield StatusBar(id="status_bar")
         
         # 主体标签页内容
-        with TabbedContent(initial="main"):
+        with TabbedContent(initial="main", id="main_tabs"):
             # 主界面标签页
             with TabPane("主界面", id="main"):
                 yield MainLayoutTab(id="main_layout")
-            
-            # 分析界面标签页
-            with TabPane("分析界面", id="analysis"):
-                yield AnalysisLayoutTab(id="analysis_layout")
 
 
 class ResponsiveLayout(Container):
@@ -659,7 +655,6 @@ __all__ = [
     "UserGroupPanel", 
     "AnalysisPanel",
     "MainLayoutTab",
-    "AnalysisLayoutTab",
     "StatusBar",
     "MonitorLayout",
     "ResponsiveLayout"

@@ -7,7 +7,7 @@ EventHandler - 事件处理和用户动作模块
 from typing import Optional
 
 from textual.events import Key
-from textual.widgets import DataTable, TabbedContent
+from textual.widgets import DataTable, TabbedContent, TabPane
 from textual.validation import Function
 
 from monitor.widgets.window_dialog import show_confirm_dialog
@@ -338,8 +338,54 @@ class EventHandler:
             self.logger.error(f"光标向下移动失败: {e}")
     
     async def action_select_group(self) -> None:
-        """选择当前光标所在的分组"""
-        if self.app_core.active_table == "group" and 0 <= self.app_core.current_group_cursor < len(self.app_core.group_data):
+        """空格键处理：根据当前活跃表格执行不同操作"""
+        if self.app_core.active_table == "stock":
+            # 当前在股票表格：为选中股票创建分析tab
+            await self.create_stock_analysis_tab()
+        elif self.app_core.active_table == "group":
+            # 当前在分组表格：选择分组（原有逻辑）
+            await self.select_current_group()
+    
+    async def create_stock_analysis_tab(self) -> None:
+        """为当前选中的股票创建分析tab"""
+        try:
+            if 0 <= self.app_core.current_stock_cursor < len(self.app_core.monitored_stocks):
+                stock_code = self.app_core.monitored_stocks[self.app_core.current_stock_cursor]
+                
+                # 获取TabbedContent引用
+                tabbed_content = self.app.query_one("#main_tabs", TabbedContent)
+                
+                # 检查是否已存在该股票的分析tab
+                existing_tab_id = f"analysis_{stock_code.replace('.', '_')}"
+                if tabbed_content.query(f"#{existing_tab_id}"):
+                    # 如果已存在，直接激活
+                    tabbed_content.active = existing_tab_id
+                    self.logger.info(f"切换到已存在的分析页面: {stock_code}")
+                    return
+                
+                # 创建分析内容
+                from monitor.ui import AnalysisPanel
+                analysis_content = AnalysisPanel(id="analysis_panel")
+                
+                # 创建新的分析tab
+                tab_title = f"📊 {stock_code}"
+                new_pane = TabPane(tab_title, analysis_content, id=existing_tab_id)
+                
+                # 异步添加tab
+                await tabbed_content.add_pane(new_pane)
+                
+                # 激活新创建的tab
+                tabbed_content.active = existing_tab_id
+                
+                self.logger.info(f"已创建股票分析页面: {stock_code}")
+            else:
+                self.logger.warning("没有选中的股票，无法创建分析页面")
+        except Exception as e:
+            self.logger.error(f"创建股票分析页面失败: {e}")
+    
+    async def select_current_group(self) -> None:
+        """选择当前光标所在的分组（原有逻辑）"""
+        if 0 <= self.app_core.current_group_cursor < len(self.app_core.group_data):
             group_data = self.app_core.group_data[self.app_core.current_group_cursor]
             self.app_core.selected_group_name = group_data['name']
             
