@@ -47,6 +47,12 @@ class DataManager:
         
         # 定时器
         self.refresh_timer: Optional[asyncio.Task] = None
+        self.market_status_poller: Optional[asyncio.Task] = None
+        
+        # 全局市场状态缓存
+        self._global_market_state_cache = None
+        self._market_status_cache_timestamp = 0.0
+        self._market_status_cache_ttl = 30.0  # 缓存有效期30秒
         
         self.logger.info("DataManager 初始化完成")
     
@@ -70,6 +76,9 @@ class DataManager:
                     
                     # 连接成功后立即加载股票基本信息
                     await self.load_stock_basicinfo()
+                    
+                    # 启动市场状态轮询任务
+                    await self.start_market_status_poller()
                 else:
                     self.app_core.connection_status = ConnectionStatus.DISCONNECTED
                     self.logger.warning("富途API连接失败")
@@ -129,21 +138,184 @@ class DataManager:
             self.app_core.connection_status = ConnectionStatus.ERROR
             return False
     
+    def get_cached_global_market_state(self):
+        """获取缓存的全局市场状态"""
+        current_time = time.time()
+        
+        # 检查缓存是否有效
+        if (self._global_market_state_cache is not None and 
+            current_time - self._market_status_cache_timestamp < self._market_status_cache_ttl):
+            return self._global_market_state_cache
+        
+        return None
+    
+    def update_global_market_state_cache(self, global_state):
+        """更新全局市场状态缓存"""
+        self._global_market_state_cache = global_state
+        self._market_status_cache_timestamp = time.time()
+        self.logger.debug(f"全局市场状态缓存已更新: {global_state}")
+    
+    def get_market_status_by_prefix(self, market_prefix: str) -> str:
+        """根据市场前缀获取特定市场状态
+        
+        Args:
+            market_prefix: 市场前缀 ('HK', 'US', 'SH', 'SZ')
+            
+        Returns:
+            str: 市场状态字符串，如 'OPEN', 'CLOSE', 'MORNING' 等
+        """
+        cached_state = self.get_cached_global_market_state()
+        
+        if cached_state is None:
+            return 'UNKNOWN'
+        
+        market_status_map = {
+            'HK': cached_state.market_hk,
+            'US': cached_state.market_us, 
+            'SH': cached_state.market_sh,
+            'SZ': cached_state.market_sz
+        }
+        
+        return market_status_map.get(market_prefix, 'UNKNOWN') or 'CLOSE'
+    
+    async def start_market_status_poller(self):
+        """启动市场状态轮询任务"""
+        if self.market_status_poller and not self.market_status_poller.done():
+            self.logger.info("市场状态轮询任务已在运行")
+            return
+        
+        self.market_status_poller = asyncio.create_task(self.market_status_polling_loop())
+        self.logger.info("市场状态轮询任务已启动")
+    
+    async def market_status_polling_loop(self):
+        """市场状态轮询循环"""
+        while True:
+            try:
+                if self.app_core.connection_status == ConnectionStatus.CONNECTED:
+                    # 获取全局市场状态并更新缓存
+                    loop = asyncio.get_event_loop()
+                    global_state = await loop.run_in_executor(
+                        None,
+                        self.futu_market.get_global_state
+                    )
+                    
+                    if global_state:
+                        self.update_global_market_state_cache(global_state)
+                        self.logger.debug("市场状态轮询更新成功")
+                    else:
+                        self.logger.warning("市场状态轮询获取数据为空")
+                
+                # 每30秒轮询一次
+                await asyncio.sleep(self._market_status_cache_ttl)
+                
+            except asyncio.CancelledError:
+                self.logger.info("市场状态轮询任务已取消")
+                break
+            except Exception as e:
+                self.logger.error(f"市场状态轮询错误: {e}")
+                # 出错时等待更长时间再重试
+                await asyncio.sleep(60)
     async def detect_market_status(self) -> MarketStatus:
-        """检测市场状态"""
+        """检测市场状态 - 优先使用缓存，缓存失效时使用富途API"""
         try:
-            # 简化的市场状态检测
+            if self.app_core.connection_status != ConnectionStatus.CONNECTED:
+                self.logger.warning("富途API未连接，使用本地时间判断市场状态")
+                return self._detect_market_status_fallback()
+            
+            # 优先从缓存获取全局市场状态
+            global_state = self.get_cached_global_market_state()
+            
+            if global_state is None:
+                # 缓存失效，使用富途API获取全局市场状态
+                self.logger.debug("市场状态缓存失效，从API重新获取")
+                loop = asyncio.get_event_loop()
+                global_state = await loop.run_in_executor(
+                    None,
+                    self.futu_market.get_global_state
+                )
+                
+                # 更新缓存
+                if global_state:
+                    self.update_global_market_state_cache(global_state)
+            else:
+                self.logger.debug("使用缓存的市场状态数据")
+            
+            if global_state:
+                # 检查监控股票涉及的市场状态
+                markets_open = 0
+                markets_total = 0
+                
+                for stock_code in self.app_core.monitored_stocks:
+                    market_prefix = stock_code.split('.')[0]  # HK, US, SH, SZ
+                    
+                    if market_prefix == 'HK':
+                        markets_total += 1
+                        # 检查港股市场状态
+                        hk_status = global_state.market_hk or 'CLOSE'
+                        if hk_status in ['OPEN', 'TRADING', 'MORNING', 'AFTERNOON']:
+                            markets_open += 1
+                            
+                    elif market_prefix == 'US':
+                        markets_total += 1
+                        # 检查美股市场状态
+                        us_status = global_state.market_us or 'CLOSE'
+                        if us_status in ['OPEN', 'TRADING', 'PRE_MARKET', 'AFTER_HOURS']:
+                            markets_open += 1
+                            
+                    elif market_prefix == 'SH':
+                        markets_total += 1
+                        # 检查上海市场状态
+                        sh_status = global_state.market_sh or 'CLOSE'
+                        if sh_status in ['OPEN', 'TRADING', 'MORNING', 'AFTERNOON']:
+                            markets_open += 1
+                            
+                    elif market_prefix == 'SZ':
+                        markets_total += 1
+                        # 检查深圳市场状态
+                        sz_status = global_state.market_sz or 'CLOSE'
+                        if sz_status in ['OPEN', 'TRADING', 'MORNING', 'AFTERNOON']:
+                            markets_open += 1
+                
+                # 如果有任何监控的市场在开盘，则认为是开盘状态
+                if markets_open > 0:
+                    self.logger.info(f"市场状态检测：{markets_open}/{markets_total} 个市场开盘")
+                    return MarketStatus.OPEN
+                else:
+                    self.logger.info(f"市场状态检测：所有监控市场均已闭市")
+                    return MarketStatus.CLOSE
+            else:
+                self.logger.warning("富途API返回的全局状态数据格式异常，使用fallback方法")
+                return self._detect_market_status_fallback()
+                
+        except Exception as e:
+            self.logger.error(f"检测市场状态失败: {e}，使用fallback方法")
+            return self._detect_market_status_fallback()
+    
+    def _detect_market_status_fallback(self) -> MarketStatus:
+        """备用市场状态检测方法 - 基于时间和工作日判断"""
+        try:
             current_time = datetime.now()
             hour = current_time.hour
+            minute = current_time.minute
+            weekday = current_time.weekday()  # 0=周一, 6=周日
             
-            # 简单判断：9:30-16:00为开盘时间
-            if 9 <= hour < 16:
+            # 周末必定闭市
+            if weekday >= 5:  # 周六和周日
+                return MarketStatus.CLOSE
+            
+            # 简单的交易时间判断（涵盖港股和A股的主要交易时间）
+            # 港股：9:30-12:00, 13:00-16:00
+            # A股：9:30-11:30, 13:00-15:00
+            morning_open = (9 < hour < 12) or (hour == 9 and minute >= 30)
+            afternoon_open = (13 <= hour < 16)
+            
+            if morning_open or afternoon_open:
                 return MarketStatus.OPEN
             else:
                 return MarketStatus.CLOSE
                 
         except Exception as e:
-            self.logger.error(f"检测市场状态失败: {e}")
+            self.logger.error(f"备用市场状态检测失败: {e}")
             return MarketStatus.CLOSE
     
     async def start_data_refresh(self) -> None:
@@ -151,6 +323,9 @@ class DataManager:
         try:
             # 判断市场状态并设置刷新模式
             market_status = await self.detect_market_status()
+            
+            # 同步更新app_core中的市场状态
+            self.app_core.market_status = market_status
             
             if market_status == MarketStatus.OPEN:
                 self.app_core.refresh_mode = "实时模式"
@@ -161,7 +336,10 @@ class DataManager:
                 # 启动快照数据刷新
                 await self.start_snapshot_refresh()
             
-            self.logger.info(f"数据刷新启动: {self.app_core.refresh_mode}")
+            self.logger.info(f"数据刷新启动: {self.app_core.refresh_mode}, 市场状态: {market_status.value}")
+            
+            # 更新状态显示
+            await self.app_core.update_status_display()
             
         except Exception as e:
             self.logger.error(f"启动数据刷新失败: {e}")
@@ -462,6 +640,20 @@ class DataManager:
             if self.refresh_timer:
                 self.refresh_timer.cancel()
                 self.refresh_timer = None
+            
+            # 停止市场状态轮询任务
+            if self.market_status_poller:
+                self.market_status_poller.cancel()
+                try:
+                    await self.market_status_poller
+                except asyncio.CancelledError:
+                    pass
+                self.market_status_poller = None
+                self.logger.info("市场状态轮询任务已停止")
+            
+            # 清理缓存
+            self._global_market_state_cache = None
+            self._market_status_cache_timestamp = 0.0
             
             # 清理数据流管理器
             if hasattr(self.data_flow_manager, 'cleanup'):

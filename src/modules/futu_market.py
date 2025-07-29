@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+from base.futu_class import MarketState, GlobalMarketState
 
 import pandas as pd
 
@@ -54,13 +55,27 @@ class FutuMarket(FutuModuleBase):
             self.logger.error(f"Get market state error: {e}")
             return []
 
-    def get_global_state(self) -> Dict:
-        """获取全局状态"""
+    def get_global_state(self) -> Optional[GlobalMarketState]:
+        """获取全局状态
+        
+        Returns:
+            Optional[GlobalMarketState]: 全局市场状态对象，失败时返回None
+        """
         try:
-            return self.client.quote.get_global_state()
+            result = self.client.quote.get_global_state()
+            
+            if result and isinstance(result, dict):
+                # 使用GlobalMarketState.from_dict处理返回数据
+                global_state = GlobalMarketState.from_dict(result)
+                self.logger.debug(f"Global state retrieved successfully: qot_logined={global_state.qot_logined}")
+                return global_state
+            else:
+                self.logger.warning(f"Invalid global state format: {type(result)}")
+                return None
+                
         except Exception as e:
             self.logger.error(f"Get global state error: {e}")
-            return {}
+            return None
 
     # ================== 实时行情接口 ==================
     

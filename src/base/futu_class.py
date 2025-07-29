@@ -480,15 +480,54 @@ class FutuConfig:
 @dataclass
 class MarketState:
     """市场状态信息 - 对应 get_market_state 返回"""
-    code: str                  # 股票代码
-    market_state: str         # 市场状态
+    code: str = ''                  # 股票代码
+    market_state: str = 'CLOSE'     # 市场状态
     
     @classmethod
     def from_dict(cls, data: dict) -> 'MarketState':
         """从字典创建MarketState对象"""
         return cls(
             code=data.get('code', ''),
-            market_state=data.get('market_state', '')
+            market_state=data.get('market_state', 'CLOSE')
+        )
+
+
+@dataclass
+class GlobalMarketState:
+    """全局市场状态信息 - 对应 get_global_state 返回"""
+    market_hk: Optional[str] = 'CLOSE'        # 港股市场状态
+    market_us: Optional[str] = 'CLOSE'        # 美股市场状态
+    market_sh: Optional[str] = 'CLOSE'        # 上海市场状态
+    market_sz: Optional[str] = 'CLOSE'        # 深圳市场状态
+    market_hkfuture: Optional[str] = 'CLOSE'  # 港股期货状态
+    market_usfuture: Optional[str] = 'CLOSE'  # 美股期货状态
+    market_sgfuture: Optional[str] = 'CLOSE'  # 新加坡期货状态
+    market_jpfuture: Optional[str] = 'CLOSE'  # 日本期货状态
+    server_ver: str = ''                      # OpenD版本号
+    trd_logined: bool = False                 # 交易服务器登录状态
+    qot_logined: bool = False                 # 行情服务器登录状态
+    timestamp: float = 0.0                    # 格林威治时间戳
+    local_timestamp: float = 0.0              # OpenD机器本地时间戳
+    program_status_type: str = ''             # 程序当前状态
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'GlobalMarketState':
+        """从字典创建GlobalMarketState对象"""
+        return cls(
+            market_hk=data.get('market_hk', 'CLOSE'),
+            market_us=data.get('market_us', 'CLOSE'),
+            market_sh=data.get('market_sh', 'CLOSE'),
+            market_sz=data.get('market_sz', 'CLOSE'),
+            market_hkfuture=data.get('market_hkfuture', 'CLOSE'),
+            market_usfuture=data.get('market_usfuture', 'CLOSE'),
+            market_sgfuture=data.get('market_sgfuture', 'CLOSE'),
+            market_jpfuture=data.get('market_jpfuture', 'CLOSE'),
+            server_ver=data.get('server_ver', ''),
+            trd_logined=data.get('trd_logined', False),
+            qot_logined=data.get('qot_logined', False),
+            timestamp=float(data.get('timestamp', 0.0)),
+            local_timestamp=float(data.get('local_timestamp', 0.0)),
+            program_status_type=data.get('program_status_type', '')
         )
 
 
