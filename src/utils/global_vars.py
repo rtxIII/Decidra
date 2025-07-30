@@ -10,7 +10,7 @@ import yaml
 PATH = Path(__file__).parent.parent
 
 PATH_RUNTIME = PATH / '.runtime'
-PATH_CONFIG = PATH_RUNTIME / 'config'
+PATH_CONFIG = PATH
 PATH_DATA = PATH_RUNTIME / 'data'
 PATH_DATABASE = PATH_RUNTIME / 'database'  # Obsoleted
 PATH_LOG = PATH_RUNTIME / 'log'

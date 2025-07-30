@@ -487,19 +487,19 @@ class HKEXInterface:
         """
         full_stock_list = "https://www.hkex.com.hk/eng/services/trading/securities/securitieslists/ListOfSecurities.xlsx"
         resp = requests.get(full_stock_list)
-        with open(PATH_DATA / 'stocks' / 'ListOfSecurities.xlsx', 'wb') as fp:
+        with open(PATH_DATA / 'Stocks' / 'ListOfSecurities.xlsx', 'wb') as fp:
             fp.write(resp.content)
 
-        wb = openpyxl.load_workbook(PATH_DATA / 'stocks' / 'ListOfSecurities.xlsx')
+        wb = openpyxl.load_workbook(PATH_DATA / 'Stocks' / 'ListOfSecurities.xlsx')
         sh = wb.active
-        with open(PATH_DATA / 'stocks' / 'ListOfSecurities.csv', 'w', newline="") as f:
+        with open(PATH_DATA / 'Stocks' / 'ListOfSecurities.csv', 'w', newline="") as f:
             c = csv.writer(f)
             for r in sh.rows:
                 c.writerow([cell.value for cell in r])
 
     @staticmethod
     def get_security_df_full() -> pd.DataFrame:
-        csv_path = PATH_DATA / 'stocks' / 'ListOfSecurities.csv'
+        csv_path = PATH_DATA / 'Stocks' / 'ListOfSecurities.csv'
         
         if not csv_path.exists():
             # 如果文件不存在，返回空的DataFrame

@@ -54,7 +54,7 @@ class ConfigManager:
         
         # 设置配置目录
         if config_dir is None:
-            self.config_dir = Path(__file__).parent.parent / '.runtime' / 'config'
+            self.config_dir = Path(__file__).parent.parent
         else:
             self.config_dir = Path(config_dir)
         

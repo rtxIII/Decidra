@@ -836,52 +836,6 @@ def reload_config():
         sys.exit(1)
 
 
-@config_cmd.command('backup')
-@click.option('--target', help='备份目标目录')
-def backup_config(target: Optional[str]):
-    """备份配置文件"""
-    try:
-        if get_config_manager is None:
-            print_error("新配置管理器不可用")
-            sys.exit(1)
-        
-        config_manager = get_config_manager()
-        
-        if target is None:
-            # 默认备份到同目录
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_dir = config_manager.config_dir / f'backup_{timestamp}'
-        else:
-            backup_dir = Path(target)
-        
-        backup_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 备份主要配置文件
-        import shutil
-        files_to_backup = [
-            ('config.ini', config_manager.config_ini_path),
-            ('stock_strategy_map.yml', config_manager.strategy_map_path)
-        ]
-        
-        backed_up = []
-        for filename, source_path in files_to_backup:
-            if source_path.exists():
-                target_path = backup_dir / filename
-                shutil.copy2(source_path, target_path)
-                backed_up.append(filename)
-        
-        if backed_up:
-            print_success(f"配置备份完成: {backup_dir}")
-            for filename in backed_up:
-                click.echo(f"  ✓ {filename}")
-        else:
-            print_warning("没有找到需要备份的配置文件")
-        
-    except Exception as e:
-        print_error(f"配置备份失败: {e}")
-        sys.exit(1)
-
-
 # 将config_cmd添加到主CLI组
 cli.add_command(config_cmd, name='config')
 
