@@ -410,7 +410,10 @@ class UIManager:
             
             # 更新市场状态
             if self.market_status:
-                if self.app_core.market_status == MarketStatus.OPEN:
+                if self.app_core.market_status == MarketStatus.OPEN and self.app_core.open_markets:
+                    open_markets_text = ",".join(self.app_core.open_markets)
+                    self.market_status.update(f"📈 开盘({open_markets_text})")
+                elif self.app_core.market_status == MarketStatus.OPEN:
                     self.market_status.update("📈 开盘")
                 else:
                     self.market_status.update("📉 闭市")
@@ -418,7 +421,11 @@ class UIManager:
             # 更新刷新模式
             if self.refresh_mode:
                 mode_text = getattr(self.app_core, 'refresh_mode', '未知模式')
+                self.logger.info(f"正在更新刷新模式显示: {mode_text}")
                 self.refresh_mode.update(f"🔄 {mode_text}")
+                self.logger.info(f"刷新模式显示更新完成: 🔄 {mode_text}")
+            else:
+                self.logger.warning("刷新模式组件引用为空，无法更新显示")
             
             
             # 更新最后更新时间

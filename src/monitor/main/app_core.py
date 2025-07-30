@@ -32,6 +32,7 @@ class AppCore:
         self.connection_status: ConnectionStatus = ConnectionStatus.DISCONNECTED
         self.market_status: MarketStatus = MarketStatus.CLOSE
         self.refresh_mode: str = "快照模式"
+        self.open_markets: List[str] = []  # 存储开市的市场名称
         self.current_group_cursor: int = 0
         self.current_stock_cursor: int = 0
         self.active_table: str = "stock"
@@ -147,7 +148,15 @@ class AppCore:
         try:
             # 构建状态信息
             connection_status = "🟢 已连接" if self.connection_status == ConnectionStatus.CONNECTED else "🔴 未连接"
-            market_status = "📈 开盘" if self.market_status == MarketStatus.OPEN else "📉 闭市"
+            
+            # 构建市场状态信息，包含开市的市场名称
+            if self.market_status == MarketStatus.OPEN and self.open_markets:
+                open_markets_text = ",".join(self.open_markets)
+                market_status = f"📈 开盘({open_markets_text})"
+            elif self.market_status == MarketStatus.OPEN:
+                market_status = "📈 开盘"
+            else:
+                market_status = "📉 闭市"
             refresh_info = f"🔄 {self.refresh_mode}"
             stock_count = f"📊 监控{len(self.monitored_stocks)}只股票"
             
@@ -157,7 +166,11 @@ class AppCore:
             # 更新状态栏组件
             ui_manager = getattr(self.app, 'ui_manager', None)
             if ui_manager and hasattr(ui_manager, 'update_status_bar'):
+                self.logger.info(f"调用update_status_bar更新界面显示，当前refresh_mode: {self.refresh_mode}")
                 await ui_manager.update_status_bar()
+                self.logger.info("update_status_bar调用完成")
+            else:
+                self.logger.warning("ui_manager不存在或没有update_status_bar方法")
             
         except Exception as e:
             self.logger.error(f"更新状态显示失败: {e}")

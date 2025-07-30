@@ -324,10 +324,26 @@ class GroupManager:
                     # 等待一个事件循环，确保UI更新完成
                     await asyncio.sleep(0.1)
 
-                    # 刷新股票数据
+                    # 如果处于实时模式，需要重新订阅新股票
                     data_manager = getattr(self.app_core.app, 'data_manager', None)
                     if data_manager:
-                        await data_manager.refresh_stock_data()
+                        # 检查当前是否处于实时模式
+                        if self.app_core.refresh_mode == "实时模式":
+                            self.logger.info("检测到实时模式，重新启动数据订阅...")
+                            # 停止当前的刷新任务
+                            if data_manager.refresh_timer:
+                                data_manager.refresh_timer.cancel()
+                                try:
+                                    await data_manager.refresh_timer
+                                except asyncio.CancelledError:
+                                    pass
+                                data_manager.refresh_timer = None
+                            
+                            # 重新启动数据刷新（这会重新订阅新的股票列表）
+                            await data_manager.start_data_refresh()
+                        else:
+                            # 快照模式只需要刷新数据
+                            await data_manager.refresh_stock_data()
                     
                     self.logger.info(f"已切换到分组 '{group_data['name']}' 的股票，共 {len(new_monitored_stocks)} 只")
                 else:

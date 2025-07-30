@@ -260,6 +260,10 @@ class EventHandler:
     async def action_refresh(self) -> None:
         """手动刷新动作"""
         self.logger.info("开始手动刷新数据...")
+        # 向信息面板显示手动刷新开始
+        ui_manager = getattr(self.app, 'ui_manager', None)
+        if ui_manager and ui_manager.info_panel:
+            await ui_manager.info_panel.log_info("开始手动刷新数据", "手动操作")
         
         # 直接执行数据刷新，不检查连接状态
         data_manager = getattr(self.app_core.app, 'data_manager', None)
@@ -275,6 +279,9 @@ class EventHandler:
             await ui_manager.update_stock_table()
         
         self.logger.info("手动刷新数据完成")
+        # 向信息面板显示手动刷新完成
+        if ui_manager and ui_manager.info_panel:
+            await ui_manager.info_panel.log_info("手动刷新数据完成", "手动操作")
     
     async def action_help(self) -> None:
         """显示帮助动作"""

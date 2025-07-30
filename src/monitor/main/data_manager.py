@@ -21,7 +21,7 @@ from utils.logger import get_logger
 from utils.global_vars import PATH_DATA
 
 SNAPSHOT_REFRESH_INTERVAL = 300
-REALTIME_REFRESH_INTERVAL = 3
+REALTIME_REFRESH_INTERVAL = 1
 CACHE_EXPIRY_HOURS = 8
 BASICINFO_CACHE_FILE = "stock_basicinfo_cache.json"
 
@@ -73,6 +73,9 @@ class DataManager:
                 if connect_success:
                     self.app_core.connection_status = ConnectionStatus.CONNECTED
                     self.logger.info("富途API连接成功")
+                    # 向信息面板显示连接状态
+                    if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
+                        await self.app_core.app.ui_manager.info_panel.log_info("富途API连接成功", "连接状态")
                     
                     # 连接成功后立即加载股票基本信息
                     await self.load_stock_basicinfo()
@@ -244,6 +247,7 @@ class DataManager:
                 # 检查监控股票涉及的市场状态
                 markets_open = 0
                 markets_total = 0
+                open_markets = []  # 记录开市的市场名称
                 
                 for stock_code in self.app_core.monitored_stocks:
                     market_prefix = stock_code.split('.')[0]  # HK, US, SH, SZ
@@ -252,29 +256,69 @@ class DataManager:
                         markets_total += 1
                         # 检查港股市场状态
                         hk_status = global_state.market_hk or 'CLOSE'
-                        if hk_status in ['OPEN', 'TRADING', 'MORNING', 'AFTERNOON']:
+                        # 港股闭市状态：CLOSED, CLOSE, REST, HALT等
+                        # 港股开盘状态：除了明确的闭市状态外，其他状态都可能表示某种形式的开盘
+                        closed_statuses = ['CLOSED', 'CLOSE', 'REST', 'HALT', 'SUSPEND']
+                        if hk_status not in closed_statuses:
                             markets_open += 1
+                            if 'HK' not in open_markets:
+                                open_markets.append('HK')
+                            self.logger.debug(f"港股市场开盘状态: {hk_status}")
+                        else:
+                            self.logger.debug(f"港股市场闭市状态: {hk_status}")
                             
                     elif market_prefix == 'US':
                         markets_total += 1
                         # 检查美股市场状态
                         us_status = global_state.market_us or 'CLOSE'
-                        if us_status in ['OPEN', 'TRADING', 'PRE_MARKET', 'AFTER_HOURS']:
+                        # 美股闭市状态：CLOSED, CLOSE, REST, HALT等
+                        closed_statuses = ['CLOSED', 'CLOSE', 'REST', 'HALT', 'SUSPEND', 'PRE_MARKET_BEGIN', 'PRE_MARKET_END']
+                        if us_status not in closed_statuses:
                             markets_open += 1
+                            if 'US' not in open_markets:
+                                open_markets.append('US')
+                            self.logger.debug(f"美股市场开盘状态: {us_status}")
+                        else:
+                            self.logger.debug(f"美股市场闭市状态: {us_status}")
                             
                     elif market_prefix == 'SH':
                         markets_total += 1
                         # 检查上海市场状态
                         sh_status = global_state.market_sh or 'CLOSE'
-                        if sh_status in ['OPEN', 'TRADING', 'MORNING', 'AFTERNOON']:
+                        # 上海市场闭市状态
+                        closed_statuses = ['CLOSED', 'CLOSE', 'REST', 'HALT', 'SUSPEND']
+                        if sh_status not in closed_statuses:
                             markets_open += 1
+                            if 'SH' not in open_markets:
+                                open_markets.append('SH')
+                            self.logger.debug(f"上海市场开盘状态: {sh_status}")
+                        else:
+                            self.logger.debug(f"上海市场闭市状态: {sh_status}")
                             
                     elif market_prefix == 'SZ':
                         markets_total += 1
                         # 检查深圳市场状态
                         sz_status = global_state.market_sz or 'CLOSE'
-                        if sz_status in ['OPEN', 'TRADING', 'MORNING', 'AFTERNOON']:
+                        # 深圳市场闭市状态
+                        closed_statuses = ['CLOSED', 'CLOSE', 'REST', 'HALT', 'SUSPEND']
+                        if sz_status not in closed_statuses:
                             markets_open += 1
+                            if 'SZ' not in open_markets:
+                                open_markets.append('SZ')
+                            self.logger.debug(f"深圳市场开盘状态: {sz_status}")
+                        else:
+                            self.logger.debug(f"深圳市场闭市状态: {sz_status}")
+                
+                # 向信息面板显示市场状态
+                if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
+                    if open_markets:
+                        open_markets_text = ", ".join(open_markets)
+                        await self.app_core.app.ui_manager.info_panel.log_info(f"市场状态: {markets_open}/{markets_total} 个市场开盘 (开市: {open_markets_text})", "市场状态")
+                    else:
+                        await self.app_core.app.ui_manager.info_panel.log_info(f"市场状态: {markets_open}/{markets_total} 个市场开盘 (全部闭市)", "市场状态")
+                
+                # 更新开市市场信息到app_core
+                self.app_core.open_markets = open_markets.copy()
                 
                 # 如果有任何监控的市场在开盘，则认为是开盘状态
                 if markets_open > 0:
@@ -326,6 +370,7 @@ class DataManager:
             
             # 同步更新app_core中的市场状态
             self.app_core.market_status = market_status
+            # 注意：这里需要从detect_market_status返回开市市场信息，暂时先设为空
             
             if market_status == MarketStatus.OPEN:
                 self.app_core.refresh_mode = "实时模式"
@@ -337,6 +382,9 @@ class DataManager:
                 await self.start_snapshot_refresh()
             
             self.logger.info(f"数据刷新启动: {self.app_core.refresh_mode}, 市场状态: {market_status.value}")
+            # 向信息面板显示数据刷新模式变化
+            if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
+                await self.app_core.app.ui_manager.info_panel.log_info(f"数据刷新启动: {self.app_core.refresh_mode}", "系统")
             
             # 更新状态显示
             await self.app_core.update_status_display()
@@ -348,6 +396,13 @@ class DataManager:
         """启动实时数据订阅"""
         try:
             if self.app_core.connection_status == ConnectionStatus.CONNECTED:
+                # 首先取消所有之前的订阅，避免冲突
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    self.futu_market.unsubscribe_all
+                )
+                self.logger.info("已取消所有之前的订阅")
                 # 订阅实时数据
                 loop = asyncio.get_event_loop()
                 success = await loop.run_in_executor(
@@ -538,6 +593,9 @@ class DataManager:
                 await self.app_core.app.ui_manager.update_stock_table()
                 
                 self.logger.info(f"股票数据刷新成功，共更新 {updated_count} 只股票")
+                # 向信息面板显示数据刷新信息
+                if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
+                    await self.app_core.app.ui_manager.info_panel.log_info(f"股票数据已更新: {updated_count} 只股票", "数据刷新")
             else:
                 # API调用返回空数据，可能是连接问题
                 self.app_core.connection_status = ConnectionStatus.DISCONNECTED
@@ -553,6 +611,9 @@ class DataManager:
                 reconnect_success = await self.attempt_reconnect()
                 if reconnect_success:
                     self.logger.info("重连成功，重新尝试获取数据")
+                    # 向信息面板显示重连成功信息
+                    if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
+                        await self.app_core.app.ui_manager.info_panel.log_info("富途API重连成功", "连接状态")
                     # 递归重试一次
                     try:
                         await self.refresh_stock_data()

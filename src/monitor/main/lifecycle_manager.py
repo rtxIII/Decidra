@@ -68,6 +68,9 @@ class LifecycleManager:
         await self.start_task_monitoring()
         
         self.logger.info("MonitorApp 启动完成")
+        # 向信息面板显示启动完成信息
+        if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
+            await self.app_core.app.ui_manager.info_panel.log_info("应用程序启动完成", "系统")
         
         # 更新状态显示
         await self.app_core.update_status_display()
@@ -165,6 +168,9 @@ class LifecycleManager:
     async def action_quit(self) -> None:
         """退出应用动作"""
         self.logger.info("应用程序正在退出...")
+        # 向信息面板显示退出信息
+        if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
+            await self.app_core.app.ui_manager.info_panel.log_info("应用程序正在退出", "系统")
         
         # 设置优雅退出标志
         self.app_core._is_quitting = True
