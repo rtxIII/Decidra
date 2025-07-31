@@ -13,9 +13,6 @@ from typing import Dict, Optional, Any, List
 
 from base.monitor import StockData, MarketStatus, ConnectionStatus
 from modules.futu_market import FutuMarket
-from monitor.data_flow import DataFlowManager
-from monitor.indicators import IndicatorsManager
-from monitor.performance import PerformanceMonitor
 from base.futu_class import MarketSnapshot
 from utils.logger import get_logger
 from utils.global_vars import PATH_DATA
@@ -39,11 +36,6 @@ class DataManager:
         
         # 富途市场实例
         self.futu_market = futu_market
-        
-        # 初始化其他管理器
-        self.data_flow_manager = DataFlowManager(futu_market=self.futu_market)
-        self.indicators_manager = IndicatorsManager()
-        self.performance_monitor = PerformanceMonitor()
         
         # 定时器
         self.refresh_timer: Optional[asyncio.Task] = None
@@ -90,9 +82,6 @@ class DataManager:
                 self.app_core.connection_status = ConnectionStatus.ERROR
                 self.logger.error(f"富途API连接失败: {e}")
             
-            # 初始化数据流管理器
-            if hasattr(self.data_flow_manager, 'initialize'):
-                await self.data_flow_manager.initialize()
             
         except Exception as e:
             self.logger.error(f"数据管理器初始化失败: {e}")
@@ -716,9 +705,7 @@ class DataManager:
             self._global_market_state_cache = None
             self._market_status_cache_timestamp = 0.0
             
-            # 清理数据流管理器
-            if hasattr(self.data_flow_manager, 'cleanup'):
-                await self.data_flow_manager.cleanup()
+
                 
             self.logger.info("DataManager 清理完成")
             
