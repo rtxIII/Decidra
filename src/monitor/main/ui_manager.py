@@ -32,6 +32,9 @@ class UIManager:
         self.ai_analysis_panel: Optional[Static] = None
         self.info_panel: Optional = None
         
+        # 缓存上次的单元格值，用于检测变化
+        self.last_cell_values: dict = {}
+        
         # 状态栏组件引用
         self.connection_status: Optional[Static] = None
         self.market_status: Optional[Static] = None
@@ -190,12 +193,16 @@ class UIManager:
                     
                     self.logger.debug(f'UI更新股票数据: {stock_code} - {stock_info.name} {price_str} {change_str}')
                     
-                    # 更新行数据
-                    self.stock_table.update_cell(stock_code, 'name', stock_info.name)
-                    self.stock_table.update_cell(stock_code, 'price', price_str)
-                    self.stock_table.update_cell(stock_code, 'change', change_str)
-                    self.stock_table.update_cell(stock_code, 'volume', volume_str)
-                    self.stock_table.update_cell(stock_code, 'time', time_str)
+                    
+                    self.stock_table.update_cell(stock_code,'name', stock_info.name)
+                    self.stock_table.update_cell(stock_code,'time', time_str)
+
+                    # 更新行数据 - 先应用闪烁效果
+                    await self.update_cell_with_flash(stock_code, 'price', price_str, 
+                                                    change_rate=stock_info.change_rate)
+                    await self.update_cell_with_flash(stock_code, 'change', change_str, 
+                                                    change_rate=stock_info.change_rate)
+                    await self.update_cell_with_flash(stock_code, 'volume', volume_str)
                     
                     updated_count += 1
                 else:
@@ -438,3 +445,111 @@ class UIManager:
             
         except Exception as e:
             self.logger.error(f"更新状态栏失败: {e}")
+    
+    async def update_cell_with_flash(self, stock_code: str, column: str, value: str, 
+                                   change_rate: float = None) -> None:
+        """
+        更新表格单元格并应用0.5秒的颜色闪烁效果
+        只有当值发生变化时才显示闪烁效果
+        
+        Args:
+            stock_code: 股票代码
+            column: 列名
+            value: 更新的值
+            change_rate: 涨跌幅(用于price和change列的颜色判断)
+        """
+        if not self.stock_table:
+            return
+            
+        try:
+            # 生成单元格的唯一键
+            cell_key = f"{stock_code}:{column}"
+            
+            # 检查值是否发生变化
+            last_value = self.last_cell_values.get(cell_key)
+            has_changed = last_value != value
+            
+            # 更新缓存值
+            self.last_cell_values[cell_key] = value
+            
+            if has_changed:
+                # 值发生变化，应用闪烁效果
+                self.logger.debug(f"数据变化检测: {cell_key} '{last_value}' -> '{value}'")
+                
+                # 根据列类型选择闪烁颜色
+                if column in ['price', 'change']:
+                    # 价格和涨跌相关列：使用黄色背景突出显示
+                    flash_value = f"[bold yellow on blue]{value}[/bold yellow on blue]"
+                else:
+                    # 其他列：使用蓝色背景
+                    flash_value = f"[bold white on blue]{value}[/bold white on blue]"
+                
+                # 立即更新为闪烁样式
+                self.stock_table.update_cell(stock_code, column, flash_value)
+                
+                # 创建异步任务，0.5秒后恢复正常样式
+                asyncio.create_task(
+                    self._restore_cell_normal_style(stock_code, column, value, change_rate)
+                )
+            else:
+                # 值未变化，直接更新为正常样式（不闪烁）
+                self.logger.debug(f"数据无变化: {cell_key} 保持值 '{value}'")
+                
+                # 直接应用正常样式
+                if column in ['price', 'change'] and change_rate is not None:
+                    if change_rate > 0:
+                        # 上涨：红色
+                        normal_value = f"[bold red]{value}[/bold red]"
+                    elif change_rate < 0:
+                        # 下跌：绿色
+                        normal_value = f"[bold green]{value}[/bold green]"
+                    else:
+                        # 平盘：默认颜色
+                        normal_value = value
+                else:
+                    # 其他列使用默认颜色
+                    normal_value = value
+                
+                self.stock_table.update_cell(stock_code, column, normal_value)
+            
+        except Exception as e:
+            self.logger.error(f"应用单元格闪烁效果失败: {e}")
+            # 失败时直接更新为正常值
+            self.stock_table.update_cell(stock_code, column, value)
+    
+    async def _restore_cell_normal_style(self, stock_code: str, column: str, value: str, 
+                                       change_rate: float = None) -> None:
+        """
+        0.5秒后恢复单元格的正常样式
+        
+        Args:
+            stock_code: 股票代码
+            column: 列名
+            value: 原始值
+            change_rate: 涨跌幅(用于确定颜色)
+        """
+        try:
+            # 等待0.5秒
+            await asyncio.sleep(0.5)
+            
+            # 根据列类型和涨跌情况应用正常样式
+            if column in ['price', 'change'] and change_rate is not None:
+                if change_rate > 0:
+                    # 上涨：红色
+                    normal_value = f"[bold red]{value}[/bold red]"
+                elif change_rate < 0:
+                    # 下跌：绿色
+                    normal_value = f"[bold green]{value}[/bold green]"
+                else:
+                    # 平盘：默认颜色
+                    normal_value = value
+            else:
+                # 其他列使用默认颜色
+                normal_value = value
+            
+            # 恢复正常样式
+            if self.stock_table:
+                self.stock_table.update_cell(stock_code, column, normal_value)
+                
+        except Exception as e:
+            self.logger.error(f"恢复单元格正常样式失败: {e}")
