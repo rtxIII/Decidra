@@ -23,9 +23,13 @@ from utils.logger import get_logger
 from monitor.ui import MonitorLayout
 
 # 导入重构后的管理器模块
+from monitor.app_core import AppCore
 from monitor.main import (
-    AppCore, DataManager, UIManager, 
-    GroupManager, EventHandler, LifecycleManager
+    DataManager, 
+    EventHandler
+)
+from monitor.manager import (
+    UIManager, GroupManager, LifecycleManager
 )
 
 

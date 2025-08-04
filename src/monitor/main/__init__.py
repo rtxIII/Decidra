@@ -11,18 +11,10 @@ Monitor main module - 股票监控应用核心模块
 - lifecycle_manager: 应用生命周期管理
 """
 
-from .app_core import AppCore
-from .data_manager import DataManager
-from .ui_manager import UIManager
-from .group_manager import GroupManager
 from .event_handler import EventHandler
-from .lifecycle_manager import LifecycleManager
+from .data import DataManager
 
 __all__ = [
-    'AppCore',
-    'DataManager', 
-    'UIManager',
-    'GroupManager',
-    'EventHandler',
-    'LifecycleManager'
-]
+    'DataManager',
+    'EventHandler'
+    ]
