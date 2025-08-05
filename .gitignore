@@ -1,0 +1,148 @@
+.vscode/
+.idea/
+runtime/
+test_output/
+input/
+output/
+graph/
+#/PENDING/*
+data/
+#test*.py
+keys/
+reports/
+tmp/
+celerybeat.pid
+__test__.py
+.pytest_cache
+.s3_cache
+
+
+*.dmp
+*.TMP
+# Byte-compiled / optimized / DLL files
+*.pyc
+*.pytest_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+master.d/
+minion.d/
+# C extensions
+#*.so
+script/
+# Distribution / packaging
+.Python
+py3/
+env/
+cenv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
+reg.pkl
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# IPython Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# celery beat schedule file
+celerybeat-schedule
+
+# dotenv
+.env
+
+# virtualenv
+venv/
+ENV/
+
+# Docker push files
+local-build.sh
+
+# Other files
+examples/
+dlib/
+*.mp3
+*.mp4
+*.png
+test.jpg
+*.rdb
+
+.pytest_cache
+__pycache__/
+.benchmarks/
+deploy/
+docker/
+scripts/
+src/data/
+src/runtime/
+src/.runtime/
+.runtime/
+config.ini
+stock_strategy_map.yml
+
+#cursor
+.cursorrules
+.cursorignore
+.claude
+src/.claude/
+CLAUDE.md
+.kiro
+
+#not readey doc
+doc/_*
+
