@@ -18,7 +18,7 @@ from base.futu_class import (
     FutuException, FutuConnectException, FutuQuoteException,
     StockInfo, KLineData, StockQuote, MarketSnapshot, TickerData, 
     OrderBookData, RTData, AuTypeInfo, PlateInfo, PlateStock,
-    MarketState, CapitalFlow, CapitalDistribution, OwnerPlate
+    MarketState, CapitalFlow, CapitalDistribution, OwnerPlate, BrokerQueueData
 )
 
 try:
@@ -1032,6 +1032,31 @@ class QuoteManager:
     
     # ================== 实时数据获取接口 ==================
     
+    def get_rt_ticker(self, code: str, num: int = 100):
+        """
+        获取实时逐笔数据
+        
+        Args:
+            code: 股票代码 (如 "HK.00700")
+            num: 获取数量 (最大1000)
+        
+        Returns:
+            DataFrame: 实时逐笔数据
+        """
+        try:
+            quote_ctx = self._get_quote_context()
+            ret, data = quote_ctx.get_rt_ticker(code, num)
+            
+            df = self._handle_response(ret, data, f"获取{code}的实时逐笔数据")
+            
+            self.logger.info(f"获取到 {code} 的 {len(df) if hasattr(df, '__len__') else 0} 条实时逐笔数据")
+            return df
+            
+        except Exception as e:
+            if isinstance(e, FutuException):
+                raise
+            raise FutuQuoteException(-1, f"获取实时逐笔数据异常: {str(e)}")
+    
     def get_ticker_data(self, code: str, num: int = 100) -> List[TickerData]:
         """
         获取逐笔数据
@@ -1129,6 +1154,40 @@ class QuoteManager:
             if isinstance(e, FutuException):
                 raise
             raise FutuQuoteException(-1, f"获取分时数据异常: {str(e)}")
+    
+    def get_broker_queue_data(self, code: str) -> BrokerQueueData:
+        """
+        获取经纪队列数据（返回BrokerQueueData对象）
+        
+        Args:
+            code: 股票代码 (如 "HK.00700")
+        
+        Returns:
+            BrokerQueueData: 经纪队列数据对象
+        """
+        try:
+            quote_ctx = self._get_quote_context()
+            ret, bid_frame_table, ask_frame_table = quote_ctx.get_broker_queue(code)
+            
+            # 检查返回状态
+            if ret != 0:
+                raise FutuQuoteException(ret, f"获取{code}的经纪队列失败")
+            
+            self.logger.info(f"获取到 {code} 的经纪队列数据")
+            
+            # 创建BrokerQueueData对象
+            broker_data = BrokerQueueData.from_dict({
+                'code': code,
+                'bid_frame_table': bid_frame_table.to_dict() if hasattr(bid_frame_table, 'to_dict') else bid_frame_table,
+                'ask_frame_table': ask_frame_table.to_dict() if hasattr(ask_frame_table, 'to_dict') else ask_frame_table
+            })
+            
+            return broker_data
+            
+        except Exception as e:
+            if isinstance(e, FutuException):
+                raise
+            raise FutuQuoteException(-1, f"获取经纪队列数据异常: {str(e)}")
     
     def get_broker_queue(self, code: str) -> Dict[str, Any]:
         """

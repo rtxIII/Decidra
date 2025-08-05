@@ -580,6 +580,23 @@ class CapitalDistribution:
 
 
 @dataclass
+class BrokerQueueData:
+    """经纪队列数据 - 对应 get_broker_queue 返回"""
+    code: str                    # 股票代码
+    bid_frame_table: Dict[str, Any]  # 买盘经纪队列数据
+    ask_frame_table: Dict[str, Any]  # 卖盘经纪队列数据
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'BrokerQueueData':
+        """从字典创建BrokerQueueData对象"""
+        return cls(
+            code=data.get('code', ''),
+            bid_frame_table=data.get('bid_frame_table', {}),
+            ask_frame_table=data.get('ask_frame_table', {})
+        )
+
+
+@dataclass
 class OwnerPlate:
     """股票所属板块信息 - 对应 get_owner_plate 返回"""
     code: str                  # 股票代码

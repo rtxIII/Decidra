@@ -32,6 +32,14 @@ from monitor.manager import (
     UIManager, GroupManager, LifecycleManager
 )
 
+# 导入分析页面组件
+from monitor.analysis import (
+    AnalysisDataManager,
+    ChartManager,
+    AIAnalysisManager,
+    AnalysisEventHandler
+)
+
 
 class MonitorApp(App):
     """
@@ -79,12 +87,28 @@ class MonitorApp(App):
         self.event_handler = EventHandler(self.app_core, self)
         self.lifecycle_manager = LifecycleManager(self.app_core, self)
         
+        # 初始化分析页面管理器
+        self.analysis_data_manager = AnalysisDataManager(self.app_core, self.futu_market)
+        self.chart_manager = ChartManager(self.analysis_data_manager)
+        self.ai_analysis_manager = AIAnalysisManager(self.analysis_data_manager)
+        self.analysis_event_handler = AnalysisEventHandler(
+            self.analysis_data_manager,
+            self.chart_manager,
+            self.ai_analysis_manager
+        )
+        
         # 将管理器引用添加到app_core，以便各管理器之间可以相互访问
         self.app_core.data_manager = self.data_manager
         self.app_core.ui_manager = self.ui_manager
         self.app_core.group_manager = self.group_manager
         self.app_core.event_handler = self.event_handler
         self.app_core.lifecycle_manager = self.lifecycle_manager
+        
+        # 将分析管理器引用添加到app_core
+        self.app_core.analysis_data_manager = self.analysis_data_manager
+        self.app_core.chart_manager = self.chart_manager
+        self.app_core.ai_analysis_manager = self.ai_analysis_manager
+        self.app_core.analysis_event_handler = self.analysis_event_handler
         
         self.logger.info("MonitorApp 初始化完成")
     
@@ -219,6 +243,27 @@ class MonitorApp(App):
     def info_panel(self):
         """信息面板引用"""
         return self.ui_manager.info_panel if self.ui_manager else None
+
+    # 分析页面管理器便捷访问属性
+    @property
+    def analysis_data(self):
+        """分析数据管理器引用"""
+        return self.analysis_data_manager
+    
+    @property
+    def chart(self):
+        """图表管理器引用"""
+        return self.chart_manager
+    
+    @property
+    def ai_analysis(self):
+        """AI分析管理器引用"""
+        return self.ai_analysis_manager
+    
+    @property
+    def analysis_events(self):
+        """分析事件处理器引用"""
+        return self.analysis_event_handler
 
 
 def main():
