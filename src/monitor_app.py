@@ -14,6 +14,7 @@ from textual.events import Key
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable
 from textual.binding import Binding
+from textual.screen import Screen
 
 # 项目内部导入
 from modules.futu_market import FutuMarket
@@ -21,6 +22,7 @@ from utils.logger import get_logger
 
 # 导入新的UI布局组件
 from monitor.ui import MonitorLayout
+from monitor.widgets.splash_screen import SplashScreen
 
 # 导入重构后的管理器模块
 from monitor.app_core import AppCore
@@ -39,6 +41,20 @@ from monitor.analysis import (
     AIAnalysisManager,
     AnalysisEventHandler
 )
+
+
+class SplashScreenView(Screen):
+    """启动页面屏幕"""
+    
+    def compose(self) -> ComposeResult:
+        yield SplashScreen(auto_jump_delay=3)
+
+
+class MonitorScreen(Screen):
+    """主监控界面屏幕"""
+    
+    def compose(self) -> ComposeResult:
+        yield MonitorLayout(id="monitor_layout")
 
 
 class MonitorApp(App):
@@ -72,6 +88,17 @@ class MonitorApp(App):
         # 设置日志
         self.logger = get_logger(__name__)
         
+        # 启动页面相关状态
+        self.show_splash = True
+        self.managers_initialized = False
+        
+        self.logger.info("MonitorApp 初始化完成")
+    
+    def _initialize_managers(self):
+        """延迟初始化管理器（在启动页面完成后）"""
+        if self.managers_initialized:
+            return
+            
         # 创建共享的富途市场实例
         self.futu_market = FutuMarket()
         # 标记为共享实例，防止其他组件重复关闭
@@ -110,123 +137,210 @@ class MonitorApp(App):
         self.app_core.ai_analysis_manager = self.ai_analysis_manager
         self.app_core.analysis_event_handler = self.analysis_event_handler
         
-        self.logger.info("MonitorApp 初始化完成")
+        self.managers_initialized = True
+        self.logger.info("管理器初始化完成")
     
     def compose(self) -> ComposeResult:
-        """构建用户界面 - 使用新的UI布局组件"""
-        # 使用新的MonitorLayout组件，包含完整的布局结构
-        yield MonitorLayout(id="monitor_layout")
+        """构建用户界面"""
+        # 初始时显示启动页面
+        if self.show_splash:
+            yield SplashScreen(auto_jump_delay=0)
+        else:
+            yield MonitorLayout(id="monitor_layout")
     
     def on_key(self, event: Key) -> None:
-        """处理按键事件 - 委托给事件处理器"""
-        self.event_handler.on_key(event)
+        """处理按键事件"""
+        if self.show_splash:
+            # 启动页面阶段的按键处理
+            pass
+        else:
+            # 主界面阶段的按键处理 - 委托给事件处理器
+            self.event_handler.on_key(event)
     
     async def on_mount(self) -> None:
-        """应用启动时的初始化 - 委托给生命周期管理器"""
-        await self.lifecycle_manager.on_mount()
+        """应用启动时的初始化"""
+        if self.show_splash:
+            self.logger.info("显示启动页面")
+        else:
+            # 主界面初始化 - 委托给生命周期管理器
+            await self.lifecycle_manager.on_mount()
+    
+    async def on_splash_screen_status_complete(self, message) -> None:
+        """处理启动页面系统状态检查完成"""
+        self.logger.info("启动页面系统检查完成")
+    
+    async def on_splash_screen_auto_jump_requested(self, message) -> None:
+        """处理启动页面自动跳转请求"""
+        self.logger.info("收到自动跳转请求，切换到主界面")
+        await self._switch_to_main_interface()
+    
+    async def on_splash_screen_action_selected(self, message) -> None:
+        """处理启动页面用户操作选择"""
+        action = message.action
+        self.logger.info(f"用户选择操作: {action}")
+        
+        if action == "config":
+            # 显示配置帮助或跳转到配置
+            self.logger.info("用户选择配置管理")
+        elif action == "help":
+            # 显示帮助信息
+            self.logger.info("用户选择帮助")
+    
+    async def _switch_to_main_interface(self) -> None:
+        """切换到主界面"""
+        try:
+            self.logger.info("开始切换到主界面")
+            
+            # 初始化管理器
+            self._initialize_managers()
+            
+            # 切换状态
+            self.show_splash = False
+            
+            # 重新构建界面
+            await self.recompose()
+            
+            # 初始化主界面
+            await self.lifecycle_manager.on_mount()
+            
+            self.logger.info("成功切换到主界面")
+            
+        except Exception as e:
+            self.logger.error(f"切换到主界面失败: {e}")
+            # 如果切换失败，可以选择显示错误信息或退出
     
     async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """处理表格行选择事件 - 委托给事件处理器"""
-        await self.event_handler.on_data_table_row_selected(event)
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.on_data_table_row_selected(event)
     
     # 动作方法 - 委托给事件处理器
     async def action_add_stock(self) -> None:
         """添加股票动作"""
-        await self.event_handler.action_add_stock()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_add_stock()
     
     async def action_delete_stock(self) -> None:
         """删除股票动作"""
-        await self.event_handler.action_delete_stock()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_delete_stock()
     
     async def action_refresh(self) -> None:
         """手动刷新动作"""
-        await self.event_handler.action_refresh()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_refresh()
     
     async def action_help(self) -> None:
         """显示帮助动作"""
-        await self.event_handler.action_help()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_help()
     
     async def action_go_back(self) -> None:
         """返回主界面动作"""
-        await self.event_handler.action_go_back()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_go_back()
     
     async def action_switch_tab(self) -> None:
         """切换标签页动作"""
-        await self.event_handler.action_switch_tab()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_switch_tab()
     
     async def action_cursor_up(self) -> None:
         """光标向上移动"""
-        await self.event_handler.action_cursor_up()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_cursor_up()
     
     async def action_cursor_down(self) -> None:
         """光标向下移动"""
-        await self.event_handler.action_cursor_down()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_cursor_down()
     
     async def action_select_group(self) -> None:
         """选择当前光标所在的分组"""
-        await self.event_handler.action_select_group()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_select_group()
     
     async def action_focus_left_table(self) -> None:
         """左移焦点到股票表格"""
-        await self.event_handler.action_focus_left_table()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_focus_left_table()
     
     async def action_focus_right_table(self) -> None:
         """右移焦点到分组表格"""
-        await self.event_handler.action_focus_right_table()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_focus_right_table()
     
     async def action_enter_analysis(self) -> None:
         """进入分析界面动作"""
-        await self.event_handler.action_enter_analysis()
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_enter_analysis()
     
     async def action_quit(self) -> None:
-        """退出应用动作 - 委托给生命周期管理器"""
-        await self.lifecycle_manager.action_quit()
+        """退出应用动作"""
+        if self.managers_initialized:
+            await self.lifecycle_manager.action_quit()
+        else:
+            await super().action_quit()
     
     # 便捷访问属性，保持向后兼容性
     @property
     def current_stock_code(self) -> Optional[str]:
         """当前选中的股票代码"""
-        return self.app_core.current_stock_code
+        if self.managers_initialized:
+            return self.app_core.current_stock_code
+        return None
     
     @current_stock_code.setter
     def current_stock_code(self, value: Optional[str]):
         """设置当前选中的股票代码"""
-        self.app_core.current_stock_code = value
+        if self.managers_initialized:
+            self.app_core.current_stock_code = value
     
     @property
     def connection_status(self):
         """连接状态"""
-        return self.app_core.connection_status
+        if self.managers_initialized:
+            return self.app_core.connection_status
+        return "未初始化"
     
     @connection_status.setter
     def connection_status(self, value):
         """设置连接状态"""
-        self.app_core.connection_status = value
+        if self.managers_initialized:
+            self.app_core.connection_status = value
     
     @property
     def market_status(self):
         """市场状态"""
-        return self.app_core.market_status
+        if self.managers_initialized:
+            return self.app_core.market_status
+        return "未知"
     
     @market_status.setter
     def market_status(self, value):
         """设置市场状态"""
-        self.app_core.market_status = value
+        if self.managers_initialized:
+            self.app_core.market_status = value
     
     @property
     def monitored_stocks(self) -> List[str]:
         """监控股票列表"""
-        return self.app_core.monitored_stocks
+        if self.managers_initialized:
+            return self.app_core.monitored_stocks
+        return []
     
     @monitored_stocks.setter
     def monitored_stocks(self, value: List[str]):
         """设置监控股票列表"""
-        self.app_core.monitored_stocks = value
+        if self.managers_initialized:
+            self.app_core.monitored_stocks = value
     
     @property
     def stock_data(self) -> Dict[str, Any]:
         """股票数据"""
-        return self.app_core.stock_data
+        if self.managers_initialized:
+            return self.app_core.stock_data
+        return {}
     
     # 为了保持兼容性而保留的引用属性
     @property
