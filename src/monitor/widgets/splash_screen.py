@@ -50,6 +50,7 @@ class SplashScreen(Container):
     }
     
     .logo-text {
+        opacity: 0;
         color: #ff00ff;
         text-style: bold;
         margin: 0;
@@ -211,7 +212,7 @@ class SplashScreen(Container):
                 with Container(classes="logo-container"):
                     #yield Static(self._get_logo_text(), classes="logo-text")
                     yield Static("▼ DECIDRA ▼", classes="status-item")
-                    yield Static(self._get_logo_text(), classes="logo-text")
+                    yield Static(self._get_logo_text(),  id="logo_text", classes="logo-text")
 
 
                 
@@ -229,7 +230,7 @@ class SplashScreen(Container):
                 
                 # 快捷键提示
                 yield Static(
-                    "◢ [#ff00ff]Enter[/] JACK IN | [#00ffff]Space[/] ABORT | [#39ff14]C[/] CONFIG | [#ff073a]Q[/] DISCONNECT ◣",
+                    "◢ [#ff00ff]Enter[/] JACK IN | [#00ffff]Space[/] ABORT | [#ff073a]Q[/] DISCONNECT ◣",
                     classes="help-text"
                 )
     
@@ -270,6 +271,8 @@ class SplashScreen(Container):
         """组件挂载时启动系统检查"""
         self.logger.info("启动页面已挂载，开始系统状态检查")
         self.check_task = asyncio.create_task(self._perform_system_check())
+        logo_text = self.query_one("#logo_text", Static)
+        logo_text.styles.animate("opacity", value=1, duration=2.0)
     
     async def _perform_system_check(self) -> None:
         """执行系统状态检查"""
@@ -302,8 +305,6 @@ class SplashScreen(Container):
             self.system_status = status
             self.is_loading = False
             
-            # 启用按钮
-            self._enable_buttons()
             
             # 发送完成消息
             self.post_message(self.StatusComplete(status))
@@ -315,18 +316,6 @@ class SplashScreen(Container):
             self.logger.error(f"系统状态检查失败: {e}")
             await self._update_progress(100, f"检查失败: {e}")
             self.is_loading = False
-            self._enable_buttons()
-    
-    def _enable_buttons(self) -> None:
-        """启用操作按钮"""
-        try:
-            enter_btn = self.query_one("#btn_enter", Button)
-            enter_btn.disabled = False
-            
-            cancel_btn = self.query_one("#btn_cancel", Button)
-            cancel_btn.disabled = False
-        except Exception as e:
-            self.logger.warning(f"启用按钮失败: {e}")
     
     async def _start_auto_jump_countdown(self) -> None:
         """启动自动跳转倒计时"""
@@ -334,7 +323,7 @@ class SplashScreen(Container):
             self.countdown = self.auto_jump_delay
             countdown_widget = self.query_one("#countdown_display", Static)
             
-            while self.countdown > 0 and not self.jump_cancelled:
+            while self.countdown >= 0 and not self.jump_cancelled:
                 countdown_widget.update(
                     f"◢◤ JACK IN {self.countdown} SECONDS... [ABORT WITH SPACE] ◥◣"
                 )
