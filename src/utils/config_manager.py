@@ -332,17 +332,12 @@ class ConfigManager:
                 warnings=[]
             )
     
-    def save_config(self, backup: bool = True) -> bool:
+    def save_config(self) -> bool:
         """保存配置到文件"""
         try:
             # 确保配置目录存在
             self.config_dir.mkdir(parents=True, exist_ok=True)
-            
-            # 备份现有配置
-            if backup and self.config_ini_path.exists():
-                backup_path = self.config_ini_path.with_suffix('.ini.bak')
-                backup_path.write_text(self.config_ini_path.read_text())
-                self.logger.info(f"Config backed up to: {backup_path}")
+        
             
             # 创建配置解析器
             parser = configparser.ConfigParser()

@@ -260,13 +260,14 @@ class AnalysisPanel(Container):
         padding: 0;
     }
     
-    /* AI交互区域样式 - 合并为单一区域 */
-    AnalysisPanel .ai-interaction-area .ai-combined-section {
+    /* AI交互区域样式 - 使用InfoPanel */
+    AnalysisPanel .ai-interaction-area InfoPanel {
         width: 100%;
+        height: 1fr;
         overflow-y: auto;
         background: $surface;
         border: solid $secondary;
-        padding: 1;
+        padding: 0;
     }
     """
     
@@ -351,33 +352,11 @@ class AnalysisPanel(Container):
                     id="money_flow_content_column"
                 )
         
-        # 4. AI交互区域 - 合并为单一区域
+        # 4. AI交互区域 - 使用InfoPanel替代Container
         with Container(classes="ai-interaction-area"):
-            # AI综合区域 - 合并对话历史和分析内容
-            with Container(classes="ai-combined-section"):
-                yield Static(
-                    "[bold white]💭 智能问答 (输入'?'查看命令)[/bold white]\n" +
-                    "[bold green]> 用户:[/bold green] 这只股票适合长期持有吗？\n" +
-                    "[bold cyan]🤖 AI:[/bold cyan] 从基本面看，平安银行ROE12.8%，PB0.65倍，估值偏低。银行股适合\n" +
-                    "      长期价值投资，建议分批建仓，关注利率政策变化...\n\n" +
-                    "[bold green]> 用户:[/bold green] 目前技术面风险大吗？\n" +
-                    "[bold cyan]🤖 AI:[/bold cyan] RSI65.2偏高，短期存在回调风险，建议等待回调至支撑位...\n\n" +
-                    "[bold cyan]🎛️ 快捷功能:[/bold cyan] [F1]技术分析 [F2]基本面 [F3]资金面 [F4]同行对比 [F5]风险评估\n\n" +
-                    "──────────────────────────────────────────────────────────\n\n" +
-                    "[bold cyan]🤖 AI技术分析:[/bold cyan] 根据技术面分析，该股票处于上升通道中，建议关注：\n\n" +
-                    "[bold yellow]📊 技术指标:[/bold yellow]\n" +
-                    "• RSI(14): 65.2 ➤ 偏强势，注意回调风险\n" +
-                    "• MACD: 金叉信号，动能向上\n" +
-                    "• 均线: 突破20日线，多头排列\n\n" +
-                    "[bold green]🎯 关键价位:[/bold green]\n" +
-                    "• 支撑位: 12.45 (重要支撑)\n" +
-                    "• 阻力位: 13.15 (前高压力)\n" +
-                    "• 目标价: 13.20-13.50\n\n" +
-                    "[bold blue]🔮 AI预测 (置信度75%):[/bold blue]\n" +
-                    "短期(1-3天): 看涨 ↗ 预期涨幅 2-4%\n" +
-                    "中期(1-2周): 震荡上行，关注量能",
-                    id="ai_combined_content"
-                )
+            # 导入InfoPanel并使用
+            from monitor.widgets.line_panel import InfoPanel
+            yield InfoPanel(title="AI智能分析", id="ai_info_panel")
 
 
 class MainLayoutTab(Container):
