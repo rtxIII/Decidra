@@ -230,7 +230,7 @@ class SplashScreen(Container):
                 
                 # 快捷键提示
                 yield Static(
-                    "◢ [#ff00ff]Enter[/] JACK IN | [#00ffff]Space[/] ABORT | [#ff073a]Q[/] DISCONNECT ◣",
+                    "◢ [#ff00ff]Enter[/] JACK IN | [#00ffff]Space[/] ENTER | [#ff073a]Q[/] DISCONNECT ◣",
                     classes="help-text"
                 )
     
@@ -425,29 +425,14 @@ class SplashScreen(Container):
         except Exception:
             return f"❌ MARKET: DATA CORRUPTED"
     
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
-        """处理按钮点击事件"""
-        button_id = event.button.id
-        
-        if button_id == "btn_enter":
-            self._cancel_auto_jump()
-            self.post_message(self.AutoJumpRequested())
-        elif button_id == "btn_cancel":
-            self._cancel_auto_jump()
-        elif button_id == "btn_config":
-            self.post_message(self.ActionSelected("config"))
-    
     async def on_key(self, event) -> None:
         """处理按键事件"""
         if event.key == "enter":
-            if not self.is_loading:
                 self._cancel_auto_jump()
                 self.post_message(self.AutoJumpRequested())
         elif event.key == "space":
-            if not self.is_loading:
                 self._cancel_auto_jump()
-        elif event.key == "c":
-            self.post_message(self.ActionSelected("config"))
+                self.post_message(self.AutoJumpRequested())
     
     def _cancel_auto_jump(self) -> None:
         """取消自动跳转"""

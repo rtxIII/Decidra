@@ -249,7 +249,7 @@ class AnalysisPanel(Container):
         border-title-color: $text;
         border-title-background: $surface;
         padding: 0;
-        layout: horizontal;
+        layout: vertical;
     }
     
     AnalysisPanel .realtime-data-column TabbedContent {
@@ -260,20 +260,12 @@ class AnalysisPanel(Container):
         padding: 0;
     }
     
-    /* AI交互区域样式 - 重新布局为左右两栏 */
-    AnalysisPanel .ai-interaction-area .ai-chat-section {
-        width: 50%;
+    /* AI交互区域样式 - 合并为单一区域 */
+    AnalysisPanel .ai-interaction-area .ai-combined-section {
+        width: 100%;
         overflow-y: auto;
         background: $surface;
         border: solid $secondary;
-        padding: 1;
-        margin-right: 1;
-    }
-    
-    AnalysisPanel .ai-interaction-area .ai-analysis-section {
-        width: 50%;
-        overflow-y: auto;
-        background: $surface;
         padding: 1;
     }
     """
@@ -351,7 +343,7 @@ class AnalysisPanel(Container):
                             id="broker_content"
                         )
             
-            # 3.3 资金流向区域（38%宽度） - 与第4层互换位置
+            # 3.3 资金流向区域（38%宽度） 
             with Container(classes="money-flow-column"):
                 yield Static("资金流向/分布区域", id="money_flow_title")
                 yield Static(
@@ -359,10 +351,10 @@ class AnalysisPanel(Container):
                     id="money_flow_content_column"
                 )
         
-        # 4. AI交互区域 - 重新布局为左右两栏
+        # 4. AI交互区域 - 合并为单一区域
         with Container(classes="ai-interaction-area"):
-            # AI对话历史区域 - 移到左边并扩展到最左边
-            with Container(classes="ai-chat-section"):
+            # AI综合区域 - 合并对话历史和分析内容
+            with Container(classes="ai-combined-section"):
                 yield Static(
                     "[bold white]💭 智能问答 (输入'?'查看命令)[/bold white]\n" +
                     "[bold green]> 用户:[/bold green] 这只股票适合长期持有吗？\n" +
@@ -370,14 +362,9 @@ class AnalysisPanel(Container):
                     "      长期价值投资，建议分批建仓，关注利率政策变化...\n\n" +
                     "[bold green]> 用户:[/bold green] 目前技术面风险大吗？\n" +
                     "[bold cyan]🤖 AI:[/bold cyan] RSI65.2偏高，短期存在回调风险，建议等待回调至支撑位...\n\n" +
-                    "[bold cyan]🎛️ 快捷功能:[/bold cyan] [F1]技术分析 [F2]基本面 [F3]资金面 [F4]同行对比 [F5]风险评估",
-                    id="ai_chat_history"
-                )
-            
-            # AI分析区域 - 移到右边并扩展到最右边
-            with Container(classes="ai-analysis-section"):
-                yield Static(
-                    "[bold cyan]🤖 AI:[/bold cyan] 根据技术面分析，该股票处于上升通道中，建议关注：\n\n" +
+                    "[bold cyan]🎛️ 快捷功能:[/bold cyan] [F1]技术分析 [F2]基本面 [F3]资金面 [F4]同行对比 [F5]风险评估\n\n" +
+                    "──────────────────────────────────────────────────────────\n\n" +
+                    "[bold cyan]🤖 AI技术分析:[/bold cyan] 根据技术面分析，该股票处于上升通道中，建议关注：\n\n" +
                     "[bold yellow]📊 技术指标:[/bold yellow]\n" +
                     "• RSI(14): 65.2 ➤ 偏强势，注意回调风险\n" +
                     "• MACD: 金叉信号，动能向上\n" +
@@ -389,7 +376,7 @@ class AnalysisPanel(Container):
                     "[bold blue]🔮 AI预测 (置信度75%):[/bold blue]\n" +
                     "短期(1-3天): 看涨 ↗ 预期涨幅 2-4%\n" +
                     "中期(1-2周): 震荡上行，关注量能",
-                    id="ai_analysis_content"
+                    id="ai_combined_content"
                 )
 
 
