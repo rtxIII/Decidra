@@ -188,8 +188,6 @@ class AnalysisPanel(Container):
     
     BINDINGS = [
         Binding("z", "return_to_main", "返回主界面", priority=True),
-        Binding("x", "switch_tab_left", "上一个标签", priority=True),
-        Binding("c", "switch_tab_right", "下一个标签", priority=True),
     ]
     
     def __init__(self, **kwargs):
@@ -388,16 +386,8 @@ class AnalysisPanel(Container):
             self.logger.debug("DEBUG: z键被按下，返回主界面")
             self.action_return_to_main()
             event.prevent_default()
-        elif event.key == "x":
-            self.logger.debug("DEBUG: x键被按下，切换到上一个标签页")
-            self.action_switch_tab_left()
-            event.prevent_default()
-        elif event.key == "c":
-            self.logger.debug("DEBUG: c键被按下，切换到下一个标签页")
-            self.action_switch_tab_right()
-            event.prevent_default()
         else:
-            self.logger.debug(f"DEBUG: 未处理的按键: {event.key}")
+            self.logger.debug(f"DEBUG: AnalysisPanel 未处理的按键: {event.key}")
     
     def action_return_to_main(self) -> None:
         """返回主界面（z键）"""
@@ -409,129 +399,6 @@ class AnalysisPanel(Container):
         except Exception as e:
             self.logger.debug(f"DEBUG: 返回主界面失败: {e}")
     
-    def action_switch_tab_left(self) -> None:
-        """向左切换标签页（x键）"""
-        try:
-            # 获取主标签页容器
-            main_tabs = self.app.query_one("#main_tabs", TabbedContent)
-            self.logger.debug(f"DEBUG: 找到主标签页容器: {main_tabs}")
-            self.logger.debug(f"DEBUG: 主标签页容器类型: {type(main_tabs)}")
-            self.logger.debug(f"DEBUG: 主标签页子组件数量: {len(main_tabs.children)}")
-            self.logger.debug(f"DEBUG: 主标签页子组件: {[type(child).__name__ for child in main_tabs.children]}")
-            
-            # 使用TabbedContent的tabs属性获取标签页列表
-            if hasattr(main_tabs, 'tabs'):
-                all_tabs = [tab.id for tab in main_tabs.tabs if hasattr(tab, 'id')]
-                self.logger.debug(f"DEBUG: 通过tabs属性获取: {all_tabs}")
-            else:
-                # 备用方案：获取所有TabPane，但过滤掉子标签页
-                all_panes = list(main_tabs.query(TabPane))
-                self.logger.debug(f"DEBUG: 通过query获取TabPane: {[pane.id for pane in all_panes]}")
-                self.logger.debug(f"DEBUG: TabPane详情: {[(pane.id, type(pane.parent).__name__) for pane in all_panes]}")
-                
-                # 过滤掉子标签页，只保留主界面的标签页
-                # 主界面标签页特征：ID以'main'开头或以'analysis_'开头
-                main_level_tabs = []
-                for pane in all_panes:
-                    if pane.id == 'main' or pane.id.startswith('analysis_'):
-                        main_level_tabs.append(pane.id)
-                
-                # 去重（因为可能有重复的分析标签页ID）
-                all_tabs = list(dict.fromkeys(main_level_tabs))  # 保持顺序的去重
-                self.logger.debug(f"DEBUG: 过滤后的主界面标签页: {all_tabs}")
-            
-            self.logger.debug(f"DEBUG: 主界面标签页: {all_tabs}")
-            self.logger.debug(f"DEBUG: 当前活跃标签页: {main_tabs.active}")
-            
-            if len(all_tabs) <= 1:
-                self.logger.debug("DEBUG: 标签页数量不足，无法切换")
-                return
-                
-            current_active = main_tabs.active
-            try:
-                current_index = all_tabs.index(current_active)
-            except ValueError:
-                self.logger.debug(f"DEBUG: 当前活跃标签页 '{current_active}' 不在列表中，默认为0")
-                current_index = 0
-            
-            # 切换到上一个标签页（循环）
-            prev_index = (current_index - 1) % len(all_tabs)
-            target_tab = all_tabs[prev_index]
-            self.logger.debug(f"DEBUG: 准备向左切换 {current_active}(索引{current_index}) -> {target_tab}(索引{prev_index})")
-            
-            # 执行切换
-            old_active = main_tabs.active
-            main_tabs.active = target_tab
-            new_active = main_tabs.active
-            
-            self.logger.debug(f"DEBUG: 切换结果：{old_active} -> {new_active}")
-            if new_active == target_tab:
-                self.logger.debug("DEBUG: 向左切换成功")
-                # 切换成功后，重新获取焦点确保继续能响应键盘事件
-                self._ensure_focus_after_switch()
-            else:
-                self.logger.debug(f"DEBUG: 向左切换失败，预期{target_tab}，实际{new_active}")
-            
-        except Exception as e:
-            self.logger.debug(f"DEBUG: 向左切换标签页失败: {e}")
-    
-    def action_switch_tab_right(self) -> None:
-        """向右切换标签页（c键）"""
-        try:
-            # 获取主标签页容器
-            main_tabs = self.app.query_one("#main_tabs", TabbedContent)
-            
-            # 使用TabbedContent的tabs属性获取标签页列表
-            if hasattr(main_tabs, 'tabs'):
-                all_tabs = [tab.id for tab in main_tabs.tabs if hasattr(tab, 'id')]
-            else:
-                # 备用方案：获取所有TabPane，但过滤掉子标签页
-                all_panes = list(main_tabs.query(TabPane))
-                
-                # 过滤掉子标签页，只保留主界面的标签页
-                # 主界面标签页特征：ID以'main'开头或以'analysis_'开头
-                main_level_tabs = []
-                for pane in all_panes:
-                    if pane.id == 'main' or pane.id.startswith('analysis_'):
-                        main_level_tabs.append(pane.id)
-                
-                # 去重（因为可能有重复的分析标签页ID）
-                all_tabs = list(dict.fromkeys(main_level_tabs))  # 保持顺序的去重
-            
-            self.logger.debug(f"DEBUG: 主界面标签页: {all_tabs}")
-            self.logger.debug(f"DEBUG: 当前活跃标签页: {main_tabs.active}")
-            
-            if len(all_tabs) <= 1:
-                self.logger.debug("DEBUG: 标签页数量不足，无法切换")
-                return
-                
-            current_active = main_tabs.active
-            try:
-                current_index = all_tabs.index(current_active)
-            except ValueError:
-                self.logger.debug(f"DEBUG: 当前活跃标签页 '{current_active}' 不在列表中，默认为0")
-                current_index = 0
-            
-            # 切换到下一个标签页（循环）
-            next_index = (current_index + 1) % len(all_tabs)
-            target_tab = all_tabs[next_index]
-            self.logger.debug(f"DEBUG: 准备向右切换 {current_active}(索引{current_index}) -> {target_tab}(索引{next_index})")
-            
-            # 执行切换
-            old_active = main_tabs.active
-            main_tabs.active = target_tab
-            new_active = main_tabs.active
-            
-            self.logger.debug(f"DEBUG: 切换结果：{old_active} -> {new_active}")
-            if new_active == target_tab:
-                self.logger.debug("DEBUG: 向右切换成功")
-                # 切换成功后，重新获取焦点确保继续能响应键盘事件
-                self._ensure_focus_after_switch()
-            else:
-                self.logger.debug(f"DEBUG: 向右切换失败，预期{target_tab}，实际{new_active}")
-            
-        except Exception as e:
-            self.logger.debug(f"DEBUG: 向右切换标签页失败: {e}")
     
     DEFAULT_CSS = """
     AnalysisPanel {
@@ -848,8 +715,6 @@ class MonitorLayout(Container):
         Binding("escape", "go_back", "返回"),
         Binding("tab", "switch_tab", "切换标签"),
         Binding("enter", "enter_analysis", "进入分析"),
-        Binding("x", "switch_tab_left", "上一个标签", priority=True, show=True),
-        Binding("c", "switch_tab_right", "下一个标签", priority=True, show=True),
         Binding("ctrl+c", "quit", "强制退出", priority=True),
     ]
     
@@ -907,83 +772,6 @@ class MonitorLayout(Container):
     }
     """
     
-    def on_key(self, event) -> None:
-        """全局键盘事件处理器，确保x/c键总是被处理"""
-        if event.key == "x":
-            self.logger.debug("DEBUG: MonitorLayout 拦截 x 键")
-            self.action_switch_tab_left()
-            event.prevent_default()
-        elif event.key == "c":
-            self.logger.debug("DEBUG: MonitorLayout 拦截 c 键")
-            self.action_switch_tab_right()
-            event.prevent_default()
-    
-    def action_switch_tab_left(self) -> None:
-        """向左切换标签页（x键）"""
-        try:
-            main_tabs = self.query_one("#main_tabs", TabbedContent)
-            
-            # 获取主界面标签页（过滤掉子标签页）
-            all_panes = list(main_tabs.query(TabPane))
-            main_level_tabs = []
-            for pane in all_panes:
-                if pane.id == 'main' or pane.id.startswith('analysis_'):
-                    main_level_tabs.append(pane.id)
-            
-            all_tabs = list(dict.fromkeys(main_level_tabs))  # 去重
-            self.logger.debug(f"DEBUG: MonitorLayout x键 - 主界面标签页: {all_tabs}")
-            
-            if len(all_tabs) <= 1:
-                self.logger.debug("DEBUG: MonitorLayout 标签页数量不足，无法切换")
-                return
-                
-            current_active = main_tabs.active
-            try:
-                current_index = all_tabs.index(current_active)
-            except ValueError:
-                current_index = 0
-            
-            prev_index = (current_index - 1) % len(all_tabs)
-            target_tab = all_tabs[prev_index]
-            main_tabs.active = target_tab
-            self.logger.debug(f"DEBUG: MonitorLayout 向左切换 {current_active} -> {target_tab}")
-            
-        except Exception as e:
-            self.logger.debug(f"DEBUG: MonitorLayout 向左切换失败: {e}")
-    
-    def action_switch_tab_right(self) -> None:
-        """向右切换标签页（c键）"""
-        try:
-            main_tabs = self.query_one("#main_tabs", TabbedContent)
-            
-            # 获取主界面标签页（过滤掉子标签页）
-            all_panes = list(main_tabs.query(TabPane))
-            main_level_tabs = []
-            for pane in all_panes:
-                if pane.id == 'main' or pane.id.startswith('analysis_'):
-                    main_level_tabs.append(pane.id)
-            
-            all_tabs = list(dict.fromkeys(main_level_tabs))  # 去重
-            self.logger.debug(f"DEBUG: MonitorLayout c键 - 主界面标签页: {all_tabs}")
-            
-            if len(all_tabs) <= 1:
-                self.logger.debug("DEBUG: MonitorLayout 标签页数量不足，无法切换")
-                return
-                
-            current_active = main_tabs.active
-            try:
-                current_index = all_tabs.index(current_active)
-            except ValueError:
-                current_index = 0
-            
-            next_index = (current_index + 1) % len(all_tabs)
-            target_tab = all_tabs[next_index]
-            main_tabs.active = target_tab
-            self.logger.debug(f"DEBUG: MonitorLayout 向右切换 {current_active} -> {target_tab}")
-            
-        except Exception as e:
-            self.logger.debug(f"DEBUG: MonitorLayout 向右切换失败: {e}")
-
     def compose(self) -> ComposeResult:
         """组合完整监控界面"""
         # 状态栏保留，但去除Header和Footer让界面更紧凑
