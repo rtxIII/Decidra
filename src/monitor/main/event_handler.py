@@ -392,7 +392,7 @@ class EventHandler:
                     return
                 
                 # 创建分析内容
-                from monitor.ui import AnalysisPanel
+                from monitor.monitor_layout import AnalysisPanel
                 analysis_content = AnalysisPanel(id="analysis_panel")
                 
                 # 创建新的分析tab

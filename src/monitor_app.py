@@ -21,7 +21,7 @@ from modules.futu_market import FutuMarket
 from utils.logger import get_logger
 
 # 导入新的UI布局组件
-from monitor.ui import MonitorLayout
+from monitor.monitor_layout import MonitorLayout
 from monitor.widgets.splash_screen import SplashScreen
 
 # 导入重构后的管理器模块
