@@ -290,17 +290,38 @@ class EventHandler:
     
     async def action_go_back(self) -> None:
         """返回主界面动作"""
-        # 切换到主界面标签页
-        tabs = self.app.query_one(TabbedContent)
-        tabs.active = "main"
+        try:
+            # 获取主标签页容器
+            tabs = self.app.query_one("#main_tabs", TabbedContent)
+            
+            # 如果当前在分析界面，删除分析标签页
+            if tabs.active == "analysis":
+                try:
+                    tabs.remove_pane("analysis")
+                    self.logger.info("已关闭分析界面")
+                except Exception as e:
+                    self.logger.debug(f"删除分析标签页失败: {e}")
+            
+            # 切换到主界面标签页
+            tabs.active = "main"
+            
+        except Exception as e:
+            self.logger.error(f"返回主界面失败: {e}")
     
     async def action_switch_tab(self) -> None:
         """切换标签页动作"""
-        tabs = self.app.query_one(TabbedContent)
-        if tabs.active == "main":
-            tabs.active = "analysis"
-        else:
-            tabs.active = "main"
+        try:
+            tabs = self.app.query_one("#main_tabs", TabbedContent)
+            
+            if tabs.active == "main":
+                # 从主界面切换，使用Space键的逻辑（智能切换）
+                await self.action_select_group()
+            else:
+                # 从分析界面返回主界面
+                await self.action_go_back()
+                
+        except Exception as e:
+            self.logger.error(f"切换标签页失败: {e}")
     
     async def action_cursor_up(self) -> None:
         """光标向上移动 - 根据当前活跃表格决定移动哪个光标"""
@@ -430,16 +451,3 @@ class EventHandler:
         except Exception as e:
             self.logger.error(f"切换焦点到分组表格失败: {e}")
     
-    async def action_enter_analysis(self) -> None:
-        """进入分析界面动作"""
-        if self.app_core.current_stock_code:
-            # 切换到分析标签页
-            tabs = self.app.query_one(TabbedContent)
-            tabs.active = "analysis"
-            
-            # 更新分析界面内容
-            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
-            if ui_manager:
-                await ui_manager.update_analysis_interface()
-            
-            self.logger.info(f"进入分析界面: {self.app_core.current_stock_code}")

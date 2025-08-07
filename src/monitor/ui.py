@@ -13,6 +13,7 @@ from textual.widgets import (
 from textual.reactive import reactive
 from textual.binding import Binding
 from typing import List, Dict, Optional
+from utils.logger import get_logger
 
 STOCK_COLUMNS = {
             "code": {"label": "代码", "width": 10},
@@ -185,6 +186,353 @@ class UserGroupPanel(Container):
 class AnalysisPanel(Container):
     """分析面板 - 严格按照MVP设计的完整实现"""
     
+    BINDINGS = [
+        Binding("z", "return_to_main", "返回主界面", priority=True),
+        Binding("x", "switch_tab_left", "上一个标签", priority=True),
+        Binding("c", "switch_tab_right", "下一个标签", priority=True),
+    ]
+    
+    def __init__(self, **kwargs):
+        """初始化分析面板"""
+        super().__init__(**kwargs)
+        self._app_ref = None
+        self._basic_info_widget = None
+        self._tabbed_content = None
+        self.logger = get_logger(__name__)
+        
+    def set_app_reference(self, app):
+        """设置应用引用以访问数据管理器"""
+        self._app_ref = app
+        
+    def get_analysis_data_manager(self):
+        """获取分析数据管理器"""
+        if self._app_ref and hasattr(self._app_ref, 'app_core'):
+            return getattr(self._app_ref.app_core, 'analysis_data_manager', None)
+        return None
+        
+    def format_basic_info(self, analysis_data=None) -> str:
+        """格式化基础信息显示文本"""
+        if not analysis_data:
+            return "等待股票数据加载..."
+            
+        basic_info = analysis_data.basic_info
+        realtime_quote = analysis_data.realtime_quote
+        
+        # 提取基础信息
+        stock_code = basic_info.get('code', '未知')
+        stock_name = basic_info.get('name', '未知')
+        stock_type = basic_info.get('stock_type', '未知')
+        listing_date = basic_info.get('listing_date', '未知')
+        
+        # 提取实时数据用于计算市值等
+        current_price = realtime_quote.get('cur_price', 0)
+        volume = realtime_quote.get('volume', 0)
+        
+        # 判断市场
+        market_map = {
+            'HK': '港交所',
+            'US': '纳斯达克/纽交所', 
+            'SH': '上海证券交易所',
+            'SZ': '深圳证券交易所'
+        }
+        market = stock_code.split('.')[0] if '.' in stock_code else 'Unknown'
+        market_name = market_map.get(market, '未知市场')
+        
+        # 格式化显示文本
+        info_text = (
+            f"股票代码: {stock_code}    "
+            f"名称: {stock_name}    "
+            f"市场: {market_name}    "
+            f"类型: {stock_type}    "
+        )
+        
+        if current_price > 0:
+            market_cap = current_price * volume if volume > 0 else 0
+            if market_cap > 100000000:  # 大于1亿
+                market_cap_text = f"{market_cap/100000000:.1f}亿"
+            else:
+                market_cap_text = f"{market_cap/10000:.1f}万" if market_cap > 10000 else f"{market_cap:.0f}"
+            info_text += f"当前价: {current_price:.2f}    市值估算: {market_cap_text}    "
+            
+        if listing_date and listing_date != '未知':
+            info_text += f"上市日期: {listing_date}    "
+            
+        info_text += f"更新时间: {analysis_data.last_update.strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        return info_text
+        
+    async def update_basic_info(self):
+        """更新基础信息显示"""
+        try:
+            data_manager = self.get_analysis_data_manager()
+            if not data_manager:
+                if self._basic_info_widget:
+                    self._basic_info_widget.update("等待数据管理器初始化...")
+                return
+                
+            analysis_data = data_manager.get_current_analysis_data()
+            formatted_info = self.format_basic_info(analysis_data)
+            
+            if self._basic_info_widget:
+                self._basic_info_widget.update(formatted_info)
+                
+        except Exception as e:
+            if self._basic_info_widget:
+                self._basic_info_widget.update(f"数据加载错误: {str(e)}")
+    
+    async def on_stock_changed(self, stock_code: str):
+        """处理股票切换事件"""
+        try:
+            data_manager = self.get_analysis_data_manager()
+            if not data_manager:
+                return
+                
+            # 设置当前分析的股票并加载数据
+            success = await data_manager.set_current_stock(stock_code)
+            if success:
+                # 更新基础信息显示
+                await self.update_basic_info()
+            else:
+                if self._basic_info_widget:
+                    self._basic_info_widget.update(f"加载股票 {stock_code} 数据失败")
+                    
+        except Exception as e:
+            if self._basic_info_widget:
+                self._basic_info_widget.update(f"股票切换错误: {str(e)}")
+    
+    async def on_mount(self) -> None:
+        """组件挂载时初始化"""
+        self.logger.debug(f"DEBUG: AnalysisPanel on_mount 开始，组件ID: {self.id}")
+        
+        # 尝试初始加载数据
+        await self.update_basic_info()
+        
+        # 获取 TabbedContent 组件引用
+        try:
+            self._tabbed_content = self.query_one("#realtime_tabs", TabbedContent)
+            self.logger.debug(f"DEBUG: 成功找到 TabbedContent: {self._tabbed_content}")
+        except Exception as e:
+            self.logger.debug(f"DEBUG: 未找到 TabbedContent: {e}")
+            self._tabbed_content = None
+            
+        # 设置焦点，确保能接收键盘事件
+        self.can_focus = True
+        self.logger.debug(f"DEBUG: AnalysisPanel 设置 can_focus=True")
+        
+        # 立即获取焦点
+        self.focus()
+        self.logger.debug(f"DEBUG: AnalysisPanel 调用 focus()，当前焦点状态: {self.has_focus}")
+        
+        # 延迟再次确认焦点状态
+        def ensure_focus():
+            self.logger.debug(f"DEBUG: 延迟检查焦点状态: {self.has_focus}")
+            if not self.has_focus:
+                self.logger.debug("DEBUG: 焦点丢失，重新获取焦点")
+                self.focus()
+                self.logger.debug(f"DEBUG: 重新获取焦点后状态: {self.has_focus}")
+            else:
+                self.logger.debug("DEBUG: 焦点状态正常")
+        
+        self.call_after_refresh(ensure_focus)
+        self.logger.debug("DEBUG: AnalysisPanel 设置焦点完成")
+    
+    def _ensure_focus_after_switch(self) -> None:
+        """标签页切换后确保获得焦点"""
+        def ensure_focus():
+            try:
+                # 找到当前活跃标签页中的AnalysisPanel
+                main_tabs = self.app.query_one("#main_tabs", TabbedContent)
+                current_tab_id = main_tabs.active
+                self.logger.debug(f"DEBUG: 焦点恢复 - 当前活跃标签页: {current_tab_id}")
+                
+                # 如果当前是主界面标签页，不需要设置AnalysisPanel焦点
+                if current_tab_id == "main":
+                    self.logger.debug("DEBUG: 当前在主界面，无需设置AnalysisPanel焦点")
+                    return
+                
+                # 只有分析标签页才需要设置AnalysisPanel焦点
+                if current_tab_id.startswith('analysis_'):
+                    # 查找当前标签页中的AnalysisPanel
+                    try:
+                        # 直接查找当前标签页的AnalysisPanel
+                        current_panel = main_tabs.query_one(f"#{current_tab_id} AnalysisPanel")
+                        current_panel.focus()
+                        self.logger.debug(f"DEBUG: 为当前标签页的AnalysisPanel设置焦点，焦点状态: {current_panel.has_focus}")
+                    except Exception as e:
+                        # 备用方案：找到所有AnalysisPanel并设置第一个
+                        analysis_panels = self.app.query("AnalysisPanel")
+                        if analysis_panels:
+                            analysis_panels[0].focus()
+                            self.logger.debug(f"DEBUG: 备用方案设置焦点成功")
+                        
+            except Exception as e:
+                self.logger.debug(f"DEBUG: 切换后设置焦点失败: {e}")
+        
+        # 延迟执行以确保标签页切换完成
+        self.call_after_refresh(ensure_focus)
+    
+    def on_click(self, event) -> None:
+        """处理点击事件，确保获得焦点"""
+        self.logger.debug(f"DEBUG: AnalysisPanel 被点击，当前焦点状态: {self.has_focus}")
+        self.focus()
+        self.logger.debug(f"DEBUG: 点击后重新设置焦点，焦点状态: {self.has_focus}")
+    
+    def on_key(self, event) -> None:
+        """处理所有键盘事件"""
+        # 只有当前获得焦点的AnalysisPanel才处理事件，防止重复执行
+        if not self.has_focus:
+            return
+            
+        self.logger.debug(f"DEBUG: AnalysisPanel 收到按键事件: {event.key}, 焦点状态: {self.has_focus}")
+        if event.key == "z":
+            self.logger.debug("DEBUG: z键被按下，返回主界面")
+            self.action_return_to_main()
+            event.prevent_default()
+        elif event.key == "x":
+            self.logger.debug("DEBUG: x键被按下，切换到上一个标签页")
+            self.action_switch_tab_left()
+            event.prevent_default()
+        elif event.key == "c":
+            self.logger.debug("DEBUG: c键被按下，切换到下一个标签页")
+            self.action_switch_tab_right()
+            event.prevent_default()
+        else:
+            self.logger.debug(f"DEBUG: 未处理的按键: {event.key}")
+    
+    def action_return_to_main(self) -> None:
+        """返回主界面（z键）"""
+        try:
+            # 获取主标签页容器
+            main_tabs = self.app.query_one("#main_tabs", TabbedContent)
+            main_tabs.active = "main"
+            self.logger.debug("DEBUG: 已返回主界面")
+        except Exception as e:
+            self.logger.debug(f"DEBUG: 返回主界面失败: {e}")
+    
+    def action_switch_tab_left(self) -> None:
+        """向左切换标签页（x键）"""
+        try:
+            # 获取主标签页容器
+            main_tabs = self.app.query_one("#main_tabs", TabbedContent)
+            self.logger.debug(f"DEBUG: 找到主标签页容器: {main_tabs}")
+            self.logger.debug(f"DEBUG: 主标签页容器类型: {type(main_tabs)}")
+            self.logger.debug(f"DEBUG: 主标签页子组件数量: {len(main_tabs.children)}")
+            self.logger.debug(f"DEBUG: 主标签页子组件: {[type(child).__name__ for child in main_tabs.children]}")
+            
+            # 使用TabbedContent的tabs属性获取标签页列表
+            if hasattr(main_tabs, 'tabs'):
+                all_tabs = [tab.id for tab in main_tabs.tabs if hasattr(tab, 'id')]
+                self.logger.debug(f"DEBUG: 通过tabs属性获取: {all_tabs}")
+            else:
+                # 备用方案：获取所有TabPane，但过滤掉子标签页
+                all_panes = list(main_tabs.query(TabPane))
+                self.logger.debug(f"DEBUG: 通过query获取TabPane: {[pane.id for pane in all_panes]}")
+                self.logger.debug(f"DEBUG: TabPane详情: {[(pane.id, type(pane.parent).__name__) for pane in all_panes]}")
+                
+                # 过滤掉子标签页，只保留主界面的标签页
+                # 主界面标签页特征：ID以'main'开头或以'analysis_'开头
+                main_level_tabs = []
+                for pane in all_panes:
+                    if pane.id == 'main' or pane.id.startswith('analysis_'):
+                        main_level_tabs.append(pane.id)
+                
+                # 去重（因为可能有重复的分析标签页ID）
+                all_tabs = list(dict.fromkeys(main_level_tabs))  # 保持顺序的去重
+                self.logger.debug(f"DEBUG: 过滤后的主界面标签页: {all_tabs}")
+            
+            self.logger.debug(f"DEBUG: 主界面标签页: {all_tabs}")
+            self.logger.debug(f"DEBUG: 当前活跃标签页: {main_tabs.active}")
+            
+            if len(all_tabs) <= 1:
+                self.logger.debug("DEBUG: 标签页数量不足，无法切换")
+                return
+                
+            current_active = main_tabs.active
+            try:
+                current_index = all_tabs.index(current_active)
+            except ValueError:
+                self.logger.debug(f"DEBUG: 当前活跃标签页 '{current_active}' 不在列表中，默认为0")
+                current_index = 0
+            
+            # 切换到上一个标签页（循环）
+            prev_index = (current_index - 1) % len(all_tabs)
+            target_tab = all_tabs[prev_index]
+            self.logger.debug(f"DEBUG: 准备向左切换 {current_active}(索引{current_index}) -> {target_tab}(索引{prev_index})")
+            
+            # 执行切换
+            old_active = main_tabs.active
+            main_tabs.active = target_tab
+            new_active = main_tabs.active
+            
+            self.logger.debug(f"DEBUG: 切换结果：{old_active} -> {new_active}")
+            if new_active == target_tab:
+                self.logger.debug("DEBUG: 向左切换成功")
+                # 切换成功后，重新获取焦点确保继续能响应键盘事件
+                self._ensure_focus_after_switch()
+            else:
+                self.logger.debug(f"DEBUG: 向左切换失败，预期{target_tab}，实际{new_active}")
+            
+        except Exception as e:
+            self.logger.debug(f"DEBUG: 向左切换标签页失败: {e}")
+    
+    def action_switch_tab_right(self) -> None:
+        """向右切换标签页（c键）"""
+        try:
+            # 获取主标签页容器
+            main_tabs = self.app.query_one("#main_tabs", TabbedContent)
+            
+            # 使用TabbedContent的tabs属性获取标签页列表
+            if hasattr(main_tabs, 'tabs'):
+                all_tabs = [tab.id for tab in main_tabs.tabs if hasattr(tab, 'id')]
+            else:
+                # 备用方案：获取所有TabPane，但过滤掉子标签页
+                all_panes = list(main_tabs.query(TabPane))
+                
+                # 过滤掉子标签页，只保留主界面的标签页
+                # 主界面标签页特征：ID以'main'开头或以'analysis_'开头
+                main_level_tabs = []
+                for pane in all_panes:
+                    if pane.id == 'main' or pane.id.startswith('analysis_'):
+                        main_level_tabs.append(pane.id)
+                
+                # 去重（因为可能有重复的分析标签页ID）
+                all_tabs = list(dict.fromkeys(main_level_tabs))  # 保持顺序的去重
+            
+            self.logger.debug(f"DEBUG: 主界面标签页: {all_tabs}")
+            self.logger.debug(f"DEBUG: 当前活跃标签页: {main_tabs.active}")
+            
+            if len(all_tabs) <= 1:
+                self.logger.debug("DEBUG: 标签页数量不足，无法切换")
+                return
+                
+            current_active = main_tabs.active
+            try:
+                current_index = all_tabs.index(current_active)
+            except ValueError:
+                self.logger.debug(f"DEBUG: 当前活跃标签页 '{current_active}' 不在列表中，默认为0")
+                current_index = 0
+            
+            # 切换到下一个标签页（循环）
+            next_index = (current_index + 1) % len(all_tabs)
+            target_tab = all_tabs[next_index]
+            self.logger.debug(f"DEBUG: 准备向右切换 {current_active}(索引{current_index}) -> {target_tab}(索引{next_index})")
+            
+            # 执行切换
+            old_active = main_tabs.active
+            main_tabs.active = target_tab
+            new_active = main_tabs.active
+            
+            self.logger.debug(f"DEBUG: 切换结果：{old_active} -> {new_active}")
+            if new_active == target_tab:
+                self.logger.debug("DEBUG: 向右切换成功")
+                # 切换成功后，重新获取焦点确保继续能响应键盘事件
+                self._ensure_focus_after_switch()
+            else:
+                self.logger.debug(f"DEBUG: 向右切换失败，预期{target_tab}，实际{new_active}")
+            
+        except Exception as e:
+            self.logger.debug(f"DEBUG: 向右切换标签页失败: {e}")
+    
     DEFAULT_CSS = """
     AnalysisPanel {
         height: 1fr;
@@ -275,10 +623,12 @@ class AnalysisPanel(Container):
         """严格按照MVP设计组合分析面板的完整布局"""
         # 1. 基础信息区域
         with Container(classes="basic-info-area"):
-            yield Static(
-                "股票代码: 000001    名称: 平安银行    市场: 深交所    行业: 银行业    市值: 2847.3亿    流通股: 193.6亿股    PE: 5.2    PB: 0.65    ROE: 12.8%    更新时间: 2025-07-17 14:32:25",
+            basic_info_widget = Static(
+                "等待股票数据加载...",
                 id="basic_info_content"
             )
+            self._basic_info_widget = basic_info_widget
+            yield basic_info_widget
         
         # 2. 报价区域  
         with Container(classes="quote-area"):
@@ -312,10 +662,8 @@ class AnalysisPanel(Container):
             # 3.2 实时数据区域（37%宽度）
             with Container(classes="realtime-data-column"):
                 yield Static("实时数据区域", id="realtime_data_title")
-                with TabbedContent(initial="kline"):
                     # K线数据标签页
-                    with TabPane("K线数据", id="kline"):
-                        yield Static(
+                yield Static(
                             "[bold blue]K线数据[/bold blue]\n" +
                             "开盘:12.58  最高:12.96\n" +
                             "最低:12.51  收盘:12.85\n" +
@@ -324,8 +672,7 @@ class AnalysisPanel(Container):
                         )
                     
                     # 逐笔数据标签页
-                    with TabPane("逐笔数据", id="tick"):
-                        yield Static(
+                yield Static(
                             "[bold yellow]逐笔数据[/bold yellow]\n" +
                             "14:32:15  12.85↑125  89手\n" +
                             "14:32:18  12.84↓89   45手\n" +
@@ -335,8 +682,7 @@ class AnalysisPanel(Container):
                         )
                     
                     # 经纪队列数据标签页
-                    with TabPane("经纪队列", id="broker"):
-                        yield Static(
+                yield Static(
                             "[bold cyan]经纪队列[/bold cyan]\n" +
                             "中信证券 买入排队 1.2万手\n" +
                             "平安证券 卖出排队 8.9千手\n" +
@@ -401,6 +747,25 @@ class MainLayoutTab(Container):
 class AnalysisLayoutTab(Container):
     """分析界面标签页布局"""
     
+    def __init__(self, **kwargs):
+        """初始化分析界面标签页"""
+        super().__init__(**kwargs)
+        self._app_ref = None
+        self.analysis_panel = None
+        self.logger = get_logger(__name__)
+        
+    def set_app_reference(self, app):
+        """设置应用引用"""
+        self._app_ref = app
+        if self.analysis_panel:
+            self.analysis_panel.set_app_reference(app)
+    
+    def on_key(self, event) -> None:
+        """将键盘事件传递给AnalysisPanel"""
+        self.logger.debug(f"DEBUG: AnalysisLayoutTab 收到按键事件: {event.key}")
+        if self.analysis_panel and hasattr(self.analysis_panel, 'on_key'):
+            self.analysis_panel.on_key(event)
+    
     DEFAULT_CSS = """
     AnalysisLayoutTab {
         layout: vertical;
@@ -410,7 +775,10 @@ class AnalysisLayoutTab(Container):
     
     def compose(self) -> ComposeResult:
         """组合分析界面布局"""
-        yield AnalysisPanel(id="analysis_panel")
+        self.analysis_panel = AnalysisPanel(id="analysis_panel")
+        if self._app_ref:
+            self.analysis_panel.set_app_reference(self._app_ref)
+        yield self.analysis_panel
 
 
 class StatusBar(Container):
@@ -465,6 +833,12 @@ class StatusBar(Container):
 class MonitorLayout(Container):
     """监控界面完整布局"""
     
+    def __init__(self, **kwargs):
+        """初始化监控界面布局"""
+        super().__init__(**kwargs)
+        self._app_ref = None
+        self.logger = get_logger(__name__)
+    
     BINDINGS = [
         Binding("q", "quit", "退出", priority=True),
         Binding("r", "refresh", "刷新", priority=True),
@@ -474,6 +848,8 @@ class MonitorLayout(Container):
         Binding("escape", "go_back", "返回"),
         Binding("tab", "switch_tab", "切换标签"),
         Binding("enter", "enter_analysis", "进入分析"),
+        Binding("x", "switch_tab_left", "上一个标签", priority=True, show=True),
+        Binding("c", "switch_tab_right", "下一个标签", priority=True, show=True),
         Binding("ctrl+c", "quit", "强制退出", priority=True),
     ]
     
@@ -531,6 +907,83 @@ class MonitorLayout(Container):
     }
     """
     
+    def on_key(self, event) -> None:
+        """全局键盘事件处理器，确保x/c键总是被处理"""
+        if event.key == "x":
+            self.logger.debug("DEBUG: MonitorLayout 拦截 x 键")
+            self.action_switch_tab_left()
+            event.prevent_default()
+        elif event.key == "c":
+            self.logger.debug("DEBUG: MonitorLayout 拦截 c 键")
+            self.action_switch_tab_right()
+            event.prevent_default()
+    
+    def action_switch_tab_left(self) -> None:
+        """向左切换标签页（x键）"""
+        try:
+            main_tabs = self.query_one("#main_tabs", TabbedContent)
+            
+            # 获取主界面标签页（过滤掉子标签页）
+            all_panes = list(main_tabs.query(TabPane))
+            main_level_tabs = []
+            for pane in all_panes:
+                if pane.id == 'main' or pane.id.startswith('analysis_'):
+                    main_level_tabs.append(pane.id)
+            
+            all_tabs = list(dict.fromkeys(main_level_tabs))  # 去重
+            self.logger.debug(f"DEBUG: MonitorLayout x键 - 主界面标签页: {all_tabs}")
+            
+            if len(all_tabs) <= 1:
+                self.logger.debug("DEBUG: MonitorLayout 标签页数量不足，无法切换")
+                return
+                
+            current_active = main_tabs.active
+            try:
+                current_index = all_tabs.index(current_active)
+            except ValueError:
+                current_index = 0
+            
+            prev_index = (current_index - 1) % len(all_tabs)
+            target_tab = all_tabs[prev_index]
+            main_tabs.active = target_tab
+            self.logger.debug(f"DEBUG: MonitorLayout 向左切换 {current_active} -> {target_tab}")
+            
+        except Exception as e:
+            self.logger.debug(f"DEBUG: MonitorLayout 向左切换失败: {e}")
+    
+    def action_switch_tab_right(self) -> None:
+        """向右切换标签页（c键）"""
+        try:
+            main_tabs = self.query_one("#main_tabs", TabbedContent)
+            
+            # 获取主界面标签页（过滤掉子标签页）
+            all_panes = list(main_tabs.query(TabPane))
+            main_level_tabs = []
+            for pane in all_panes:
+                if pane.id == 'main' or pane.id.startswith('analysis_'):
+                    main_level_tabs.append(pane.id)
+            
+            all_tabs = list(dict.fromkeys(main_level_tabs))  # 去重
+            self.logger.debug(f"DEBUG: MonitorLayout c键 - 主界面标签页: {all_tabs}")
+            
+            if len(all_tabs) <= 1:
+                self.logger.debug("DEBUG: MonitorLayout 标签页数量不足，无法切换")
+                return
+                
+            current_active = main_tabs.active
+            try:
+                current_index = all_tabs.index(current_active)
+            except ValueError:
+                current_index = 0
+            
+            next_index = (current_index + 1) % len(all_tabs)
+            target_tab = all_tabs[next_index]
+            main_tabs.active = target_tab
+            self.logger.debug(f"DEBUG: MonitorLayout 向右切换 {current_active} -> {target_tab}")
+            
+        except Exception as e:
+            self.logger.debug(f"DEBUG: MonitorLayout 向右切换失败: {e}")
+
     def compose(self) -> ComposeResult:
         """组合完整监控界面"""
         # 状态栏保留，但去除Header和Footer让界面更紧凑

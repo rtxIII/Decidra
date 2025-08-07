@@ -12,7 +12,7 @@ from typing import List, Dict, Optional, Any
 
 from textual.events import Key
 from textual.app import App, ComposeResult
-from textual.widgets import DataTable
+from textual.widgets import DataTable, TabbedContent, TabPane
 from textual.binding import Binding
 from textual.screen import Screen
 
@@ -72,12 +72,13 @@ class MonitorApp(App):
         Binding("r", "refresh", "刷新数据"),
         Binding("escape", "go_back", "返回"),
         Binding("tab", "switch_tab", "切换标签"),
-        Binding("enter", "enter_analysis", "进入分析"),
         Binding("w", "cursor_up", "向上移动"),
         Binding("s", "cursor_down", "向下移动"),
         Binding("a", "focus_left_table", "焦点左移"),
         Binding("d", "focus_right_table", "焦点右移"),
         Binding("space", "select_group", "选择分组"),
+        Binding("x", "global_switch_tab_left", "上一个标签", priority=True),
+        Binding("c", "global_switch_tab_right", "下一个标签", priority=True),
         Binding("ctrl+c", "quit", "强制退出", priority=True),
     ]
     
@@ -200,6 +201,8 @@ class MonitorApp(App):
             # 重新构建界面
             await self.recompose()
             
+            # UI组件应用引用现在通过动态创建分析界面时设置
+            
             # 初始化主界面
             await self.lifecycle_manager.on_mount()
             
@@ -270,10 +273,75 @@ class MonitorApp(App):
         if not self.show_splash and self.managers_initialized:
             await self.event_handler.action_focus_right_table()
     
-    async def action_enter_analysis(self) -> None:
-        """进入分析界面动作"""
+    async def action_global_switch_tab_left(self) -> None:
+        """全局向左切换标签页（x键）"""
         if not self.show_splash and self.managers_initialized:
-            await self.event_handler.action_enter_analysis()
+            try:
+                # 获取主标签页容器
+                main_tabs = self.query_one("#main_tabs", TabbedContent)
+                
+                # 获取主界面标签页（过滤掉子标签页）
+                all_panes = list(main_tabs.query(TabPane))
+                main_level_tabs = []
+                for pane in all_panes:
+                    if pane.id == 'main' or pane.id.startswith('analysis_'):
+                        main_level_tabs.append(pane.id)
+                
+                all_tabs = list(dict.fromkeys(main_level_tabs))  # 去重
+                self.logger.debug(f"DEBUG: MonitorApp x键 - 全局标签页: {all_tabs}")
+                
+                if len(all_tabs) <= 1:
+                    self.logger.debug("DEBUG: MonitorApp 标签页数量不足，无法切换")
+                    return
+                    
+                current_active = main_tabs.active
+                try:
+                    current_index = all_tabs.index(current_active)
+                except ValueError:
+                    current_index = 0
+                
+                prev_index = (current_index - 1) % len(all_tabs)
+                target_tab = all_tabs[prev_index]
+                main_tabs.active = target_tab
+                self.logger.debug(f"DEBUG: MonitorApp 全局向左切换 {current_active} -> {target_tab}")
+                
+            except Exception as e:
+                self.logger.debug(f"DEBUG: MonitorApp 全局向左切换失败: {e}")
+    
+    async def action_global_switch_tab_right(self) -> None:
+        """全局向右切换标签页（c键）"""
+        if not self.show_splash and self.managers_initialized:
+            try:
+                # 获取主标签页容器
+                main_tabs = self.query_one("#main_tabs", TabbedContent)
+                
+                # 获取主界面标签页（过滤掉子标签页）
+                all_panes = list(main_tabs.query(TabPane))
+                main_level_tabs = []
+                for pane in all_panes:
+                    if pane.id == 'main' or pane.id.startswith('analysis_'):
+                        main_level_tabs.append(pane.id)
+                
+                all_tabs = list(dict.fromkeys(main_level_tabs))  # 去重
+                self.logger.debug(f"DEBUG: MonitorApp c键 - 全局标签页: {all_tabs}")
+                
+                if len(all_tabs) <= 1:
+                    self.logger.debug("DEBUG: MonitorApp 标签页数量不足，无法切换")
+                    return
+                    
+                current_active = main_tabs.active
+                try:
+                    current_index = all_tabs.index(current_active)
+                except ValueError:
+                    current_index = 0
+                
+                next_index = (current_index + 1) % len(all_tabs)
+                target_tab = all_tabs[next_index]
+                main_tabs.active = target_tab
+                self.logger.debug(f"DEBUG: MonitorApp 全局向右切换 {current_active} -> {target_tab}")
+                
+            except Exception as e:
+                self.logger.debug(f"DEBUG: MonitorApp 全局向右切换失败: {e}")
     
     async def action_quit(self) -> None:
         """退出应用动作"""

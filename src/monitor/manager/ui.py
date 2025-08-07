@@ -132,7 +132,7 @@ class UIManager:
                 
                 # 添加操作提示
                 await self.info_panel.add_info(
-                    "使用快捷键: A-添加股票 D-删除股票 R-刷新数据 Q-退出",
+                    "使用快捷键:  A-左 D-右 Q-退出",
                     InfoType.USER_ACTION,
                     InfoLevel.INFO,
                     "系统提示"
@@ -348,7 +348,16 @@ class UIManager:
             return
             
         try:
-            # 更新图表面板
+            # 尝试更新新的AnalysisPanel
+            try:
+                analysis_panel = self.app.query_one("#analysis_panel", expect_type=None)
+                if hasattr(analysis_panel, 'on_stock_changed'):
+                    await analysis_panel.on_stock_changed(self.app_core.current_stock_code)
+                    self.logger.info(f"新分析面板更新完成: {self.app_core.current_stock_code}")
+            except Exception as panel_error:
+                self.logger.debug(f"新分析面板更新失败(可能不存在): {panel_error}")
+            
+            # 更新图表面板（向后兼容）
             if self.chart_panel:
                 chart_text = f"""[bold blue]{self.app_core.current_stock_code} K线图表[/bold blue]
 
@@ -362,7 +371,7 @@ class UIManager:
 [yellow]正在加载图表数据...[/yellow]"""
                 self.chart_panel.update(chart_text)
             
-            # 更新AI分析面板
+            # 更新AI分析面板（向后兼容）
             if self.ai_analysis_panel:
                 ai_text = f"""[bold green]{self.app_core.current_stock_code} AI智能分析[/bold green]
 
@@ -374,6 +383,8 @@ class UIManager:
 
 [yellow]正在生成AI分析报告...[/yellow]"""
                 self.ai_analysis_panel.update(ai_text)
+                
+            self.logger.info(f"分析界面更新完成: {self.app_core.current_stock_code}")
             
         except Exception as e:
             self.logger.error(f"更新分析界面失败: {e}")

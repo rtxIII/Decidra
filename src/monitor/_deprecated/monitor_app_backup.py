@@ -343,7 +343,7 @@ class MonitorApp(App):
                 
                 # 添加操作提示
                 await self.info_panel.add_info(
-                    "使用快捷键: A-添加股票 D-删除股票 R-刷新数据 Q-退出",
+                    "使用快捷键: A-左 D-右 Q-退出",
                     InfoType.USER_ACTION,
                     InfoLevel.INFO,
                     "系统提示"
