@@ -64,6 +64,9 @@ class LifecycleManager:
         if ui_manager:
             await ui_manager.initialize_info_panel()
         
+        # 初始化AnalysisPanel InfoPanel
+        await self.initialize_analysis_info_panel()
+        
         # 启动任务监控
         await self.start_task_monitoring()
         
@@ -71,6 +74,9 @@ class LifecycleManager:
         # 向信息面板显示启动完成信息
         if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
             await self.app_core.app.ui_manager.info_panel.log_info("应用程序启动完成", "系统")
+        
+        # 向AnalysisPanel InfoPanel显示启动完成信息（如果存在的话）
+        await self.log_to_analysis_info_panel("分析模块启动完成，可以开始股票分析", "系统")
         
         # 更新状态显示
         await self.app_core.update_status_display()
@@ -171,6 +177,9 @@ class LifecycleManager:
         # 向信息面板显示退出信息
         if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
             await self.app_core.app.ui_manager.info_panel.log_info("应用程序正在退出", "系统")
+        
+        # 向AnalysisPanel InfoPanel显示退出信息
+        await self.log_to_analysis_info_panel("分析模块正在关闭...", "系统")
         
         # 设置优雅退出标志
         self.app_core._is_quitting = True
@@ -306,3 +315,107 @@ class LifecycleManager:
         except Exception as e:
             self.logger.error(f"资源清理失败: {e}")
             # 继续退出过程，不让异常阻止程序退出
+    
+    async def initialize_analysis_info_panel(self) -> None:
+        """初始化AnalysisPanel中的InfoPanel"""
+        try:
+            # 查找AnalysisPanel中的InfoPanel
+            analysis_info_panel = self.get_analysis_info_panel()
+            if analysis_info_panel:
+                await analysis_info_panel.log_info("分析面板已初始化", "系统")
+                self.logger.info("AnalysisPanel InfoPanel 初始化完成")
+            else:
+                self.logger.debug("未找到AnalysisPanel InfoPanel，可能面板尚未创建")
+        except Exception as e:
+            self.logger.warning(f"初始化AnalysisPanel InfoPanel失败: {e}")
+    
+    def get_analysis_info_panel(self):
+        """获取AnalysisPanel中的InfoPanel实例"""
+        try:
+            self.logger.debug("开始查找AnalysisPanel InfoPanel...")
+            
+            # 尝试查找ai_info_panel
+            analysis_panels = self.app.query("AnalysisPanel")
+            self.logger.debug(f"找到 {len(analysis_panels)} 个 AnalysisPanel")
+            
+            if analysis_panels:
+                for i, panel in enumerate(analysis_panels):
+                    try:
+                        self.logger.debug(f"检查 AnalysisPanel #{i}")
+                        info_panel = panel.query_one("#ai_info_panel")
+                        if info_panel:
+                            self.logger.debug(f"在 AnalysisPanel #{i} 中找到 InfoPanel: {info_panel}")
+                            return info_panel
+                    except Exception as panel_error:
+                        self.logger.debug(f"AnalysisPanel #{i} 中未找到 InfoPanel: {panel_error}")
+                        continue
+            
+            # 备用方案：直接查找ai_info_panel
+            try:
+                self.logger.debug("尝试直接查找 #ai_info_panel")
+                info_panel = self.app.query_one("#ai_info_panel")
+                self.logger.debug(f"直接找到 InfoPanel: {info_panel}")
+                return info_panel
+            except Exception as direct_error:
+                self.logger.debug(f"直接查找 InfoPanel 失败: {direct_error}")
+                return None
+                
+        except Exception as e:
+            self.logger.debug(f"获取AnalysisPanel InfoPanel失败: {e}")
+            return None
+    
+    async def log_to_analysis_info_panel(self, message: str, category: str = "分析", level: str = "INFO") -> None:
+        """向AnalysisPanel的InfoPanel记录信息"""
+        try:
+            analysis_info_panel = self.get_analysis_info_panel()
+            if analysis_info_panel:
+                if level.upper() == "ERROR":
+                    await analysis_info_panel.log_error(message, category)
+                elif level.upper() == "WARNING":
+                    await analysis_info_panel.log_warning(message, category)
+                else:
+                    await analysis_info_panel.log_info(message, category)
+            else:
+                # 如果没有找到AnalysisPanel InfoPanel，记录到日志
+                self.logger.info(f"[{category}] {message}")
+        except Exception as e:
+            self.logger.error(f"向AnalysisPanel InfoPanel记录信息失败: {e}")
+    
+    async def log_analysis_data(self, stock_code: str, data_type: str, status: str, details: str = "") -> None:
+        """记录分析数据相关信息"""
+        message = f"{stock_code} {data_type} {status}"
+        if details:
+            message += f" - {details}"
+        await self.log_to_analysis_info_panel(message, "数据")
+    
+    async def log_analysis_event(self, event_type: str, description: str, level: str = "INFO") -> None:
+        """记录分析事件信息"""
+        await self.log_to_analysis_info_panel(f"{event_type}: {description}", "事件", level)
+    
+    async def log_ai_analysis_result(self, analysis_type: str, result_summary: str) -> None:
+        """记录AI分析结果"""
+        await self.log_to_analysis_info_panel(f"{analysis_type} 完成 - {result_summary}", "AI分析")
+    
+    async def on_analysis_panel_created(self) -> None:
+        """当AnalysisPanel被创建时调用，显示欢迎信息"""
+        try:
+            # 等待一小段时间确保InfoPanel完全初始化
+            await asyncio.sleep(0.1)
+            
+            # 检查是否能找到InfoPanel
+            analysis_info_panel = self.get_analysis_info_panel()
+            if analysis_info_panel:
+                await analysis_info_panel.log_info("欢迎使用股票分析功能！", "系统")
+                await analysis_info_panel.log_info("您可以选择股票进行深度分析", "系统")
+                self.logger.info("AnalysisPanel 欢迎信息已显示")
+            else:
+                self.logger.debug("AnalysisPanel创建后仍无法找到InfoPanel")
+        except Exception as e:
+            self.logger.warning(f"显示AnalysisPanel欢迎信息失败: {e}")
+    
+    def setup_analysis_panel_welcome(self) -> None:
+        """设置分析面板的欢迎信息（供UI管理器调用）"""
+        self.logger.info("收到AnalysisPanel创建通知，开始设置欢迎信息")
+        # 创建一个异步任务来处理欢迎信息
+        asyncio.create_task(self.on_analysis_panel_created())
+    

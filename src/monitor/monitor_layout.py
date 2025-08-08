@@ -13,6 +13,7 @@ from textual.widgets import (
 from textual.reactive import reactive
 from textual.binding import Binding
 from typing import List, Dict, Optional
+import asyncio
 from utils.logger import get_logger
 
 STOCK_COLUMNS = {
@@ -298,6 +299,24 @@ class AnalysisPanel(Container):
             if self._basic_info_widget:
                 self._basic_info_widget.update(f"股票切换错误: {str(e)}")
     
+    async def initialize_info_panel(self) -> None:
+        """初始化 InfoPanel 并显示欢迎信息"""
+        try:
+            # 等待一小段时间确保InfoPanel完全初始化
+            await asyncio.sleep(0.1)
+            
+            # 查找 InfoPanel
+            info_panel = self.query_one("#ai_info_panel", expect_type=None)
+            if info_panel and hasattr(info_panel, 'log_info'):
+                await info_panel.log_info("欢迎使用股票分析功能！", "系统")
+                await info_panel.log_info("您可以选择股票进行深度分析", "系统")
+                self.logger.info("AnalysisPanel InfoPanel 欢迎信息已显示")
+            else:
+                self.logger.warning(f"未找到InfoPanel或InfoPanel不支持log_info方法: {info_panel}")
+                
+        except Exception as e:
+            self.logger.error(f"初始化AnalysisPanel InfoPanel失败: {e}")
+    
     async def on_mount(self) -> None:
         """组件挂载时初始化"""
         self.logger.debug(f"DEBUG: AnalysisPanel on_mount 开始，组件ID: {self.id}")
@@ -312,6 +331,9 @@ class AnalysisPanel(Container):
         except Exception as e:
             self.logger.debug(f"DEBUG: 未找到 TabbedContent: {e}")
             self._tabbed_content = None
+        
+        # 初始化 InfoPanel 并显示欢迎信息
+        await self.initialize_info_panel()
             
         # 设置焦点，确保能接收键盘事件
         self.can_focus = True

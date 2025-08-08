@@ -354,6 +354,9 @@ class UIManager:
                 if hasattr(analysis_panel, 'on_stock_changed'):
                     await analysis_panel.on_stock_changed(self.app_core.current_stock_code)
                     self.logger.info(f"新分析面板更新完成: {self.app_core.current_stock_code}")
+                    
+                    # 通知lifecycle管理器AnalysisPanel已创建
+                    await self.notify_analysis_panel_created()
             except Exception as panel_error:
                 self.logger.debug(f"新分析面板更新失败(可能不存在): {panel_error}")
             
@@ -564,3 +567,31 @@ class UIManager:
                 
         except Exception as e:
             self.logger.error(f"恢复单元格正常样式失败: {e}")
+    
+    async def notify_analysis_panel_created(self) -> None:
+        """通知lifecycle管理器AnalysisPanel已创建"""
+        try:
+            self.logger.info("尝试通知lifecycle管理器AnalysisPanel已创建")
+            
+            # 尝试多种方式获取lifecycle_manager
+            lifecycle_manager = None
+            
+            # 方式1: 从app_core直接获取
+            if hasattr(self.app_core, 'lifecycle_manager'):
+                lifecycle_manager = self.app_core.lifecycle_manager
+                self.logger.debug("从app_core获取到lifecycle_manager")
+            
+            # 方式2: 从app获取
+            elif hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'lifecycle_manager'):
+                lifecycle_manager = self.app_core.app.lifecycle_manager
+                self.logger.debug("从app_core.app获取到lifecycle_manager")
+            
+            self.logger.debug(f"最终获取到lifecycle_manager: {lifecycle_manager}")
+            
+            if lifecycle_manager and hasattr(lifecycle_manager, 'setup_analysis_panel_welcome'):
+                lifecycle_manager.setup_analysis_panel_welcome()
+                self.logger.info("已成功通知lifecycle管理器AnalysisPanel创建")
+            else:
+                self.logger.warning(f"lifecycle_manager未找到或没有setup_analysis_panel_welcome方法，manager={lifecycle_manager}")
+        except Exception as e:
+            self.logger.error(f"通知AnalysisPanel创建失败: {e}")

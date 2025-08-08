@@ -47,7 +47,7 @@ class SplashScreenView(Screen):
     """启动页面屏幕"""
     
     def compose(self) -> ComposeResult:
-        yield SplashScreen(auto_jump_delay=3)
+        yield SplashScreen(auto_jump_delay=1)
 
 
 class MonitorScreen(Screen):
@@ -85,6 +85,9 @@ class MonitorApp(App):
     def __init__(self):
         """初始化监控应用"""
         super().__init__()
+        
+        # 设置主题
+        self.theme = "tokyo-night"
         
         # 设置日志
         self.logger = get_logger(__name__)
@@ -145,7 +148,7 @@ class MonitorApp(App):
         """构建用户界面"""
         # 初始时显示启动页面
         if self.show_splash:
-            yield SplashScreen(auto_jump_delay=0)
+            yield SplashScreen(auto_jump_delay=1)
         else:
             yield MonitorLayout(id="monitor_layout")
     
@@ -191,6 +194,7 @@ class MonitorApp(App):
         """切换到主界面"""
         try:
             self.logger.info("开始切换到主界面")
+        
             
             # 初始化管理器
             self._initialize_managers()

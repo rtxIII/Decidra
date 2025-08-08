@@ -41,13 +41,16 @@ class ColorLogger(logging.Logger):
         #console = logging.StreamHandler()
         #console.setFormatter(color_formatter)
         #self.addHandler(console)
+        
         file_handler = TimedRotatingFileHandler(LOG_FILE, when='d', interval=1, backupCount=1)
         file_handler.setFormatter(FORMATTER)
         self.addHandler(file_handler)
         self.propagate = False
 
-def get_logger(logger_name):
-    return ColorLogger(logger_name)
+def get_logger(logger_name, log_level=logging.DEBUG):
+    logger = ColorLogger(logger_name)
+    logger.setLevel(log_level)
+    return logger
 
 def setup_logger(logger_name=__name__):
     return ColorLogger(logger_name)
