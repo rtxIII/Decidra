@@ -8,7 +8,7 @@ import asyncio
 import signal
 import sys
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from utils.logger import get_logger
 
@@ -28,7 +28,17 @@ class LifecycleManager:
         # 任务监控
         self._task_monitor_timer: Optional[asyncio.Task] = None
         
+        # 标签页状态管理器 - 延迟初始化
+        self._tab_state_manager: Optional['TabStateManager'] = None
+        
         self.logger.info("LifecycleManager 初始化完成")
+    
+    def _get_tab_state_manager(self):
+        """获取标签页状态管理器（延迟初始化）"""
+        if self._tab_state_manager is None:
+            from .tab_state import TabStateManager
+            self._tab_state_manager = TabStateManager(self.app_core)
+        return self._tab_state_manager
     
     async def on_mount(self) -> None:
         """应用启动时的初始化"""
@@ -69,6 +79,9 @@ class LifecycleManager:
         
         # 启动任务监控
         await self.start_task_monitoring()
+        
+        # 恢复标签页状态（在所有初始化完成后）
+        await self.restore_tab_state()
         
         self.logger.info("MonitorApp 启动完成")
         # 向信息面板显示启动完成信息
@@ -180,6 +193,9 @@ class LifecycleManager:
         
         # 向AnalysisPanel InfoPanel显示退出信息
         await self.log_to_analysis_info_panel("分析模块正在关闭...", "系统")
+        
+        # 保存标签页状态
+        await self.save_tab_state()
         
         # 设置优雅退出标志
         self.app_core._is_quitting = True
@@ -418,4 +434,67 @@ class LifecycleManager:
         self.logger.info("收到AnalysisPanel创建通知，开始设置欢迎信息")
         # 创建一个异步任务来处理欢迎信息
         asyncio.create_task(self.on_analysis_panel_created())
+    
+    # ================== 标签页状态管理方法 ==================
+    
+    async def save_tab_state(self) -> bool:
+        """保存当前标签页状态"""
+        try:
+            tab_manager = self._get_tab_state_manager()
+            success = await tab_manager.save_tab_state()
+            
+            if success:
+                self.logger.info("分析标签页状态保存成功")
+                await self.log_to_analysis_info_panel("分析标签页状态已保存", "系统")
+            else:
+                self.logger.warning("分析标签页状态保存失败")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"保存标签页状态失败: {e}")
+            return False
+    
+    async def restore_tab_state(self) -> bool:
+        """恢复标签页状态"""
+        try:
+            tab_manager = self._get_tab_state_manager()
+            success = await tab_manager.restore_tab_state()
+            
+            if success:
+                self.logger.info("标签页状态恢复成功")
+            else:
+                self.logger.info("没有需要恢复的标签页状态")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"恢复标签页状态失败: {e}")
+            return False
+    
+    async def clear_saved_tab_state(self) -> bool:
+        """清除保存的标签页状态"""
+        try:
+            tab_manager = self._get_tab_state_manager()
+            success = await tab_manager.clear_saved_state()
+            
+            if success:
+                self.logger.info("标签页状态已清除")
+                await self.log_to_analysis_info_panel("已清除保存的标签页状态", "系统")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"清除标签页状态失败: {e}")
+            return False
+    
+    def get_tab_state_info(self) -> Dict[str, Any]:
+        """获取标签页状态信息"""
+        try:
+            tab_manager = self._get_tab_state_manager()
+            return tab_manager.get_state_info()
+            
+        except Exception as e:
+            self.logger.error(f"获取标签页状态信息失败: {e}")
+            return {"has_saved_state": False, "error": str(e)}
     

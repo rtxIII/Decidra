@@ -31,7 +31,7 @@ from monitor.main import (
     EventHandler
 )
 from monitor.manager import (
-    UIManager, GroupManager, LifecycleManager
+    UIManager, GroupManager, LifecycleManager, TabStateManager
 )
 
 # 导入分析页面组件

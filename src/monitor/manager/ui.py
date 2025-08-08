@@ -595,3 +595,86 @@ class UIManager:
                 self.logger.warning(f"lifecycle_manager未找到或没有setup_analysis_panel_welcome方法，manager={lifecycle_manager}")
         except Exception as e:
             self.logger.error(f"通知AnalysisPanel创建失败: {e}")
+    
+    # ================== 标签页管理方法 ==================
+    
+    async def create_analysis_tab(self, stock_code: str) -> bool:
+        """
+        创建分析标签页
+        
+        Args:
+            stock_code: 股票代码 (如 HK.00700, US.AAPL)
+            
+        Returns:
+            bool: 创建是否成功
+        """
+        try:
+            self.logger.info(f"开始创建分析标签页: {stock_code}")
+            
+            # 获取主标签页容器
+            main_tabs = self.app.query_one("#main_tabs", expect_type=None)
+            if not main_tabs:
+                self.logger.error("找不到主标签页容器 #main_tabs")
+                return False
+            
+            # 生成标签页ID和标题
+            tab_id = f"analysis_{stock_code}"
+            tab_title = f"分析 - {stock_code}"
+            
+            # 检查标签页是否已存在
+            existing_panes = list(main_tabs.query("TabPane"))
+            for pane in existing_panes:
+                if pane.id == tab_id:
+                    self.logger.info(f"分析标签页 {tab_id} 已存在，跳过创建")
+                    return True
+            
+            # 导入分析界面组件
+            try:
+                from monitor.monitor_layout import AnalysisLayoutTab
+                from textual.widgets import TabPane
+            except ImportError as e:
+                self.logger.error(f"导入分析界面组件失败: {e}")
+                return False
+            
+            # 创建新的分析标签页
+            analysis_layout = AnalysisLayoutTab()
+            analysis_layout.set_app_reference(self.app)
+            
+            # 创建TabPane并添加到主标签页容器
+            new_tab_pane = TabPane(tab_title, analysis_layout, id=tab_id)
+            main_tabs.add_pane(new_tab_pane)
+            
+            self.logger.info(f"成功创建分析标签页: {tab_id}")
+            
+            # 等待一小段时间让标签页完全创建
+            import asyncio
+            await asyncio.sleep(0.1)
+            
+            # 通知分析面板已创建
+            await self.notify_analysis_panel_created()
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"创建分析标签页 {stock_code} 失败: {e}")
+            return False
+    
+    def has_analysis_tab(self, stock_code: str) -> bool:
+        """检查分析标签页是否存在"""
+        try:
+            main_tabs = self.app.query_one("#main_tabs", expect_type=None)
+            if not main_tabs:
+                return False
+            
+            tab_id = f"analysis_{stock_code}"
+            existing_panes = list(main_tabs.query("TabPane"))
+            
+            for pane in existing_panes:
+                if pane.id == tab_id:
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"检查分析标签页存在性失败: {e}")
+            return False
