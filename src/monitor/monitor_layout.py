@@ -220,8 +220,14 @@ class AnalysisPanel(Container):
         # 提取基础信息
         stock_code = basic_info.get('code', '未知')
         stock_name = basic_info.get('name', '未知')
-        stock_type = basic_info.get('stock_type', '未知')
-        listing_date = basic_info.get('listing_date', '未知')
+        last_price = basic_info.get('last_price', '未知')
+        prev_close_price = basic_info.get('prev_close_price', '未知')
+        volume     = basic_info.get('volume', '未知')
+        turnover     = basic_info.get('turnover', '未知')
+        turnover_rate     = basic_info.get('turnover_rate', '未知')
+        amplitude     = basic_info.get('amplitude', '未知')
+        listing_date  = basic_info.get('listing_date', '未知')
+
         
         # 提取实时数据用于计算市值等
         current_price = realtime_quote.get('cur_price', 0)
@@ -241,8 +247,11 @@ class AnalysisPanel(Container):
         info_text = (
             f"股票代码: {stock_code}    "
             f"名称: {stock_name}    "
-            f"市场: {market_name}    "
-            f"类型: {stock_type}    "
+            f"最新价格: {last_price}"
+            f"昨收盘价格: {prev_close_price}"
+            f"成交金额: {turnover}"
+            f"换手率: {turnover_rate}"
+            f"振幅: {amplitude}"
         )
         
         if current_price > 0:
@@ -319,7 +328,7 @@ class AnalysisPanel(Container):
     
     async def on_mount(self) -> None:
         """组件挂载时初始化"""
-        self.logger.debug(f"DEBUG: AnalysisPanel on_mount 开始，组件ID: {self.id}")
+        #self.logger.debug(f"DEBUG: AnalysisPanel on_mount 开始，组件ID: {self.id}")
         
         # 尝试初始加载数据
         await self.update_basic_info()
@@ -327,9 +336,9 @@ class AnalysisPanel(Container):
         # 获取 TabbedContent 组件引用
         try:
             self._tabbed_content = self.query_one("#realtime_tabs", TabbedContent)
-            self.logger.debug(f"DEBUG: 成功找到 TabbedContent: {self._tabbed_content}")
+            #self.logger.debug(f"DEBUG: 成功找到 TabbedContent: {self._tabbed_content}")
         except Exception as e:
-            self.logger.debug(f"DEBUG: 未找到 TabbedContent: {e}")
+            #self.logger.debug(f"DEBUG: 未找到 TabbedContent: {e}")
             self._tabbed_content = None
         
         # 初始化 InfoPanel 并显示欢迎信息
@@ -337,19 +346,19 @@ class AnalysisPanel(Container):
             
         # 设置焦点，确保能接收键盘事件
         self.can_focus = True
-        self.logger.debug(f"DEBUG: AnalysisPanel 设置 can_focus=True")
+        #self.logger.debug(f"DEBUG: AnalysisPanel 设置 can_focus=True")
         
         # 立即获取焦点
         self.focus()
-        self.logger.debug(f"DEBUG: AnalysisPanel 调用 focus()，当前焦点状态: {self.has_focus}")
+        #self.logger.debug(f"DEBUG: AnalysisPanel 调用 focus()，当前焦点状态: {self.has_focus}")
         
         # 延迟再次确认焦点状态
         def ensure_focus():
-            self.logger.debug(f"DEBUG: 延迟检查焦点状态: {self.has_focus}")
+            #self.logger.debug(f"DEBUG: 延迟检查焦点状态: {self.has_focus}")
             if not self.has_focus:
                 self.logger.debug("DEBUG: 焦点丢失，重新获取焦点")
                 self.focus()
-                self.logger.debug(f"DEBUG: 重新获取焦点后状态: {self.has_focus}")
+                #self.logger.debug(f"DEBUG: 重新获取焦点后状态: {self.has_focus}")
             else:
                 self.logger.debug("DEBUG: 焦点状态正常")
         
@@ -363,7 +372,7 @@ class AnalysisPanel(Container):
                 # 找到当前活跃标签页中的AnalysisPanel
                 main_tabs = self.app.query_one("#main_tabs", TabbedContent)
                 current_tab_id = main_tabs.active
-                self.logger.debug(f"DEBUG: 焦点恢复 - 当前活跃标签页: {current_tab_id}")
+                #self.logger.debug(f"DEBUG: 焦点恢复 - 当前活跃标签页: {current_tab_id}")
                 
                 # 如果当前是主界面标签页，不需要设置AnalysisPanel焦点
                 if current_tab_id == "main":
@@ -377,25 +386,26 @@ class AnalysisPanel(Container):
                         # 直接查找当前标签页的AnalysisPanel
                         current_panel = main_tabs.query_one(f"#{current_tab_id} AnalysisPanel")
                         current_panel.focus()
-                        self.logger.debug(f"DEBUG: 为当前标签页的AnalysisPanel设置焦点，焦点状态: {current_panel.has_focus}")
+                        #self.logger.debug(f"DEBUG: 为当前标签页的AnalysisPanel设置焦点，焦点状态: {current_panel.has_focus}")
                     except Exception as e:
                         # 备用方案：找到所有AnalysisPanel并设置第一个
                         analysis_panels = self.app.query("AnalysisPanel")
                         if analysis_panels:
                             analysis_panels[0].focus()
-                            self.logger.debug(f"DEBUG: 备用方案设置焦点成功")
+                            #self.logger.debug(f"DEBUG: 备用方案设置焦点成功")
                         
             except Exception as e:
-                self.logger.debug(f"DEBUG: 切换后设置焦点失败: {e}")
+                pass
+                #self.logger.debug(f"DEBUG: 切换后设置焦点失败: {e}")
         
         # 延迟执行以确保标签页切换完成
         self.call_after_refresh(ensure_focus)
     
     def on_click(self, event) -> None:
         """处理点击事件，确保获得焦点"""
-        self.logger.debug(f"DEBUG: AnalysisPanel 被点击，当前焦点状态: {self.has_focus}")
+        #self.logger.debug(f"DEBUG: AnalysisPanel 被点击，当前焦点状态: {self.has_focus}")
         self.focus()
-        self.logger.debug(f"DEBUG: 点击后重新设置焦点，焦点状态: {self.has_focus}")
+        #self.logger.debug(f"DEBUG: 点击后重新设置焦点，焦点状态: {self.has_focus}")
     
     def on_key(self, event) -> None:
         """处理所有键盘事件"""
@@ -403,13 +413,14 @@ class AnalysisPanel(Container):
         if not self.has_focus:
             return
             
-        self.logger.debug(f"DEBUG: AnalysisPanel 收到按键事件: {event.key}, 焦点状态: {self.has_focus}")
+        #self.logger.debug(f"DEBUG: AnalysisPanel 收到按键事件: {event.key}, 焦点状态: {self.has_focus}")
         if event.key == "z":
-            self.logger.debug("DEBUG: z键被按下，返回主界面")
+            #self.logger.debug("DEBUG: z键被按下，返回主界面")
             self.action_return_to_main()
             event.prevent_default()
         else:
-            self.logger.debug(f"DEBUG: AnalysisPanel 未处理的按键: {event.key}")
+            pass
+            #self.logger.debug(f"DEBUG: AnalysisPanel 未处理的按键: {event.key}")
     
     def action_return_to_main(self) -> None:
         """返回主界面（z键）"""
@@ -419,7 +430,8 @@ class AnalysisPanel(Container):
             main_tabs.active = "main"
             self.logger.debug("DEBUG: 已返回主界面")
         except Exception as e:
-            self.logger.debug(f"DEBUG: 返回主界面失败: {e}")
+            pass
+            #self.logger.debug(f"DEBUG: 返回主界面失败: {e}")
     
     
     DEFAULT_CSS = """
@@ -651,7 +663,7 @@ class AnalysisLayoutTab(Container):
     
     def on_key(self, event) -> None:
         """将键盘事件传递给AnalysisPanel"""
-        self.logger.debug(f"DEBUG: AnalysisLayoutTab 收到按键事件: {event.key}")
+        #self.logger.debug(f"DEBUG: AnalysisLayoutTab 收到按键事件: {event.key}")
         if self.analysis_panel and hasattr(self.analysis_panel, 'on_key'):
             self.analysis_panel.on_key(event)
     

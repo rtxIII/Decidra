@@ -57,9 +57,11 @@ class FutuModuleBase:
         self.client.connect()
     
     def check(self):
-        _st =  self.get_connection_state()
-        if not _st:
+        _re, _st =  self.get_connection_state()
+        if not _re:
             self.open()
+            return self.get_connection_state()
+        return _re
 
 
     def close(self):

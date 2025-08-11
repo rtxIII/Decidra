@@ -341,56 +341,7 @@ class UIManager:
             self.logger.error(f"更新分组信息失败: {e}")
             if self.group_stocks_content:
                 self.group_stocks_content.update("[red]信息加载失败[/red]")
-    
-    async def update_analysis_interface(self) -> None:
-        """更新分析界面内容"""
-        if not self.app_core.current_stock_code:
-            return
-            
-        try:
-            # 尝试更新新的AnalysisPanel
-            try:
-                analysis_panel = self.app.query_one("#analysis_panel", expect_type=None)
-                if hasattr(analysis_panel, 'on_stock_changed'):
-                    await analysis_panel.on_stock_changed(self.app_core.current_stock_code)
-                    self.logger.info(f"新分析面板更新完成: {self.app_core.current_stock_code}")
-                    
-                    # 通知lifecycle管理器AnalysisPanel已创建
-                    await self.notify_analysis_panel_created()
-            except Exception as panel_error:
-                self.logger.debug(f"新分析面板更新失败(可能不存在): {panel_error}")
-            
-            # 更新图表面板（向后兼容）
-            if self.chart_panel:
-                chart_text = f"""[bold blue]{self.app_core.current_stock_code} K线图表[/bold blue]
 
-[dim]图表功能：
-• D: 切换到日线图
-• W: 切换到周线图  
-• M: 切换到月线图
-• ←→: 调整时间范围
-• ESC: 返回主界面[/dim]
-
-[yellow]正在加载图表数据...[/yellow]"""
-                self.chart_panel.update(chart_text)
-            
-            # 更新AI分析面板（向后兼容）
-            if self.ai_analysis_panel:
-                ai_text = f"""[bold green]{self.app_core.current_stock_code} AI智能分析[/bold green]
-
-[dim]分析维度：
-• 技术指标分析 (MA, RSI, MACD)
-• 买卖信号推荐
-• 支撑位和阻力位
-• 风险评估等级[/dim]
-
-[yellow]正在生成AI分析报告...[/yellow]"""
-                self.ai_analysis_panel.update(ai_text)
-                
-            self.logger.info(f"分析界面更新完成: {self.app_core.current_stock_code}")
-            
-        except Exception as e:
-            self.logger.error(f"更新分析界面失败: {e}")
     
     async def add_stock_to_table(self, stock_code: str) -> None:
         """添加股票到表格"""
@@ -618,41 +569,58 @@ class UIManager:
                 return False
             
             # 生成标签页ID和标题
-            tab_id = f"analysis_{stock_code}"
-            tab_title = f"分析 - {stock_code}"
+            tab_id = f"analysis_{stock_code.replace('.', '_')}"
+            tab_title = f"📊 {stock_code}"
             
             # 检查标签页是否已存在
             existing_panes = list(main_tabs.query("TabPane"))
             for pane in existing_panes:
                 if pane.id == tab_id:
-                    self.logger.info(f"分析标签页 {tab_id} 已存在，跳过创建")
+                    self.logger.info(f"分析标签页 {tab_id} 已存在，激活该标签页")
+                    #main_tabs.active = tab_id
                     return True
             
             # 导入分析界面组件
             try:
-                from monitor.monitor_layout import AnalysisLayoutTab
+                from monitor.monitor_layout import AnalysisPanel
                 from textual.widgets import TabPane
             except ImportError as e:
                 self.logger.error(f"导入分析界面组件失败: {e}")
                 return False
             
-            # 创建新的分析标签页
-            analysis_layout = AnalysisLayoutTab()
-            analysis_layout.set_app_reference(self.app)
+            # 创建新的分析面板
+            analysis_content = AnalysisPanel(id="analysis_panel")
+            analysis_content.set_app_reference(self.app)
             
             # 创建TabPane并添加到主标签页容器
-            new_tab_pane = TabPane(tab_title, analysis_layout, id=tab_id)
-            main_tabs.add_pane(new_tab_pane)
+            new_tab_pane = TabPane(tab_title, analysis_content, id=tab_id)
+            await main_tabs.add_pane(new_tab_pane)
             
-            self.logger.info(f"成功创建分析标签页: {tab_id}")
+            # 激活新创建的标签页
+            #main_tabs.active = tab_id
             
             # 等待一小段时间让标签页完全创建
             import asyncio
             await asyncio.sleep(0.1)
             
+            # 加载股票分析数据
+            analysis_data_manager = getattr(self.app_core, 'analysis_data_manager', None)
+            if analysis_data_manager:
+                # 异步设置当前股票并加载数据
+                success = await analysis_data_manager.set_current_stock(stock_code)
+                if success:
+                    # 通知AnalysisPanel股票已切换
+                    await analysis_content.on_stock_changed(stock_code)
+                    self.logger.info(f"已为股票 {stock_code} 加载分析数据")
+                else:
+                    self.logger.error(f"加载股票 {stock_code} 分析数据失败")
+            else:
+                self.logger.error("AnalysisDataManager未初始化")
+            
             # 通知分析面板已创建
             await self.notify_analysis_panel_created()
             
+            self.logger.info(f"成功创建分析标签页: {tab_id}")
             return True
             
         except Exception as e:
@@ -666,7 +634,7 @@ class UIManager:
             if not main_tabs:
                 return False
             
-            tab_id = f"analysis_{stock_code}"
+            tab_id = f"analysis_{stock_code.replace('.', '_')}"
             existing_panes = list(main_tabs.query("TabPane"))
             
             for pane in existing_panes:

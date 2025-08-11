@@ -24,6 +24,14 @@ from base.futu_class import FutuException
 
 from base.futu_modue import FutuModuleBase
 
+"""
+from modules.futu_market import FutuMarket
+f = FutuMarket()
+f.get_market_state(['HK.00700'])
+f.get_market_snapshot(['HK.00700'])
+"""
+
+
 class FutuMarket(FutuModuleBase):
     """
     富途行情业务逻辑层

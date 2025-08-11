@@ -71,8 +71,32 @@ class AnalysisDataManager:
         self.orderbook_update_task: Optional[asyncio.Task] = None
         self.tick_update_task: Optional[asyncio.Task] = None
         
+        # 订阅管理
+        self.subscribed_stocks: set = set()  # 已订阅的股票集合
+
+        self.initialize_data_managers()
         self.logger.info("AnalysisDataManager 初始化完成")
     
+    def initialize_data_managers(self) -> None:
+        """初始化数据管理器"""
+        try:
+            connect_success = self.futu_market.check()
+            if connect_success:
+                self.logger.debug("富途API连接成功")
+            else:
+                self.logger.warning("富途API连接失败")
+        except Exception as e:
+            self.logger.error(f"富途API连接失败: {e}")
+
+    def cleanup_futu_market(self) -> None:
+        """清理富途市场连接"""
+        try:
+            if hasattr(self.futu_market, 'close'):
+                self.futu_market.close()
+                self.logger.info("富途市场连接已清理")
+        except Exception as e:
+            self.logger.warning(f"清理富途市场连接时出错: {e}")
+
     async def set_current_stock(self, stock_code: str) -> bool:
         """设置当前分析的股票"""
         try:
@@ -101,6 +125,7 @@ class AnalysisDataManager:
     async def load_analysis_data(self, stock_code: str) -> Optional[AnalysisDataSet]:
         """加载股票的完整分析数据"""
         try:
+            _stock_code = stock_code.replace("_", ".") if "_" in stock_code else stock_code
             self.logger.info(f"开始加载股票 {stock_code} 的分析数据")
             
             # 检查缓存
@@ -116,32 +141,32 @@ class AnalysisDataManager:
             
             # 1. 获取基础信息
             basic_info_task = loop.run_in_executor(
-                None, self._get_stock_basic_info, stock_code
+                None, self._get_stock_basic_info, _stock_code
             )
             
             # 2. 获取实时报价
             realtime_quote_task = loop.run_in_executor(
-                None, self._get_realtime_quote, stock_code
+                None, self._get_realtime_quote, _stock_code
             )
             
             # 3. 获取K线数据
             kline_data_task = loop.run_in_executor(
-                None, self._get_kline_data, stock_code, self.current_time_period
+                None, self._get_kline_data, _stock_code, self.current_time_period
             )
             
             # 4. 获取五档数据
             orderbook_data_task = loop.run_in_executor(
-                None, self._get_orderbook_data, stock_code
+                None, self._get_orderbook_data, _stock_code
             )
             
             # 5. 获取逐笔数据
             tick_data_task = loop.run_in_executor(
-                None, self._get_tick_data, stock_code
+                None, self._get_tick_data, _stock_code
             )
             
             # 6. 获取经纪队列数据
             broker_queue_task = loop.run_in_executor(
-                None, self._get_broker_queue_data, stock_code
+                None, self._get_broker_queue_data, _stock_code
             )
             
             # 等待所有任务完成
@@ -211,34 +236,65 @@ class AnalysisDataManager:
     def _get_stock_basic_info(self, stock_code: str) -> Dict[str, Any]:
         """获取股票基础信息"""
         try:
-            # 从app_core缓存获取基础信息
+            # 从app_core缓存获取基础信息，优先获取股票名称
             cached_info = self.app_core.stock_basicinfo_cache.get(stock_code, {})
+            stock_name = cached_info.get('name', stock_code)
             
-            if cached_info:
-                return cached_info
+            # 使用get_market_snapshot获取市场快照数据
+            snapshots = self.futu_market.get_market_snapshot([stock_code])
+            self.logger.debug(f"获取股票 {stock_code} 的市场快照数据: {snapshots}")
+            if snapshots and len(snapshots) > 0:
+                snapshot = snapshots[0]
+                
+                # 从快照数据构建基础信息
+                basic_info = {
+                    'code': getattr(snapshot, 'code', stock_code),
+                    'name': stock_name,  # 使用缓存的股票名称
+                    'last_price': getattr(snapshot, 'last_price', 0.0),
+                    'prev_close_price': getattr(snapshot, 'prev_close_price', 0.0),
+                    'update_time': getattr(snapshot, 'update_time', ''),
+                    'volume': getattr(snapshot, 'volume', 0),
+                    'turnover': getattr(snapshot, 'turnover', 0.0),
+                    'turnover_rate': getattr(snapshot, 'turnover_rate', 0.0),
+                    'amplitude': getattr(snapshot, 'amplitude', 0.0)
+                }
+                
+                # 如果有缓存的详细信息，添加到基础信息中
+                if cached_info:
+                    basic_info.update({
+                        'lot_size': cached_info.get('lot_size', 0),
+                        'stock_type': cached_info.get('stock_type', ''),
+                        'listing_date': cached_info.get('listing_date', None),
+                    })
+                
+                return basic_info
             
-            # 如果缓存中没有，尝试从API获取
-            market = stock_code.split('.')[0]
-            basic_info_list = self.futu_market.get_stock_basicinfo_multi_types(
-                market, ["STOCK", "IDX", "ETF"]
-            )
-            
-            if basic_info_list:
-                for info in basic_info_list:
-                    if hasattr(info, 'code') and info.code == stock_code:
-                        return {
-                            'code': info.code,
-                            'name': getattr(info, 'name', ''),
-                            'lot_size': getattr(info, 'lot_size', 0),
-                            'stock_type': getattr(info, 'stock_type', ''),
-                            'listing_date': getattr(info, 'listing_date', None),
-                        }
-            
-            return {'code': stock_code, 'name': stock_code}
+            # 如果获取快照失败，返回基础信息
+            return {
+                'code': stock_code, 
+                'name': stock_name,
+                'last_price': 0.0,
+                'prev_close_price': 0.0,
+                'update_time': '',
+                'volume': 0,
+                'turnover': 0.0,
+                'turnover_rate': 0.0,
+                'amplitude': 0.0
+            }
             
         except Exception as e:
             self.logger.error(f"获取股票基础信息失败: {e}")
-            return {'code': stock_code, 'name': stock_code}
+            return {
+                'code': stock_code, 
+                'name': stock_code,
+                'last_price': 0.0,
+                'prev_close_price': 0.0,
+                'update_time': '',
+                'volume': 0,
+                'turnover': 0.0,
+                'turnover_rate': 0.0,
+                'amplitude': 0.0
+            }
     
     def _get_realtime_quote(self, stock_code: str) -> Dict[str, Any]:
         """获取实时报价数据"""
@@ -265,7 +321,7 @@ class AnalysisDataManager:
         except Exception as e:
             self.logger.error(f"获取实时报价失败: {e}")
             return {}
-    
+
     def _get_kline_data(self, stock_code: str, period: str, num: int = 100) -> List[KLineData]:
         """获取K线数据"""
         try:
@@ -279,8 +335,8 @@ class AnalysisDataManager:
             
             # 从API获取K线数据
             kline_type = TIME_PERIODS.get(period, 'K_DAY')
-            kline_data = self.futu_market.get_history_kline(
-                stock_code, kline_type, num=num
+            kline_data = self.futu_market.get_cur_kline(
+                [stock_code], num=num, ktype=kline_type
             )
             
             if kline_data:
@@ -300,8 +356,15 @@ class AnalysisDataManager:
     def _get_orderbook_data(self, stock_code: str) -> Optional[OrderBookData]:
         """获取五档买卖盘数据"""
         try:
-            orderbook = self.futu_market.get_order_book(stock_code)
-            return orderbook
+            # 先订阅OrderBook数据
+            if not self._ensure_orderbook_subscription(stock_code):
+                self.logger.warning(f"无法订阅股票 {stock_code} 的OrderBook数据")
+                return None
+                
+            orderbook = self.futu_market.get_order_book([stock_code])
+            if orderbook and len(orderbook) > 0:
+                return orderbook[0]
+            return None
             
         except Exception as e:
             self.logger.error(f"获取五档数据失败: {e}")
@@ -310,7 +373,7 @@ class AnalysisDataManager:
     def _get_tick_data(self, stock_code: str, num: int = 50) -> List[Dict[str, Any]]:
         """获取逐笔交易数据"""
         try:
-            tick_data = self.futu_market.get_rt_ticker(stock_code, num=num)
+            tick_data = self.futu_market.get_rt_ticker([stock_code])
             if tick_data:
                 # 转换为字典格式
                 return [
@@ -333,12 +396,33 @@ class AnalysisDataManager:
     def _get_broker_queue_data(self, stock_code: str) -> Optional[BrokerQueueData]:
         """获取经纪队列数据"""
         try:
-            broker_queue = self.futu_market.get_broker_queue(stock_code)
-            return broker_queue
+            broker_queue = self.futu_market.get_broker_queue([stock_code])
+            if broker_queue and len(broker_queue) > 0:
+                return broker_queue[0]
+            return None
             
         except Exception as e:
             self.logger.error(f"获取经纪队列失败: {e}")
             return None
+    
+    def _ensure_orderbook_subscription(self, stock_code: str) -> bool:
+        """确保OrderBook数据已订阅"""
+        try:
+            if stock_code not in self.subscribed_stocks:
+                # 订阅OrderBook数据
+                success = self.futu_market.subscribe([stock_code], ['order_book'])
+                if success:
+                    self.subscribed_stocks.add(stock_code)
+                    self.logger.info(f"成功订阅股票 {stock_code} 的OrderBook数据")
+                    return True
+                else:
+                    self.logger.error(f"订阅股票 {stock_code} 的OrderBook数据失败")
+                    return False
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"订阅OrderBook数据异常: {e}")
+            return False
     
     async def _calculate_technical_indicators(self, kline_data: List[KLineData]) -> Dict[str, Any]:
         """计算技术指标"""

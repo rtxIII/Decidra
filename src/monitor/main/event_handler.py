@@ -395,6 +395,9 @@ class EventHandler:
                 from monitor.monitor_layout import AnalysisPanel
                 analysis_content = AnalysisPanel(id="analysis_panel")
                 
+                # 设置应用引用
+                analysis_content.set_app_reference(self.app)
+                
                 # 创建新的分析tab
                 tab_title = f"📊 {stock_code}"
                 new_pane = TabPane(tab_title, analysis_content, id=existing_tab_id)
@@ -404,6 +407,20 @@ class EventHandler:
                 
                 # 激活新创建的tab
                 tabbed_content.active = existing_tab_id
+                
+                # 加载股票分析数据
+                analysis_data_manager = getattr(self.app_core, 'analysis_data_manager', None)
+                if analysis_data_manager:
+                    # 异步设置当前股票并加载数据
+                    success = await analysis_data_manager.set_current_stock(stock_code)
+                    if success:
+                        # 通知AnalysisPanel股票已切换
+                        await analysis_content.on_stock_changed(stock_code)
+                        self.logger.info(f"已为股票 {stock_code} 加载分析数据")
+                    else:
+                        self.logger.error(f"加载股票 {stock_code} 分析数据失败")
+                else:
+                    self.logger.error("AnalysisDataManager未初始化")
                 
                 self.logger.info(f"已创建股票分析页面: {stock_code}")
             else:

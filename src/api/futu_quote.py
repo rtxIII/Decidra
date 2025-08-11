@@ -100,9 +100,6 @@ class QuoteManager:
                 if operation in ["获取市场状态", "获取交易日历", "获取自选股分组", "获取自选股"]:
                     # 市场状态等特殊API可能需要特殊处理，保持DataFrame格式
                     return ret_data
-                elif len(ret_data) == 1:
-                    # 单行数据返回字典
-                    return ret_data.iloc[0].to_dict()
                 else:
                     # 多行数据返回DataFrame
                     return ret_data
@@ -194,7 +191,7 @@ class QuoteManager:
             ret, data = quote_ctx.get_market_snapshot(codes)
             
             df = self._handle_response(ret, data, "获取市场快照")
-            
+            print(df)
             # 转换为MarketSnapshot对象列表
             snapshot_list = []
             for _, row in df.iterrows():

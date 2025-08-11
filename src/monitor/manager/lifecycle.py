@@ -80,8 +80,8 @@ class LifecycleManager:
         # 启动任务监控
         await self.start_task_monitoring()
         
-        # 恢复标签页状态（在所有初始化完成后）
-        await self.restore_tab_state()
+        # 恢复标签页状态（在所有初始化完成后）临时关闭
+        #await self.restore_tab_state()
         
         self.logger.info("MonitorApp 启动完成")
         # 向信息面板显示启动完成信息
@@ -311,7 +311,12 @@ class LifecycleManager:
                 loop = asyncio.get_event_loop()
                 cleanup_task = loop.run_in_executor(None, data_manager.cleanup_futu_market)
                 cleanup_tasks.append(cleanup_task)
-            
+            analysis_data_manager = getattr(self.app_core.app, 'analysis_data_manager', None)
+            if analysis_data_manager and analysis_data_manager.futu_market:
+                loop = asyncio.get_event_loop()
+                cleanup_task = loop.run_in_executor(None, analysis_data_manager.cleanup_futu_market)
+                cleanup_tasks.append(cleanup_task)
+
             # 停止数据流管理器
             if data_manager and hasattr(data_manager, 'cleanup'):
                 cleanup_tasks.append(data_manager.cleanup())
