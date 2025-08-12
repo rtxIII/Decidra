@@ -8,7 +8,7 @@ import asyncio
 import json
 import os
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Set
 from dataclasses import dataclass
 
 from base.monitor import StockData, MarketStatus, ConnectionStatus
@@ -72,7 +72,7 @@ class AnalysisDataManager:
         self.tick_update_task: Optional[asyncio.Task] = None
         
         # 订阅管理
-        self.subscribed_stocks: set = set()  # 已订阅的股票集合
+        self.subscribed_stocks: Dict[str, Set[str]] = {}  # 已订阅的股票集合，键为股票代码，值为订阅类型集合
 
         self.initialize_data_managers()
         self.logger.info("AnalysisDataManager 初始化完成")
@@ -299,6 +299,11 @@ class AnalysisDataManager:
     def _get_realtime_quote(self, stock_code: str) -> Dict[str, Any]:
         """获取实时报价数据"""
         try:
+            # 先订阅报价数据
+            if not self._ensure_subscription(stock_code, sub_types="quote"):
+                self.logger.warning(f"无法订阅股票 {stock_code} 的报价数据")
+                return {}
+                
             quotes = self.futu_market.get_stock_quote([stock_code])
             if quotes and len(quotes) > 0:
                 quote = quotes[0]
@@ -325,6 +330,11 @@ class AnalysisDataManager:
     def _get_kline_data(self, stock_code: str, period: str, num: int = 100) -> List[KLineData]:
         """获取K线数据"""
         try:
+            # 先订阅K线数据
+            if not self._ensure_subscription(stock_code, sub_types="kline_day"):
+                self.logger.warning(f"无法订阅股票 {stock_code} 的K线数据")
+                return []
+                
             # 检查缓存
             if stock_code in self.kline_cache and period in self.kline_cache[stock_code]:
                 cached_data = self.kline_cache[stock_code][period]
@@ -357,14 +367,12 @@ class AnalysisDataManager:
         """获取五档买卖盘数据"""
         try:
             # 先订阅OrderBook数据
-            if not self._ensure_orderbook_subscription(stock_code):
+            if not self._ensure_subscription(stock_code, sub_types="order_book"):
                 self.logger.warning(f"无法订阅股票 {stock_code} 的OrderBook数据")
                 return None
                 
-            orderbook = self.futu_market.get_order_book([stock_code])
-            if orderbook and len(orderbook) > 0:
-                return orderbook[0]
-            return None
+            orderbook = self.futu_market.get_order_book(stock_code)
+            return orderbook
             
         except Exception as e:
             self.logger.error(f"获取五档数据失败: {e}")
@@ -373,20 +381,15 @@ class AnalysisDataManager:
     def _get_tick_data(self, stock_code: str, num: int = 50) -> List[Dict[str, Any]]:
         """获取逐笔交易数据"""
         try:
-            tick_data = self.futu_market.get_rt_ticker([stock_code])
-            if tick_data:
+            # 先订阅逐笔数据
+            if not self._ensure_subscription(stock_code, sub_types="ticker"):
+                self.logger.warning(f"无法订阅股票 {stock_code} 的逐笔数据")
+                return []
+                
+            tick_data = self.futu_market.get_rt_ticker(stock_code)
+            if tick_data is not None and not tick_data.empty:
                 # 转换为字典格式
-                return [
-                    {
-                        'time': getattr(tick, 'time', ''),
-                        'price': getattr(tick, 'price', 0),
-                        'volume': getattr(tick, 'volume', 0),
-                        'turnover': getattr(tick, 'turnover', 0),
-                        'ticker_direction': getattr(tick, 'ticker_direction', ''),
-                        'type': getattr(tick, 'type', ''),
-                    }
-                    for tick in tick_data
-                ]
+                return tick_data.to_dict('records')
             return []
             
         except Exception as e:
@@ -396,32 +399,56 @@ class AnalysisDataManager:
     def _get_broker_queue_data(self, stock_code: str) -> Optional[BrokerQueueData]:
         """获取经纪队列数据"""
         try:
-            broker_queue = self.futu_market.get_broker_queue([stock_code])
-            if broker_queue and len(broker_queue) > 0:
-                return broker_queue[0]
-            return None
+            # 先订阅经纪队列数据
+            if not self._ensure_subscription(stock_code, sub_types="broker"):
+                self.logger.warning(f"无法订阅股票 {stock_code} 的经纪队列数据")
+                return None
+                
+            broker_queue = self.futu_market.get_broker_queue(stock_code)
+            return broker_queue
             
         except Exception as e:
             self.logger.error(f"获取经纪队列失败: {e}")
             return None
     
-    def _ensure_orderbook_subscription(self, stock_code: str) -> bool:
-        """确保OrderBook数据已订阅"""
+    def _ensure_subscription(self, stock_code: str, sub_types="order_book") -> bool:
+        """确保数据已订阅
+        
+        Args:
+            stock_code: 股票代码
+            sub_types: 订阅类型，如 'order_book', 'quote', 'ticker', 'kline_day' 等
+        """
         try:
+            # 标准化订阅类型参数
+            if isinstance(sub_types, str):
+                sub_type_list = [sub_types]
+            else:
+                sub_type_list = list(sub_types)
+            
+            # 检查是否需要新订阅
             if stock_code not in self.subscribed_stocks:
-                # 订阅OrderBook数据
-                success = self.futu_market.subscribe([stock_code], ['order_book'])
+                self.subscribed_stocks[stock_code] = set()
+            
+            need_subscribe = []
+            for sub_type in sub_type_list:
+                if sub_type not in self.subscribed_stocks[stock_code]:
+                    need_subscribe.append(sub_type)
+            
+            if need_subscribe:
+                # 订阅新的数据类型
+                success = self.futu_market.subscribe([stock_code], need_subscribe)
                 if success:
-                    self.subscribed_stocks.add(stock_code)
-                    self.logger.info(f"成功订阅股票 {stock_code} 的OrderBook数据")
+                    # 更新订阅状态
+                    self.subscribed_stocks[stock_code].update(need_subscribe)
+                    self.logger.info(f"成功订阅股票 {stock_code} 的 {need_subscribe} 数据")
                     return True
                 else:
-                    self.logger.error(f"订阅股票 {stock_code} 的OrderBook数据失败")
+                    self.logger.error(f"订阅股票 {stock_code} 的 {need_subscribe} 数据失败")
                     return False
             return True
             
         except Exception as e:
-            self.logger.error(f"订阅OrderBook数据异常: {e}")
+            self.logger.error(f"订阅数据异常: {e}")
             return False
     
     async def _calculate_technical_indicators(self, kline_data: List[KLineData]) -> Dict[str, Any]:
@@ -708,8 +735,33 @@ class AnalysisDataManager:
             await self._stop_update_tasks()
             self.analysis_data_cache.clear()
             self.kline_cache.clear()
+            self.subscribed_stocks.clear()
             self.current_stock_code = None
             self.logger.info("AnalysisDataManager 清理完成")
             
         except Exception as e:
             self.logger.error(f"AnalysisDataManager 清理失败: {e}")
+    
+    def is_subscribed(self, stock_code: str, sub_type: str) -> bool:
+        """检查股票是否已订阅指定类型
+        
+        Args:
+            stock_code: 股票代码
+            sub_type: 订阅类型
+            
+        Returns:
+            是否已订阅
+        """
+        return (stock_code in self.subscribed_stocks and 
+                sub_type in self.subscribed_stocks[stock_code])
+    
+    def get_subscribed_types(self, stock_code: str) -> Set[str]:
+        """获取股票已订阅的类型
+        
+        Args:
+            stock_code: 股票代码
+            
+        Returns:
+            已订阅类型集合
+        """
+        return self.subscribed_stocks.get(stock_code, set())

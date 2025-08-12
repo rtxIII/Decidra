@@ -134,9 +134,7 @@ class ConfigManager:
             
             # 5. 应用环境变量覆盖
             self._apply_env_overrides()
-            
-            self.logger.info("All configuration loaded successfully")
-            
+                        
         except Exception as e:
             self.logger.error(f"Failed to load configuration: {e}")
             raise
@@ -165,8 +163,6 @@ class ConfigManager:
                 
                 for key, value in parser[section_name].items():
                     self._config_data[section_name][key] = value
-            
-            self.logger.info(f"INI configuration loaded from: {config_path}")
             
         except Exception as e:
             self.logger.error(f"Failed to load INI config from {config_path}: {e}")
@@ -352,7 +348,6 @@ class ConfigManager:
             with open(self.config_ini_path, 'w', encoding='utf-8') as f:
                 parser.write(f)
             
-            self.logger.info(f"Configuration saved to: {self.config_ini_path}")
             return True
             
         except Exception as e:
@@ -363,7 +358,6 @@ class ConfigManager:
         """重新加载配置"""
         try:
             self._load_all_config()
-            self.logger.info("Configuration reloaded successfully")
         except Exception as e:
             self.logger.error(f"Failed to reload configuration: {e}")
             raise

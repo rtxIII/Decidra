@@ -247,11 +247,11 @@ class AnalysisPanel(Container):
         info_text = (
             f"股票代码: {stock_code}    "
             f"名称: {stock_name}    "
-            f"最新价格: {last_price}"
-            f"昨收盘价格: {prev_close_price}"
-            f"成交金额: {turnover}"
-            f"换手率: {turnover_rate}"
-            f"振幅: {amplitude}"
+            f"最新价格: {last_price}    "
+            f"昨收盘价格: {prev_close_price}    "
+            f"成交金额: {turnover}    "
+            f"换手率: {turnover_rate}   "
+            f"振幅: {amplitude}    "
         )
         
         if current_price > 0:

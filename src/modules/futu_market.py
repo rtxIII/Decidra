@@ -6,10 +6,9 @@ import platform
 import subprocess
 import time
 from datetime import date, datetime, timedelta
-from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from base.futu_class import MarketState, GlobalMarketState
+from base.futu_class import MarketState, GlobalMarketState, OrderBookData, KLineData
 
 import pandas as pd
 
@@ -103,10 +102,10 @@ class FutuMarket(FutuModuleBase):
             self.logger.error(f"Get stock quote error: {e}")
             return []
 
-    def get_order_book(self, codes: List[str]) -> List:
+    def get_order_book(self, code:str) -> OrderBookData:
         """获取买卖盘"""
         try:
-            return self.client.quote.get_order_book(codes)
+            return self.client.quote.get_order_book(code)
         except Exception as e:
             self.logger.error(f"Get order book error: {e}")
             return []
@@ -119,15 +118,15 @@ class FutuMarket(FutuModuleBase):
             self.logger.error(f"Get rt data error: {e}")
             return []
 
-    def get_rt_ticker(self, codes: List[str]) -> List:
+    def get_rt_ticker(self, code:str) -> pd.DataFrame:
         """获取逐笔数据"""
         try:
-            return self.client.quote.get_rt_ticker(codes)
+            return self.client.quote.get_rt_ticker(code)
         except Exception as e:
             self.logger.error(f"Get rt ticker error: {e}")
-            return []
+            return pd.DataFrame()
 
-    def get_broker_queue(self, codes: List[str]) -> List:
+    def get_broker_queue(self, codes: str) -> Dict:
         """获取经纪队列"""
         try:
             return self.client.quote.get_broker_queue(codes)
