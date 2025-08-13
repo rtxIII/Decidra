@@ -12,6 +12,39 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def safe_float(value: Any, default: float = 0.0) -> float:
+    """
+    安全地将值转换为浮点数
+    
+    Args:
+        value: 要转换的值
+        default: 转换失败时的默认值
+        
+    Returns:
+        float: 转换后的浮点数
+    """
+    if value is None:
+        return default
+    
+    if isinstance(value, (int, float)):
+        return float(value)
+    
+    if isinstance(value, str):
+        # 处理常见的无效值
+        if value.strip().upper() in ('N/A', 'NA', '', 'NULL', 'NONE'):
+            return default
+        
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+    
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
 # ================== 异常类 ==================
 
 class FutuException(Exception):
@@ -84,12 +117,12 @@ class KLineData:
         return cls(
             code=data.get('code', ''),
             time_key=data.get('time_key', ''),
-            open=float(data.get('open', 0)),
-            close=float(data.get('close', 0)),
-            high=float(data.get('high', 0)),
-            low=float(data.get('low', 0)),
+            open=safe_float(data.get('open', 0)),
+            close=safe_float(data.get('close', 0)),
+            high=safe_float(data.get('high', 0)),
+            low=safe_float(data.get('low', 0)),
             volume=int(data.get('volume', 0)),
-            turnover=float(data.get('turnover', 0)),
+            turnover=safe_float(data.get('turnover', 0)),
             pe_ratio=data.get('pe_ratio'),
             turnover_rate=data.get('turnover_rate')
         )
@@ -118,13 +151,13 @@ class StockQuote:
             code=data.get('code', ''),
             data_date=data.get('data_date', ''),
             data_time=data.get('data_time', ''),
-            last_price=float(data.get('last_price', 0)),
-            open_price=float(data.get('open_price', 0)),
-            high_price=float(data.get('high_price', 0)),
-            low_price=float(data.get('low_price', 0)),
-            prev_close_price=float(data.get('prev_close_price', 0)),
+            last_price=safe_float(data.get('last_price', 0)),
+            open_price=safe_float(data.get('open_price', 0)),
+            high_price=safe_float(data.get('high_price', 0)),
+            low_price=safe_float(data.get('low_price', 0)),
+            prev_close_price=safe_float(data.get('prev_close_price', 0)),
             volume=int(data.get('volume', 0)),
-            turnover=float(data.get('turnover', 0)),
+            turnover=safe_float(data.get('turnover', 0)),
             turnover_rate=data.get('turnover_rate'),
             suspension=bool(data.get('suspension', False))
         )
@@ -151,13 +184,13 @@ class MarketSnapshot:
         return cls(
             code=data.get('code', ''),
             update_time=data.get('update_time', ''),
-            last_price=float(data.get('last_price', 0)),
-            open_price=float(data.get('open_price', 0)),
-            high_price=float(data.get('high_price', 0)),
-            low_price=float(data.get('low_price', 0)),
-            prev_close_price=float(data.get('prev_close_price', 0)),
+            last_price=safe_float(data.get('last_price', 0)),
+            open_price=safe_float(data.get('open_price', 0)),
+            high_price=safe_float(data.get('high_price', 0)),
+            low_price=safe_float(data.get('low_price', 0)),
+            prev_close_price=safe_float(data.get('prev_close_price', 0)),
             volume=int(data.get('volume', 0)),
-            turnover=float(data.get('turnover', 0)),
+            turnover=safe_float(data.get('turnover', 0)),
             turnover_rate=data.get('turnover_rate'),
             amplitude=data.get('amplitude')
         )
@@ -182,9 +215,9 @@ class TickerData:
             code=data.get('code', ''),
             sequence=int(data.get('sequence', 0)),
             time=data.get('time', ''),
-            price=float(data.get('price', 0)),
+            price=safe_float(data.get('price', 0)),
             volume=int(data.get('volume', 0)),
-            turnover=float(data.get('turnover', 0)),
+            turnover=safe_float(data.get('turnover', 0)),
             ticker_direction=data.get('ticker_direction', ''),
             type=data.get('type', '')
         )
@@ -218,17 +251,17 @@ class OrderBookData:
             code=data.get('code', ''),
             svr_recv_time_bid=data.get('svr_recv_time_bid', ''),
             svr_recv_time_ask=data.get('svr_recv_time_ask', ''),
-            bid_price_1=float(data.get('Bid1', 0)),
+            bid_price_1=safe_float(data.get('Bid1', 0)),
             bid_volume_1=int(data.get('BidVol1', 0)),
-            bid_price_2=float(data.get('Bid2', 0)),
+            bid_price_2=safe_float(data.get('Bid2', 0)),
             bid_volume_2=int(data.get('BidVol2', 0)),
-            bid_price_3=float(data.get('Bid3', 0)),
+            bid_price_3=safe_float(data.get('Bid3', 0)),
             bid_volume_3=int(data.get('BidVol3', 0)),
-            ask_price_1=float(data.get('Ask1', 0)),
+            ask_price_1=safe_float(data.get('Ask1', 0)),
             ask_volume_1=int(data.get('AskVol1', 0)),
-            ask_price_2=float(data.get('Ask2', 0)),
+            ask_price_2=safe_float(data.get('Ask2', 0)),
             ask_volume_2=int(data.get('AskVol2', 0)),
-            ask_price_3=float(data.get('Ask3', 0)),
+            ask_price_3=safe_float(data.get('Ask3', 0)),
             ask_volume_3=int(data.get('AskVol3', 0))
         )
 
@@ -254,11 +287,11 @@ class RTData:
             time=data.get('time', ''),
             is_blank=bool(data.get('is_blank', False)),
             opened_mins=int(data.get('opened_mins', 0)),
-            cur_price=float(data.get('cur_price', 0)),
-            last_close=float(data.get('last_close', 0)),
-            avg_price=float(data.get('avg_price', 0)),
+            cur_price=safe_float(data.get('cur_price', 0)),
+            last_close=safe_float(data.get('last_close', 0)),
+            avg_price=safe_float(data.get('avg_price', 0)),
             volume=int(data.get('volume', 0)),
-            turnover=float(data.get('turnover', 0))
+            turnover=safe_float(data.get('turnover', 0))
         )
 
 
@@ -286,18 +319,18 @@ class AuTypeInfo:
         return cls(
             code=data.get('code', ''),
             ex_div_date=data.get('ex_div_date', ''),
-            split_ratio=float(data.get('split_ratio', 0)),
-            per_cash_div=float(data.get('per_cash_div', 0)),
-            per_share_div_ratio=float(data.get('per_share_div_ratio', 0)),
-            per_share_trans_ratio=float(data.get('per_share_trans_ratio', 0)),
-            allot_ratio=float(data.get('allot_ratio', 0)),
-            allot_price=float(data.get('allot_price', 0)),
-            stk_spo_ratio=float(data.get('stk_spo_ratio', 0)),
-            stk_spo_price=float(data.get('stk_spo_price', 0)),
-            forward_adj_factorA=float(data.get('forward_adj_factorA', 0)),
-            forward_adj_factorB=float(data.get('forward_adj_factorB', 0)),
-            backward_adj_factorA=float(data.get('backward_adj_factorA', 0)),
-            backward_adj_factorB=float(data.get('backward_adj_factorB', 0))
+            split_ratio=safe_float(data.get('split_ratio', 0)),
+            per_cash_div=safe_float(data.get('per_cash_div', 0)),
+            per_share_div_ratio=safe_float(data.get('per_share_div_ratio', 0)),
+            per_share_trans_ratio=safe_float(data.get('per_share_trans_ratio', 0)),
+            allot_ratio=safe_float(data.get('allot_ratio', 0)),
+            allot_price=safe_float(data.get('allot_price', 0)),
+            stk_spo_ratio=safe_float(data.get('stk_spo_ratio', 0)),
+            stk_spo_price=safe_float(data.get('stk_spo_price', 0)),
+            forward_adj_factorA=safe_float(data.get('forward_adj_factorA', 0)),
+            forward_adj_factorB=safe_float(data.get('forward_adj_factorB', 0)),
+            backward_adj_factorA=safe_float(data.get('backward_adj_factorA', 0)),
+            backward_adj_factorB=safe_float(data.get('backward_adj_factorB', 0))
         )
 
 
@@ -525,8 +558,8 @@ class GlobalMarketState:
             server_ver=data.get('server_ver', ''),
             trd_logined=data.get('trd_logined', False),
             qot_logined=data.get('qot_logined', False),
-            timestamp=float(data.get('timestamp', 0.0)),
-            local_timestamp=float(data.get('local_timestamp', 0.0)),
+            timestamp=safe_float(data.get('timestamp', 0.0)),
+            local_timestamp=safe_float(data.get('local_timestamp', 0.0)),
             program_status_type=data.get('program_status_type', '')
         )
 
@@ -547,35 +580,43 @@ class CapitalFlow:
         """从字典创建CapitalFlow对象"""
         return cls(
             code=data.get('code', ''),
-            in_flow=float(data.get('in_flow', 0)),
-            main_in_flow=float(data.get('main_in_flow', 0)),
-            super_in_flow=float(data.get('super_in_flow', 0)),
-            big_in_flow=float(data.get('big_in_flow', 0)),
-            mid_in_flow=float(data.get('mid_in_flow', 0)),
-            sml_in_flow=float(data.get('sml_in_flow', 0))
+            in_flow=safe_float(data.get('in_flow', 0)),
+            main_in_flow=safe_float(data.get('main_in_flow', 0)),
+            super_in_flow=safe_float(data.get('super_in_flow', 0)),
+            big_in_flow=safe_float(data.get('big_in_flow', 0)),
+            mid_in_flow=safe_float(data.get('mid_in_flow', 0)),
+            sml_in_flow=safe_float(data.get('sml_in_flow', 0))
         )
 
 
 @dataclass
 class CapitalDistribution:
     """资金分布数据 - 对应 get_capital_distribution 返回"""
-    code: str                  # 股票代码
-    capital_flow_item_time: str # 时间
-    in_flow_super: float      # 超大单流入
-    in_flow_big: float        # 大单流入
-    in_flow_mid: float        # 中单流入
-    in_flow_sml: float        # 小单流入
+    code: str                     # 股票代码
+    capital_in_super: float      # 流入资金额度，特大单
+    capital_in_big: float        # 流入资金额度，大单
+    capital_in_mid: float        # 流入资金额度，中单
+    capital_in_small: float      # 流入资金额度，小单
+    capital_out_super: float     # 流出资金额度，特大单
+    capital_out_big: float       # 流出资金额度，大单
+    capital_out_mid: float       # 流出资金额度，中单
+    capital_out_small: float     # 流出资金额度，小单
+    update_time: str             # 更新时间字符串
     
     @classmethod
     def from_dict(cls, data: dict) -> 'CapitalDistribution':
         """从字典创建CapitalDistribution对象"""
         return cls(
             code=data.get('code', ''),
-            capital_flow_item_time=data.get('capital_flow_item_time', ''),
-            in_flow_super=float(data.get('in_flow_super', 0)),
-            in_flow_big=float(data.get('in_flow_big', 0)),
-            in_flow_mid=float(data.get('in_flow_mid', 0)),
-            in_flow_sml=float(data.get('in_flow_sml', 0))
+            capital_in_super=safe_float(data.get('capital_in_super', 0)),
+            capital_in_big=safe_float(data.get('capital_in_big', 0)),
+            capital_in_mid=safe_float(data.get('capital_in_mid', 0)),
+            capital_in_small=safe_float(data.get('capital_in_small', 0)),
+            capital_out_super=safe_float(data.get('capital_out_super', 0)),
+            capital_out_big=safe_float(data.get('capital_out_big', 0)),
+            capital_out_mid=safe_float(data.get('capital_out_mid', 0)),
+            capital_out_small=safe_float(data.get('capital_out_small', 0)),
+            update_time=data.get('update_time', '')
         )
 
 

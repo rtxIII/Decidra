@@ -405,17 +405,43 @@ class QuoteManager:
         """
         try:
             quote_ctx = self._get_quote_context()
+            
+            # 调用富途API
             ret, data = quote_ctx.get_capital_distribution(code)
             
             df = self._handle_response(ret, data, f"获取{code}的资金分布")
             
+            if hasattr(df, 'empty') and df.empty:
+                self.logger.warning(f"{code} 的资金分布数据为空")
+                return []
+            
+            
             # 转换为CapitalDistribution对象列表
             distribution_list = []
-            for _, row in df.iterrows():
-                row_dict = row.to_dict()
-                row_dict['code'] = code  # 确保包含股票代码
-                capital_distribution = CapitalDistribution.from_dict(row_dict)
-                distribution_list.append(capital_distribution)
+            if hasattr(df, 'iterrows'):
+                for idx, row in df.iterrows():
+                    try:
+                        row_dict = row.to_dict()
+                        row_dict['code'] = code  # 确保包含股票代码
+                        self.logger.debug(f"处理第{idx}行数据: {row_dict}")
+                        capital_distribution = CapitalDistribution.from_dict(row_dict)
+                        distribution_list.append(capital_distribution)
+                    except Exception as row_error:
+                        self.logger.error(f"处理第{idx}行数据时出错: {row_error}")
+                        continue
+            else:
+                # 如果不是DataFrame格式，尝试直接处理
+                self.logger.warning(f"返回数据不是DataFrame格式，尝试直接处理: {type(df)}")
+                if isinstance(df, list):
+                    for item in df:
+                        try:
+                            if isinstance(item, dict):
+                                item['code'] = code
+                                capital_distribution = CapitalDistribution.from_dict(item)
+                                distribution_list.append(capital_distribution)
+                        except Exception as item_error:
+                            self.logger.error(f"处理列表项时出错: {item_error}")
+                            continue
             
             self.logger.info(f"获取到 {code} 的 {len(distribution_list)} 条资金分布数据")
             return distribution_list
