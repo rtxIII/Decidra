@@ -58,7 +58,7 @@ class AnalysisDataManager:
         self.futu_market = futu_market
         self.logger = get_logger(__name__)
         
-        # 当前分析的股票
+        # 当前分析的股票（主要用于UI显示，可能有多个标签页打开不同股票）
         self.current_stock_code: Optional[str] = None
         self.current_time_period: str = 'D'  # 默认日线
         
@@ -66,10 +66,12 @@ class AnalysisDataManager:
         self.analysis_data_cache: Dict[str, AnalysisDataSet] = {}
         self.kline_cache: Dict[str, Dict[str, List[KLineData]]] = {}  # {stock_code: {period: data}}
         
-        # 定时更新任务
-        self.realtime_update_task: Optional[asyncio.Task] = None
-        self.orderbook_update_task: Optional[asyncio.Task] = None
-        self.tick_update_task: Optional[asyncio.Task] = None
+        # 按股票代码管理的实时更新任务
+        self.stock_tasks: Dict[str, Dict[str, Optional[asyncio.Task]]] = {}  
+        # 结构: {stock_code: {'realtime': task, 'orderbook': task, 'tick': task}}
+        
+        # 活跃股票集合（有标签页打开的股票）
+        self.active_stocks: set = set()
         
 
         self.initialize_data_managers()
@@ -96,23 +98,20 @@ class AnalysisDataManager:
             self.logger.warning(f"清理富途市场连接时出错: {e}")
 
     async def set_current_stock(self, stock_code: str) -> bool:
-        """设置当前分析的股票"""
+        """设置当前分析的股票并启动其实时更新任务"""
         try:
-            if stock_code == self.current_stock_code:
-                self.logger.info(f"股票 {stock_code} 已是当前分析股票")
-                return True
-            
-            # 停止之前股票的更新任务
-            await self._stop_update_tasks()
-            
             self.current_stock_code = stock_code
+            
+            # 将股票加入活跃股票集合
+            self.active_stocks.add(stock_code)
+            
             self.logger.info(f"切换到股票分析: {stock_code}")
             
             # 加载股票分析数据
             await self.load_analysis_data(stock_code)
             
-            # 启动实时更新任务
-            await self._start_update_tasks()
+            # 启动该股票的实时更新任务（如果尚未启动）
+            await self._start_stock_update_tasks(stock_code)
             
             return True
             
@@ -567,31 +566,43 @@ class AnalysisDataManager:
             self.logger.error(f"切换时间周期失败: {e}")
             return False
     
-    async def _start_update_tasks(self):
-        """启动实时更新任务"""
+    async def _start_stock_update_tasks(self, stock_code: str):
+        """启动指定股票的实时更新任务"""
         try:
-            if not self.current_stock_code:
-                return
+            # 如果该股票的任务已经在运行，跳过
+            if stock_code in self.stock_tasks:
+                running_tasks = [task for task in self.stock_tasks[stock_code].values() 
+                               if task and not task.done()]
+                if running_tasks:
+                    self.logger.info(f"股票 {stock_code} 的实时更新任务已在运行")
+                    return
+            
+            # 初始化该股票的任务字典
+            if stock_code not in self.stock_tasks:
+                self.stock_tasks[stock_code] = {'realtime': None, 'orderbook': None, 'tick': None}
             
             # 启动五档数据更新任务
-            self.orderbook_update_task = asyncio.create_task(
-                self._orderbook_update_loop()
+            self.stock_tasks[stock_code]['orderbook'] = asyncio.create_task(
+                self._orderbook_update_loop(stock_code)
             )
             
             # 启动逐笔数据更新任务
-            self.tick_update_task = asyncio.create_task(
-                self._tick_update_loop()
+            self.stock_tasks[stock_code]['tick'] = asyncio.create_task(
+                self._tick_update_loop(stock_code)
             )
             
-            self.logger.info("分析页面实时更新任务启动")
+            self.logger.info(f"股票 {stock_code} 的实时更新任务启动")
             
         except Exception as e:
-            self.logger.error(f"启动更新任务失败: {e}")
+            self.logger.error(f"启动股票 {stock_code} 更新任务失败: {e}")
     
-    async def _stop_update_tasks(self):
-        """停止实时更新任务"""
+    async def _stop_stock_update_tasks(self, stock_code: str):
+        """停止指定股票的实时更新任务"""
         try:
-            tasks = [self.realtime_update_task, self.orderbook_update_task, self.tick_update_task]
+            if stock_code not in self.stock_tasks:
+                return
+            
+            tasks = list(self.stock_tasks[stock_code].values())
             
             for task in tasks:
                 if task and not task.done():
@@ -601,29 +612,43 @@ class AnalysisDataManager:
                     except asyncio.CancelledError:
                         pass
             
-            self.realtime_update_task = None
-            self.orderbook_update_task = None
-            self.tick_update_task = None
+            # 清空该股票的任务
+            del self.stock_tasks[stock_code]
             
-            self.logger.info("分析页面更新任务已停止")
+            self.logger.info(f"股票 {stock_code} 的实时更新任务停止")
+        
+        except Exception as e:
+            self.logger.error(f"停止股票 {stock_code} 更新任务失败: {e}")
+    
+    async def _stop_update_tasks(self):
+        """停止所有实时更新任务"""
+        try:
+            for stock_code in list(self.stock_tasks.keys()):
+                await self._stop_stock_update_tasks(stock_code)
+            
+            self.logger.info("所有分析页面更新任务已停止")
             
         except Exception as e:
             self.logger.error(f"停止更新任务失败: {e}")
     
-    async def _orderbook_update_loop(self):
+    async def _orderbook_update_loop(self, stock_code: str):
         """五档数据更新循环"""
         while True:
             try:
-                if self.current_stock_code:
-                    loop = asyncio.get_event_loop()
-                    orderbook_data = await loop.run_in_executor(
-                        None, self._get_orderbook_data, self.current_stock_code
-                    )
+                # 检查股票是否仍在活跃集合中
+                if stock_code not in self.active_stocks:
+                    self.logger.info(f"股票 {stock_code} 已不再活跃，停止五档数据更新")
+                    break
                     
-                    # 更新缓存
-                    if self.current_stock_code in self.analysis_data_cache:
-                        self.analysis_data_cache[self.current_stock_code].orderbook_data = orderbook_data
-                        self.analysis_data_cache[self.current_stock_code].last_update = datetime.now()
+                loop = asyncio.get_event_loop()
+                orderbook_data = await loop.run_in_executor(
+                    None, self._get_orderbook_data, stock_code
+                )
+                    
+                # 更新缓存
+                if stock_code in self.analysis_data_cache:
+                    self.analysis_data_cache[stock_code].orderbook_data = orderbook_data
+                    self.analysis_data_cache[stock_code].last_update = datetime.now()
                 
                 await asyncio.sleep(ORDERBOOK_REFRESH_SEC)
                 
@@ -633,20 +658,24 @@ class AnalysisDataManager:
                 self.logger.error(f"五档数据更新错误: {e}")
                 await asyncio.sleep(ORDERBOOK_REFRESH_SEC)
     
-    async def _tick_update_loop(self):
+    async def _tick_update_loop(self, stock_code: str):
         """逐笔数据更新循环"""
         while True:
             try:
-                if self.current_stock_code:
-                    loop = asyncio.get_event_loop()
-                    tick_data = await loop.run_in_executor(
-                        None, self._get_tick_data, self.current_stock_code, 20
-                    )
+                # 检查股票是否仍在活跃集合中
+                if stock_code not in self.active_stocks:
+                    self.logger.info(f"股票 {stock_code} 已不再活跃，停止逐笔数据更新")
+                    break
                     
-                    # 更新缓存
-                    if self.current_stock_code in self.analysis_data_cache:
-                        self.analysis_data_cache[self.current_stock_code].tick_data = tick_data
-                        self.analysis_data_cache[self.current_stock_code].last_update = datetime.now()
+                loop = asyncio.get_event_loop()
+                tick_data = await loop.run_in_executor(
+                    None, self._get_tick_data, stock_code, 20
+                )
+                    
+                # 更新缓存
+                if stock_code in self.analysis_data_cache:
+                    self.analysis_data_cache[stock_code].tick_data = tick_data
+                    self.analysis_data_cache[stock_code].last_update = datetime.now()
                 
                 await asyncio.sleep(TICK_REFRESH_SEC)
                 
@@ -661,6 +690,35 @@ class AnalysisDataManager:
         if self.current_stock_code and self.current_stock_code in self.analysis_data_cache:
             return self.analysis_data_cache[self.current_stock_code]
         return None
+    
+    async def cleanup_stock_data(self, stock_code: str):
+        """清理指定股票的分析数据和停止其实时更新任务"""
+        try:
+            # 从活跃股票集合中移除
+            self.active_stocks.discard(stock_code)
+            
+            # 停止该股票的实时更新任务
+            await self._stop_stock_update_tasks(stock_code)
+            
+            # 如果是当前分析的股票，清空当前股票标记
+            if self.current_stock_code == stock_code:
+                self.current_stock_code = None
+                self.logger.info(f"已清空当前分析股票标记: {stock_code}")
+            
+            # 从缓存中删除该股票的数据
+            if stock_code in self.analysis_data_cache:
+                del self.analysis_data_cache[stock_code]
+                self.logger.debug(f"已从缓存中删除股票 {stock_code} 的分析数据")
+            
+            # 从K线缓存中删除该股票的数据
+            if stock_code in self.kline_cache:
+                del self.kline_cache[stock_code]
+                self.logger.debug(f"已从K线缓存中删除股票 {stock_code} 的数据")
+            
+            self.logger.info(f"股票 {stock_code} 的分析数据和任务清理完成")
+            
+        except Exception as e:
+            self.logger.error(f"清理股票 {stock_code} 分析数据失败: {e}")
     
     async def cleanup(self):
         """清理分析数据管理器"""

@@ -80,6 +80,8 @@ class MonitorApp(App):
         Binding("x", "global_switch_tab_left", "上一个标签", priority=True),
         Binding("c", "global_switch_tab_right", "下一个标签", priority=True),
         Binding("ctrl+c", "quit", "强制退出", priority=True),
+        Binding("space+w", "close_current_tab", "关闭标签页", priority=True),
+        Binding("ctrl+w", "close_current_tab", "关闭标签页", priority=True),
     ]
     
     def __init__(self):
@@ -346,6 +348,22 @@ class MonitorApp(App):
                 
             except Exception as e:
                 self.logger.debug(f"DEBUG: MonitorApp 全局向右切换失败: {e}")
+    
+    async def action_close_current_tab(self) -> None:
+        """关闭当前标签页动作（Cmd+W / Ctrl+W）"""
+        if not self.show_splash and self.managers_initialized:
+            try:
+                ui_manager = getattr(self, 'ui_manager', None)
+                if ui_manager:
+                    success = await ui_manager.close_current_tab()
+                    if success:
+                        self.logger.info("成功关闭当前标签页")
+                    else:
+                        self.logger.debug("当前标签页不能关闭或关闭失败")
+                else:
+                    self.logger.error("UIManager未初始化，无法关闭标签页")
+            except Exception as e:
+                self.logger.error(f"关闭当前标签页失败: {e}")
     
     async def action_quit(self) -> None:
         """退出应用动作"""

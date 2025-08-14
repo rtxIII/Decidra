@@ -627,6 +627,100 @@ class UIManager:
             self.logger.error(f"创建分析标签页 {stock_code} 失败: {e}")
             return False
     
+    async def close_analysis_tab(self, stock_code: str = None) -> bool:
+        """
+        关闭分析标签页
+        
+        Args:
+            stock_code: 要关闭的股票代码。如果为None，则关闭当前激活的分析标签页
+            
+        Returns:
+            bool: 关闭是否成功
+        """
+        try:
+            self.logger.info(f"开始关闭分析标签页: {stock_code or '当前激活'}")
+            
+            # 获取主标签页容器
+            main_tabs = self.app.query_one("#main_tabs", expect_type=None)
+            if not main_tabs:
+                self.logger.error("找不到主标签页容器 #main_tabs")
+                return False
+            
+            tab_id_to_close = None
+            
+            if stock_code:
+                # 关闭指定股票的分析标签页
+                tab_id_to_close = f"analysis_{stock_code.replace('.', '_')}"
+            else:
+                # 关闭当前激活的分析标签页（如果是分析标签页）
+                current_active = main_tabs.active
+                if current_active and current_active.startswith("analysis_"):
+                    tab_id_to_close = current_active
+                else:
+                    self.logger.warning("当前激活的标签页不是分析标签页，无法关闭")
+                    return False
+            
+            # 检查标签页是否存在
+            existing_panes = list(main_tabs.query("TabPane"))
+            pane_exists = any(pane.id == tab_id_to_close for pane in existing_panes)
+            
+            if not pane_exists:
+                self.logger.warning(f"分析标签页 {tab_id_to_close} 不存在")
+                return False
+            
+            # 在关闭前停止相关的实时数据更新
+            if stock_code:
+                analysis_data_manager = getattr(self.app_core, 'analysis_data_manager', None)
+                if analysis_data_manager:
+                    try:
+                        # 清理该股票的实时数据任务
+                        await analysis_data_manager.cleanup_stock_data(stock_code)
+                        self.logger.debug(f"已清理股票 {stock_code} 的分析数据")
+                    except Exception as e:
+                        self.logger.warning(f"清理分析数据失败: {e}")
+            
+            # 移除标签页
+            await main_tabs.remove_pane(tab_id_to_close)
+            
+            # 如果关闭的是当前激活标签页，切换到主界面
+            if main_tabs.active == "" or main_tabs.active == tab_id_to_close:
+                main_tabs.active = "main"
+            
+            self.logger.info(f"成功关闭分析标签页: {tab_id_to_close}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"关闭分析标签页失败: {e}")
+            return False
+    
+    async def close_current_tab(self) -> bool:
+        """
+        关闭当前激活的标签页（仅限分析标签页）
+        这个方法专门用于Cmd+W快捷键
+        
+        Returns:
+            bool: 关闭是否成功
+        """
+        try:
+            main_tabs = self.app.query_one("#main_tabs", expect_type=None)
+            if not main_tabs:
+                return False
+                
+            current_active = main_tabs.active
+            
+            # 只允许关闭分析标签页，保护主界面标签页
+            if current_active and current_active.startswith("analysis_"):
+                # 从tab_id中提取股票代码
+                stock_code = current_active.replace("analysis_", "").replace("_", ".")
+                return await self.close_analysis_tab(stock_code)
+            else:
+                self.logger.debug(f"当前标签页 {current_active} 不是分析标签页，无法关闭")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"关闭当前标签页失败: {e}")
+            return False
+    
     def has_analysis_tab(self, stock_code: str) -> bool:
         """检查分析标签页是否存在"""
         try:
