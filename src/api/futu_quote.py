@@ -1127,26 +1127,70 @@ class QuoteManager:
             
             df = self._handle_response(ret, data, f"获取{code}的买卖盘数据")
             
-            # 转换为OrderBookData对象
+            # 处理富途API返回的特殊格式
+            # API返回格式: {'code': 'HK.06181', 'Bid': [(price, vol, order_count, {}), ...], 'Ask': [...]}
+            converted_data = {}
+            
             import pandas as pd
             if isinstance(df, pd.DataFrame):
                 if len(df) > 0:
-                    order_book = OrderBookData.from_dict(df.iloc[0].to_dict())
-                    self.logger.info(f"获取到 {code} 的买卖盘数据")
-                    return order_book
+                    row_dict = df.iloc[0].to_dict()
+                    converted_data = self._convert_orderbook_format(row_dict)
                 else:
                     raise FutuQuoteException(-1, f"没有获取到{code}的买卖盘数据")
             elif isinstance(df, dict):
-                order_book = OrderBookData.from_dict(df)
-                self.logger.info(f"获取到 {code} 的买卖盘数据")
-                return order_book
+                converted_data = self._convert_orderbook_format(df)
             else:
                 raise FutuQuoteException(-1, f"获取到意外的数据格式: {type(df)}")
+            
+            order_book = OrderBookData.from_dict(converted_data)
+            self.logger.info(f"获取到 {code} 的买卖盘数据")
+            return order_book
                 
         except Exception as e:
             if isinstance(e, FutuException):
                 raise
             raise FutuQuoteException(-1, f"获取买卖盘数据异常: {str(e)}")
+    
+    def _convert_orderbook_format(self, data: dict) -> dict:
+        """
+        转换富途API返回的买卖盘数据格式
+        
+        Args:
+            data: 原始数据，格式为 {'Bid': [(price, vol, count, {}), ...], 'Ask': [...]}
+        
+        Returns:
+            dict: 转换后的数据格式，适配OrderBookData.from_dict
+        """
+        converted = {
+            'code': data.get('code', ''),
+            'svr_recv_time_bid': data.get('svr_recv_time_bid', ''),
+            'svr_recv_time_ask': data.get('svr_recv_time_ask', '')
+        }
+        
+        # 处理买盘数据 (Bid)
+        bid_data = data.get('Bid', [])
+        for i in range(3):  # 只处理前3档
+            if i < len(bid_data):
+                price, volume, count, extra = bid_data[i]
+                converted[f'Bid{i+1}'] = price
+                converted[f'BidVol{i+1}'] = volume
+            else:
+                converted[f'Bid{i+1}'] = 0.0
+                converted[f'BidVol{i+1}'] = 0
+        
+        # 处理卖盘数据 (Ask)
+        ask_data = data.get('Ask', [])
+        for i in range(3):  # 只处理前3档
+            if i < len(ask_data):
+                price, volume, count, extra = ask_data[i]
+                converted[f'Ask{i+1}'] = price
+                converted[f'AskVol{i+1}'] = volume
+            else:
+                converted[f'Ask{i+1}'] = 0.0
+                converted[f'AskVol{i+1}'] = 0
+        
+        return converted
     
     def get_rt_data(self, code: str) -> List[RTData]:
         """
