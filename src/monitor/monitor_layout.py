@@ -199,6 +199,10 @@ class AnalysisPanel(Container):
         self._tabbed_content = None
         self.logger = get_logger(__name__)
         
+        # 实时更新相关
+        self._realtime_update_task: Optional[asyncio.Task] = None
+        self._realtime_update_interval: int = 3  # 秒
+        
     def set_app_reference(self, app):
         """设置应用引用以访问数据管理器"""
         self._app_ref = app
@@ -499,6 +503,80 @@ class AnalysisPanel(Container):
         
         return capital_text
     
+    def get_refresh_mode(self) -> str:
+        """获取当前刷新模式"""
+        try:
+            if self._app_ref and hasattr(self._app_ref, 'app_core'):
+                return getattr(self._app_ref.app_core, 'refresh_mode', '快照模式')
+            return '快照模式'
+        except Exception:
+            return '快照模式'
+    
+    def is_realtime_mode(self) -> bool:
+        """判断是否为实时模式"""
+        refresh_mode = self.get_refresh_mode()
+        return '实时' in refresh_mode
+    
+    async def start_realtime_updates(self):
+        """启动实时数据更新"""
+        if self._realtime_update_task and not self._realtime_update_task.done():
+            return  # 已经在运行
+        
+        if not self.is_realtime_mode():
+            return  # 非实时模式，不启动
+        
+        self._realtime_update_task = asyncio.create_task(self._realtime_update_loop())
+        self.logger.info("已启动分析面板实时数据更新")
+    
+    async def stop_realtime_updates(self):
+        """停止实时数据更新"""
+        if self._realtime_update_task and not self._realtime_update_task.done():
+            self._realtime_update_task.cancel()
+            try:
+                await self._realtime_update_task
+            except asyncio.CancelledError:
+                pass
+            self.logger.info("已停止分析面板实时数据更新")
+    
+    async def _realtime_update_loop(self):
+        """实时数据更新循环"""
+        broker_update_counter = 0
+        broker_update_interval = 3  # 每3个周期更新一次经纪队列
+        
+        while True:
+            try:
+                # 检查是否仍为实时模式
+                if not self.is_realtime_mode():
+                    self.logger.info("切换到非实时模式，停止实时更新")
+                    break
+                
+                # 检查是否有数据管理器和当前股票
+                data_manager = self.get_analysis_data_manager()
+                if not data_manager or not data_manager.current_stock_code:
+                    await asyncio.sleep(self._realtime_update_interval)
+                    continue
+                
+                # 更新高频数据
+                await self.update_basic_info()
+                await self.update_quote_info()
+                await self.update_orderbook_data()
+                await self.update_tick_data()
+                await self.update_capital_flow()
+                
+                # 低频更新经纪队列数据
+                broker_update_counter += 1
+                if broker_update_counter >= broker_update_interval:
+                    await self.update_broker_queue()
+                    broker_update_counter = 0
+                
+                await asyncio.sleep(self._realtime_update_interval)
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"实时数据更新错误: {e}")
+                await asyncio.sleep(self._realtime_update_interval)
+    
     async def update_quote_info(self):
         """更新实时报价信息"""
         try:
@@ -584,7 +662,7 @@ class AnalysisPanel(Container):
         except Exception as e:
             self.logger.error(f"更新资金流向失败: {e}")
         
-    async def update_data(self):
+    async def update_basic_info(self):
         """更新基础信息显示"""
         try:
             data_manager = self.get_analysis_data_manager()
@@ -597,9 +675,16 @@ class AnalysisPanel(Container):
             formatted_info = self.format_basic_info(analysis_data)
             
             if self._basic_info_widget:
-                self._basic_info_widget.update(formatted_info)
-            
-            # 更新所有其他数据区域
+                self._basic_info_widget.update(formatted_info)    
+        except Exception as e:
+            if self._basic_info_widget:
+                self._basic_info_widget.update(f"数据加载错误: {str(e)}")
+            self.logger.error(f"更新基础信息失败: {e}")
+
+    async def update_data(self):
+        """更新信息"""
+        try:
+            await self.update_basic_info()
             await self.update_quote_info()
             await self.update_orderbook_data()
             await self.update_tick_data()
@@ -609,7 +694,7 @@ class AnalysisPanel(Container):
         except Exception as e:
             if self._basic_info_widget:
                 self._basic_info_widget.update(f"数据加载错误: {str(e)}")
-            self.logger.error(f"更新基础信息失败: {e}")
+            self.logger.error(f"更新信息: {e}")
     
     async def on_stock_changed(self, stock_code: str):
         """处理股票切换事件"""
@@ -623,6 +708,10 @@ class AnalysisPanel(Container):
             if success:
                 # 更新基础信息显示
                 await self.update_data()
+                
+                # 重新启动实时更新（如果在实时模式）
+                await self.stop_realtime_updates()
+                await self.start_realtime_updates()
             else:
                 if self._basic_info_widget:
                     self._basic_info_widget.update(f"加载股票 {stock_code} 数据失败")
@@ -687,6 +776,23 @@ class AnalysisPanel(Container):
         
         self.call_after_refresh(ensure_focus)
         self.logger.debug("DEBUG: AnalysisPanel 设置焦点完成")
+        
+        # 启动实时更新（如果在实时模式）
+        await self.start_realtime_updates()
+    
+    async def on_unmount(self) -> None:
+        """组件卸载时清理"""
+        await self.stop_realtime_updates()
+        self.logger.debug("AnalysisPanel 卸载完成")
+    
+    async def on_refresh_mode_changed(self):
+        """当刷新模式改变时调用"""
+        if self.is_realtime_mode():
+            # 切换到实时模式，启动实时更新
+            await self.start_realtime_updates()
+        else:
+            # 切换到快照模式，停止实时更新
+            await self.stop_realtime_updates()
     
     def _ensure_focus_after_switch(self) -> None:
         """标签页切换后确保获得焦点"""

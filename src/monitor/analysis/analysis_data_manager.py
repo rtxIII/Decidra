@@ -28,6 +28,7 @@ TIME_PERIODS = {
 KLINE_CACHE_DAYS = 90      # K线数据缓存天数
 ORDERBOOK_REFRESH_SEC = 3   # 五档数据刷新间隔(秒)
 TICK_REFRESH_SEC = 1        # 逐笔数据刷新间隔(秒)
+BASIC_INFO_REFRESH_SEC = 1  # 基础信息刷新间隔(秒)
 
 
 @dataclass
@@ -579,7 +580,7 @@ class AnalysisDataManager:
             
             # 初始化该股票的任务字典
             if stock_code not in self.stock_tasks:
-                self.stock_tasks[stock_code] = {'realtime': None, 'orderbook': None, 'tick': None}
+                self.stock_tasks[stock_code] = {'realtime': None, 'orderbook': None, 'tick': None, 'basic_info': None}
             
             # 启动五档数据更新任务
             self.stock_tasks[stock_code]['orderbook'] = asyncio.create_task(
@@ -589,6 +590,11 @@ class AnalysisDataManager:
             # 启动逐笔数据更新任务
             self.stock_tasks[stock_code]['tick'] = asyncio.create_task(
                 self._tick_update_loop(stock_code)
+            )
+            
+            # 启动基础信息数据更新任务
+            self.stock_tasks[stock_code]['basic_info'] = asyncio.create_task(
+                self._basic_info_update_loop(stock_code)
             )
             
             self.logger.info(f"股票 {stock_code} 的实时更新任务启动")
@@ -684,6 +690,33 @@ class AnalysisDataManager:
             except Exception as e:
                 self.logger.error(f"逐笔数据更新错误: {e}")
                 await asyncio.sleep(TICK_REFRESH_SEC)
+
+    async def _basic_info_update_loop(self, stock_code: str):
+        """基础信息数据更新循环"""
+        while True:
+            try:
+                # 检查股票是否仍在活跃集合中
+                if stock_code not in self.active_stocks:
+                    self.logger.info(f"股票 {stock_code} 已不再活跃，停止基础信息数据更新")
+                    break
+                    
+                loop = asyncio.get_event_loop()
+                basic_info = await loop.run_in_executor(
+                    None, self._get_stock_basic_info, stock_code
+                )
+                    
+                # 更新缓存
+                if stock_code in self.analysis_data_cache:
+                    self.analysis_data_cache[stock_code].basic_info = basic_info
+                    self.analysis_data_cache[stock_code].last_update = datetime.now()
+                
+                await asyncio.sleep(BASIC_INFO_REFRESH_SEC)
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"基础信息数据更新错误: {e}")
+                await asyncio.sleep(BASIC_INFO_REFRESH_SEC)
     
     def get_current_analysis_data(self) -> Optional[AnalysisDataSet]:
         """获取当前分析数据"""

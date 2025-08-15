@@ -135,13 +135,14 @@ src/.runtime/
 config.ini
 stock_strategy_map.yml
 
-#cursor
+#AI
 .cursorrules
 .cursorignore
 .claude
 src/.claude/
 CLAUDE.md
 .kiro
+.serena
 
 #not readey doc
 doc/_*
