@@ -567,13 +567,15 @@ class GlobalMarketState:
 @dataclass
 class CapitalFlow:
     """资金流向数据 - 对应 get_capital_flow 返回"""
-    code: str                  # 股票代码
-    in_flow: float            # 流入资金
-    main_in_flow: float       # 主力流入
-    super_in_flow: float      # 超大单流入
-    big_in_flow: float        # 大单流入
-    mid_in_flow: float        # 中单流入
-    sml_in_flow: float        # 小单流入
+    code: str                        # 股票代码
+    in_flow: float                  # 整体净流入
+    main_in_flow: float             # 主力大单净流入
+    super_in_flow: float            # 特大单净流入
+    big_in_flow: float              # 大单净流入
+    mid_in_flow: float              # 中单净流入
+    sml_in_flow: float              # 小单净流入
+    capital_flow_item_time: str = '' # 开始时间
+    last_valid_time: str = ''       # 数据最后有效时间
     
     @classmethod
     def from_dict(cls, data: dict) -> 'CapitalFlow':
@@ -585,7 +587,9 @@ class CapitalFlow:
             super_in_flow=safe_float(data.get('super_in_flow', 0)),
             big_in_flow=safe_float(data.get('big_in_flow', 0)),
             mid_in_flow=safe_float(data.get('mid_in_flow', 0)),
-            sml_in_flow=safe_float(data.get('sml_in_flow', 0))
+            sml_in_flow=safe_float(data.get('sml_in_flow', 0)),
+            capital_flow_item_time=data.get('capital_flow_item_time', ''),
+            last_valid_time=data.get('last_valid_time', '')
         )
 
 

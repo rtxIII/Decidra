@@ -74,6 +74,8 @@ class AnalysisDataManager:
         # 活跃股票集合（有标签页打开的股票）
         self.active_stocks: set = set()
         
+        # 缓存上次的格式化数据值，用于检测变化并实现闪烁效果
+        self.last_formatted_values: Dict[str, Dict[str, str]] = {}  # {stock_code: {data_type: formatted_value}}
 
         self.initialize_data_managers()
         self.logger.info("AnalysisDataManager 初始化完成")
@@ -568,7 +570,7 @@ class AnalysisDataManager:
             return False
     
     async def _start_stock_update_tasks(self, stock_code: str):
-        """启动指定股票的实时更新任务"""
+        """启动指定股票的实时更新任务（仅在交易时间内启动）"""
         try:
             # 如果该股票的任务已经在运行，跳过
             if stock_code in self.stock_tasks:
@@ -577,6 +579,12 @@ class AnalysisDataManager:
                 if running_tasks:
                     self.logger.info(f"股票 {stock_code} 的实时更新任务已在运行")
                     return
+            
+            # 检查市场状态，只有在交易时间内才启动实时更新任务
+            is_trading_time = await self._check_market_trading_status(stock_code)
+            if not is_trading_time:
+                self.logger.info(f"股票 {stock_code} 不在交易时间内，跳过启动实时更新任务")
+                return
             
             # 初始化该股票的任务字典
             if stock_code not in self.stock_tasks:
@@ -597,7 +605,7 @@ class AnalysisDataManager:
                 self._basic_info_update_loop(stock_code)
             )
             
-            self.logger.info(f"股票 {stock_code} 的实时更新任务启动")
+            self.logger.info(f"股票 {stock_code} 的实时更新任务启动（交易时间内）")
             
         except Exception as e:
             self.logger.error(f"启动股票 {stock_code} 更新任务失败: {e}")
@@ -759,9 +767,559 @@ class AnalysisDataManager:
             await self._stop_update_tasks()
             self.analysis_data_cache.clear()
             self.kline_cache.clear()
+            self.last_formatted_values.clear()
             self.current_stock_code = None
             self.logger.info("AnalysisDataManager 清理完成")
             
         except Exception as e:
             self.logger.error(f"AnalysisDataManager 清理失败: {e}")
+    
+    # ==================== 数据格式化方法 ====================
+    
+    def format_basic_info(self, analysis_data=None) -> str:
+        """格式化基础信息显示文本"""
+        if not analysis_data:
+            return "等待股票数据加载..."
+            
+        basic_info = analysis_data.basic_info
+        realtime_quote = analysis_data.realtime_quote
+        
+        # 提取基础信息
+        stock_code = basic_info.get('code', '未知')
+        stock_name = basic_info.get('name', '未知')
+        last_price = basic_info.get('last_price', '未知')
+        prev_close_price = basic_info.get('prev_close_price', '未知')
+        volume = basic_info.get('volume', '未知')
+        turnover = basic_info.get('turnover', '未知')
+        turnover_rate = basic_info.get('turnover_rate', '未知')
+        amplitude = basic_info.get('amplitude', '未知')
+        listing_date = basic_info.get('listing_date', '未知')
+
+        # 提取实时数据用于计算市值等
+        current_price = realtime_quote.get('cur_price', 0)
+        volume = realtime_quote.get('volume', 0)
+        
+        # 判断市场
+        market_map = {
+            'HK': '港交所',
+            'US': '纳斯达克/纽交所', 
+            'SH': '上海证券交易所',
+            'SZ': '深圳证券交易所'
+        }
+        market = stock_code.split('.')[0] if '.' in stock_code else 'Unknown'
+        market_name = market_map.get(market, '未知市场')
+        
+        # 格式化显示文本
+        info_text = (
+            f"股票代码: {stock_code}    "
+            f"名称: {stock_name}    "
+            f"最新价格: {last_price}    "
+            f"昨收盘价格: {prev_close_price}    "
+            f"成交金额: {turnover}    "
+            f"换手率: {turnover_rate}   "
+            f"振幅: {amplitude}    "
+        )
+        
+        if current_price > 0:
+            market_cap = current_price * volume if volume > 0 else 0
+            if market_cap > 100000000:  # 大于1亿
+                market_cap_text = f"{market_cap/100000000:.1f}亿"
+            else:
+                market_cap_text = f"{market_cap/10000:.1f}万" if market_cap > 10000 else f"{market_cap:.0f}"
+            info_text += f"当前价: {current_price:.2f}    市值估算: {market_cap_text}    "
+            
+        if listing_date and listing_date != '未知':
+            info_text += f"上市日期: {listing_date}    "
+            
+        info_text += f"更新时间: {analysis_data.last_update.strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        return info_text
+    
+    def format_realtime_quote(self, analysis_data=None) -> str:
+        """格式化实时报价信息"""
+        if not analysis_data or not analysis_data.realtime_quote:
+            return "等待实时报价数据..."
+        
+        quote = analysis_data.realtime_quote
+        
+        # 提取报价数据
+        cur_price = quote.get('cur_price', 0)
+        prev_close = quote.get('prev_close_price', 0)
+        open_price = quote.get('open_price', 0)
+        high_price = quote.get('high_price', 0)
+        low_price = quote.get('low_price', 0)
+        volume = quote.get('volume', 0)
+        turnover = quote.get('turnover', 0)
+        change_rate = quote.get('change_rate', 0)
+        change_val = quote.get('change_val', 0)
+        amplitude = quote.get('amplitude', 0)
+        turnover_rate = quote.get('turnover_rate', 0)
+        
+        # 格式化涨跌显示
+        change_color = "green" if change_val >= 0 else "red"
+        change_symbol = "↑" if change_val >= 0 else "↓"
+        
+        # 格式化成交量显示
+        if volume > 100000000:
+            volume_str = f"{volume/100000000:.1f}亿手"
+        elif volume > 10000:
+            volume_str = f"{volume/10000:.1f}万手"
+        else:
+            volume_str = f"{volume}手"
+        
+        # 格式化成交额显示
+        if turnover > 100000000:
+            turnover_str = f"{turnover/100000000:.1f}亿"
+        elif turnover > 10000:
+            turnover_str = f"{turnover/10000:.1f}万"
+        else:
+            turnover_str = f"{turnover:.0f}"
+        
+        quote_text = (
+            f"最新价: [{change_color}]{cur_price:.2f}[/{change_color}] {change_symbol}    "
+            f"涨跌幅: [{change_color}]{change_rate:+.2f}%[/{change_color}]    "
+            f"涨跌额: [{change_color}]{change_val:+.2f}[/{change_color}]    "
+            f"开盘: {open_price:.2f}    "
+            f"最高: {high_price:.2f}    "
+            f"最低: {low_price:.2f}    "
+            f"成交量: {volume_str}    "
+            f"成交额: {turnover_str}    "
+            f"换手率: {turnover_rate:.2f}%    "
+            f"振幅: {amplitude:.2f}%"
+        )
+        
+        return quote_text
+    
+    def format_orderbook_data(self, analysis_data=None) -> str:
+        """格式化五档买卖盘数据"""
+        if not analysis_data or not analysis_data.orderbook_data:
+            return "等待五档数据..."
+        
+        orderbook = analysis_data.orderbook_data
+        
+        # 构建五档显示（简化为三档）
+        orderbook_text = ""
+        
+        # 卖盘（从上到下）
+        if hasattr(orderbook, 'ask_price_3') and orderbook.ask_price_3 > 0:
+            orderbook_text += f"[bold red]卖三: {orderbook.ask_price_3:.2f}  {orderbook.ask_volume_3}手[/bold red]\n"
+        if hasattr(orderbook, 'ask_price_2') and orderbook.ask_price_2 > 0:
+            orderbook_text += f"[bold red]卖二: {orderbook.ask_price_2:.2f}  {orderbook.ask_volume_2}手[/bold red]\n"
+        if hasattr(orderbook, 'ask_price_1') and orderbook.ask_price_1 > 0:
+            orderbook_text += f"[bold red]卖一: {orderbook.ask_price_1:.2f}  {orderbook.ask_volume_1}手[/bold red]\n"
+        
+        orderbook_text += "──────────────────\n"
+        
+        # 买盘（从上到下）
+        if hasattr(orderbook, 'bid_price_1') and orderbook.bid_price_1 > 0:
+            orderbook_text += f"[bold green]买一: {orderbook.bid_price_1:.2f}  {orderbook.bid_volume_1}手[/bold green]\n"
+        if hasattr(orderbook, 'bid_price_2') and orderbook.bid_price_2 > 0:
+            orderbook_text += f"[bold green]买二: {orderbook.bid_price_2:.2f}  {orderbook.bid_volume_2}手[/bold green]\n"
+        if hasattr(orderbook, 'bid_price_3') and orderbook.bid_price_3 > 0:
+            orderbook_text += f"[bold green]买三: {orderbook.bid_price_3:.2f}  {orderbook.bid_volume_3}手[/bold green]\n"
+        
+        # 计算委比和委差
+        total_bid_vol = (getattr(orderbook, 'bid_volume_1', 0) + 
+                        getattr(orderbook, 'bid_volume_2', 0) + 
+                        getattr(orderbook, 'bid_volume_3', 0))
+        total_ask_vol = (getattr(orderbook, 'ask_volume_1', 0) + 
+                        getattr(orderbook, 'ask_volume_2', 0) + 
+                        getattr(orderbook, 'ask_volume_3', 0))
+        
+        if (total_bid_vol + total_ask_vol) > 0:
+            wei_bi = ((total_bid_vol - total_ask_vol) / (total_bid_vol + total_ask_vol)) * 100
+            wei_cha = total_bid_vol - total_ask_vol
+            
+            if wei_cha > 10000:
+                wei_cha_str = f"{wei_cha/10000:.1f}万手"
+            else:
+                wei_cha_str = f"{wei_cha}手"
+            
+            orderbook_text += f"\n📈 委比: {wei_bi:+.1f}%\n"
+            orderbook_text += f"📊 委差: {wei_cha_str}"
+        
+        return orderbook_text
+    
+    def format_tick_data(self, analysis_data=None) -> str:
+        """格式化逐笔交易数据"""
+        if not analysis_data or not analysis_data.tick_data:
+            return "等待逐笔数据..."
+        
+        tick_data = analysis_data.tick_data
+        
+        if not tick_data or len(tick_data) == 0:
+            return "暂无逐笔数据"
+        
+        tick_text = "[bold yellow]逐笔数据[/bold yellow]\n"
+        
+        # 显示最新的4-5笔交易
+        recent_ticks = tick_data[:5] if len(tick_data) >= 5 else tick_data
+        
+        for tick in recent_ticks:
+            time_str = tick.get('time', '')[:8]  # 只显示时分秒
+            price = tick.get('price', 0)
+            volume = tick.get('volume', 0)
+            direction = tick.get('ticker_direction', '')
+            
+            # 根据买卖方向显示箭头和颜色
+            if direction == 'BUY':
+                direction_symbol = "[green]↑[/green]"
+            elif direction == 'SELL':
+                direction_symbol = "[red]↓[/red]"
+            else:
+                direction_symbol = "─"
+            
+            tick_text += f"{time_str}  {price:.2f}{direction_symbol}  {volume}手\n"
+        
+        return tick_text.rstrip('\n')
+    
+    def format_broker_queue(self, analysis_data=None) -> str:
+        """格式化经纪队列数据"""
+        if not analysis_data or not analysis_data.broker_queue:
+            return "等待经纪队列数据..."
+        
+        broker = analysis_data.broker_queue
+        
+        if not broker:
+            return "暂无经纪队列数据"
+        
+        broker_text = "[bold cyan]经纪队列[/bold cyan]\n"
+        
+        # 简化处理：如果有经纪队列数据，显示简要信息
+        if hasattr(broker, 'bid_frame_table') and broker.bid_frame_table:
+            broker_text += "买方队列: 有数据\n"
+        else:
+            broker_text += "买方队列: 无\n"
+        
+        if hasattr(broker, 'ask_frame_table') and broker.ask_frame_table:
+            broker_text += "卖方队列: 有数据"
+        else:
+            broker_text += "卖方队列: 无"
+        
+        return broker_text
+    
+    async def format_capital_flow(self, analysis_data=None) -> str:
+        """格式化资金流向数据"""
+        if not analysis_data or not analysis_data.capital_flow:
+            # 如果没有资金流向数据，调用真实API获取资金流向信息
+            return await self._generate_estimated_capital_flow(analysis_data)
+        
+        capital = analysis_data.capital_flow
+        
+        # 这里应该根据实际的资金流向数据结构进行格式化
+        # 由于当前capital_flow为空字典，我们调用真实API获取数据
+        return await self._generate_estimated_capital_flow(analysis_data)
+    
+    async def _generate_estimated_capital_flow(self, analysis_data=None) -> str:
+        """调用get_capital_flow API获取真实的资金流向信息"""
+        if not analysis_data or not analysis_data.realtime_quote:
+            return "等待资金流向数据..."
+        
+        stock_code = self.current_stock_code
+        if not stock_code:
+            return "等待股票代码..."
+        
+        try:
+            # 调用真实的资金流向API
+            loop = asyncio.get_event_loop()
+            capital_flow_list = await loop.run_in_executor(
+                None, self.futu_market.get_capital_flow, stock_code, "INTRADAY"
+            )
+            
+            if not capital_flow_list:
+                # 如果API返回空数据，则回退到基于技术指标的估算
+                return self._fallback_estimated_capital_flow(analysis_data)
+            
+            # 获取最新的资金流向数据（列表中的最后一条）
+            latest_flow = capital_flow_list[-1]
+            
+            # 格式化资金流向数据
+            main_flow = latest_flow.main_in_flow
+            super_flow = latest_flow.super_in_flow
+            big_flow = latest_flow.big_in_flow
+            mid_flow = latest_flow.mid_in_flow
+            sml_flow = latest_flow.sml_in_flow
+            
+            # 判断流入流出方向
+            main_flow_direction = "流入" if main_flow > 0 else "流出"
+            main_flow_color = "green" if main_flow > 0 else "red"
+            
+            # 格式化数值显示
+            def format_capital(value):
+                abs_value = abs(value)
+                if abs_value > 100000000:
+                    return f"{value/100000000:.1f}亿"
+                elif abs_value > 10000:
+                    return f"{value/10000:.1f}万"
+                else:
+                    return f"{value:.0f}"
+            
+            main_flow_str = format_capital(main_flow)
+            super_flow_str = format_capital(super_flow)
+            big_flow_str = format_capital(big_flow)
+            mid_flow_str = format_capital(mid_flow)
+            sml_flow_str = format_capital(sml_flow)
+            
+            # 计算各类资金占比
+            total_flow = abs(super_flow) + abs(big_flow) + abs(mid_flow) + abs(sml_flow)
+            if total_flow > 0:
+                super_pct = abs(super_flow) / total_flow * 100
+                big_pct = abs(big_flow) / total_flow * 100
+                mid_pct = abs(mid_flow) / total_flow * 100
+                sml_pct = abs(sml_flow) / total_flow * 100
+            else:
+                super_pct = big_pct = mid_pct = sml_pct = 0
+            
+            # 活跃度评估（基于总流入流出金额）
+            quote = analysis_data.realtime_quote
+            turnover_rate = quote.get('turnover_rate', 0)
+            
+            if turnover_rate > 5:
+                activity = "高"
+                activity_stars = "★★★★★"
+            elif turnover_rate > 3:
+                activity = "中高"
+                activity_stars = "★★★★☆"
+            elif turnover_rate > 1:
+                activity = "中等"
+                activity_stars = "★★★☆☆"
+            elif turnover_rate > 0.5:
+                activity = "中低"
+                activity_stars = "★★☆☆☆"
+            else:
+                activity = "低"
+                activity_stars = "★☆☆☆☆"
+            
+            # 格式化时间信息
+            time_info = ""
+            if latest_flow.capital_flow_item_time:
+                time_info = f"数据时间: {latest_flow.capital_flow_item_time}"
+            elif latest_flow.last_valid_time:
+                time_info = f"更新时间: {latest_flow.last_valid_time}"
+            
+            # 构建显示文本
+            capital_text = (
+                f"主力净{main_flow_direction}: [{main_flow_color}]{main_flow_str}[/{main_flow_color}]    "
+                f"超大单: {super_flow_str}({super_pct:.1f}%)    大单: {big_flow_str}({big_pct:.1f}%)    "
+                f"中单: {mid_flow_str}({mid_pct:.1f}%)    小单: {sml_flow_str}({sml_pct:.1f}%)    │    "
+                f"活跃度: {activity}    热度: {activity_stars}"
+            )
+            
+            if time_info:
+                capital_text += f"    {time_info}"
+            
+            return capital_text
+            
+        except Exception as e:
+            self.logger.error(f"获取资金流向数据失败: {e}")
+            # 发生异常时回退到估算方法
+            return self._fallback_estimated_capital_flow(analysis_data)
+    
+    def _fallback_estimated_capital_flow(self, analysis_data) -> str:
+        """回退的估算资金流向方法"""
+        quote = analysis_data.realtime_quote
+        change_rate = quote.get('change_rate', 0)
+        turnover = quote.get('turnover', 0)
+        turnover_rate = quote.get('turnover_rate', 0)
+        
+        # 基于涨跌幅和成交量估算资金流向
+        if change_rate > 0:
+            main_flow_direction = "流入"
+            main_flow_color = "green"
+        else:
+            main_flow_direction = "流出"
+            main_flow_color = "red"
+        
+        # 估算主力资金（基于成交额的一定比例）
+        estimated_main_flow = turnover * 0.3  # 假设主力资金占30%
+        
+        if estimated_main_flow > 100000000:
+            main_flow_str = f"{estimated_main_flow/100000000:.1f}亿"
+        elif estimated_main_flow > 10000:
+            main_flow_str = f"{estimated_main_flow/10000:.1f}万"
+        else:
+            main_flow_str = f"{estimated_main_flow:.0f}"
+        
+        # 活跃度评估
+        if turnover_rate > 5:
+            activity = "高"
+            activity_stars = "★★★★★"
+        elif turnover_rate > 3:
+            activity = "中高"
+            activity_stars = "★★★★☆"
+        elif turnover_rate > 1:
+            activity = "中等"
+            activity_stars = "★★★☆☆"
+        elif turnover_rate > 0.5:
+            activity = "中低"
+            activity_stars = "★★☆☆☆"
+        else:
+            activity = "低"
+            activity_stars = "★☆☆☆☆"
+        
+        capital_text = (
+            f"主力净{main_flow_direction}: [{main_flow_color}]{main_flow_str}[/{main_flow_color}](估算)    "
+            f"超大单: 估算中    大单: 估算中    中单: 估算中    小单: 估算中    │    "
+            f"活跃度: {activity}    热度: {activity_stars}"
+        )
+        
+        return capital_text
+    
+    # ==================== 市场状态检查方法 ====================
+    
+    async def _check_market_trading_status(self, stock_code: str) -> bool:
+        """
+        检查股票所在市场是否处于交易时间
+        
+        Args:
+            stock_code: 股票代码 (如 HK.00700, US.AAPL)
+            
+        Returns:
+            bool: True表示处于交易时间，False表示非交易时间
+        """
+        try:
+            # 获取市场状态
+            loop = asyncio.get_event_loop()
+            market_states = await loop.run_in_executor(
+                None, self.futu_market.get_market_state, [stock_code]
+            )
+            
+            if not market_states or len(market_states) == 0:
+                self.logger.warning(f"未能获取股票 {stock_code} 的市场状态，默认为非交易时间")
+                return False
+            
+            market_state = market_states[0].market_state
+            
+            # 定义交易时间的市场状态
+            trading_states = {
+                'OPEN',           # 开盘
+                'TRADING',        # 交易中
+                'MORNING',        # 上午时段
+                'AFTERNOON',      # 下午时段
+                'PRE_MARKET_BEGIN', # 盘前开始
+                'AUCTION',        # 集合竞价
+                'UNKNOWN_STATUS'  # 未知状态（保守判断为开盘）
+            }
+            
+            # 检查是否处于交易时间
+            is_trading = market_state in trading_states
+            
+            self.logger.info(f"股票 {stock_code} 市场状态: {market_state}, 是否交易时间: {is_trading}")
+            
+            return is_trading
+            
+        except Exception as e:
+            self.logger.error(f"检查股票 {stock_code} 市场状态失败: {e}")
+            # 出错时保守地返回False，避免在非交易时间启动实时更新
+            return False
+    
+    # ==================== 闪烁效果支持方法 ====================
+    
+    def get_formatted_data_with_flash(self, stock_code: str, data_type: str, formatted_value: str) -> Tuple[str, bool]:
+        """
+        检测数据变化并返回是否需要闪烁效果
+        
+        Args:
+            stock_code: 股票代码
+            data_type: 数据类型 (quote/orderbook/tick/capital)
+            formatted_value: 格式化后的值
+            
+        Returns:
+            (最终显示值, 是否需要闪烁)
+        """
+        try:
+            # 创建缓存键
+            if stock_code not in self.last_formatted_values:
+                self.last_formatted_values[stock_code] = {}
+            
+            # 检查是否有变化
+            last_value = self.last_formatted_values[stock_code].get(data_type)
+            has_changed = last_value != formatted_value
+            
+            # 更新缓存
+            self.last_formatted_values[stock_code][data_type] = formatted_value
+            
+            if has_changed and last_value is not None:
+                self.logger.debug(f"数据变化检测: {stock_code}:{data_type} '{last_value[:50]}...' -> '{formatted_value[:50]}...'")
+                # 数据有变化，需要闪烁
+                flash_value = self._apply_flash_style(formatted_value, data_type)
+                return flash_value, True
+            else:
+                # 数据无变化或首次设置，不闪烁
+                return formatted_value, False
+                
+        except Exception as e:
+            self.logger.error(f"检测数据变化失败: {e}")
+            return formatted_value, False
+    
+    def _apply_flash_style(self, value: str, data_type: str) -> str:
+        """
+        应用闪烁样式
+        
+        Args:
+            value: 原始值
+            data_type: 数据类型
+            
+        Returns:
+            应用了闪烁样式的值
+        """
+        try:
+            # 根据数据类型选择不同的闪烁颜色
+            if data_type == 'quote':
+                # 报价数据使用黄色背景
+                return f"[bold yellow on blue]{value}[/bold yellow on blue]"
+            elif data_type == 'orderbook':
+                # 五档数据使用蓝色背景
+                return f"[bold white on blue]{value}[/bold white on blue]"
+            elif data_type == 'tick':
+                # 逐笔数据使用绿色背景
+                return f"[bold white on green]{value}[/bold white on green]"
+            elif data_type == 'capital':
+                # 资金流向使用紫色背景
+                return f"[bold white on magenta]{value}[/bold white on magenta]"
+            else:
+                # 默认使用蓝色背景
+                return f"[bold white on blue]{value}[/bold white on blue]"
+                
+        except Exception as e:
+            self.logger.error(f"应用闪烁样式失败: {e}")
+            return value
+    
+    async def create_flash_restore_task(self, widget, original_value: str, delay: float = 0.5):
+        """
+        创建闪烁恢复任务
+        
+        Args:
+            widget: 需要恢复的UI组件
+            original_value: 原始值
+            delay: 延迟时间（秒）
+        """
+        try:
+            # 创建异步任务来恢复正常样式
+            asyncio.create_task(self._restore_widget_normal_style(widget, original_value, delay))
+            
+        except Exception as e:
+            self.logger.error(f"创建闪烁恢复任务失败: {e}")
+    
+    async def _restore_widget_normal_style(self, widget, original_value: str, delay: float):
+        """
+        恢复组件的正常样式
+        
+        Args:
+            widget: UI组件
+            original_value: 原始值
+            delay: 延迟时间
+        """
+        try:
+            # 等待指定时间
+            await asyncio.sleep(delay)
+            
+            # 恢复正常样式
+            if widget and hasattr(widget, 'update'):
+                widget.update(original_value)
+                
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            self.logger.error(f"恢复组件正常样式失败: {e}")
     
