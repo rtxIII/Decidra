@@ -65,7 +65,6 @@ class AnalysisDataManager:
         
         # 数据缓存
         self.analysis_data_cache: Dict[str, AnalysisDataSet] = {}
-        self.kline_cache: Dict[str, Dict[str, List[KLineData]]] = {}  # {stock_code: {period: data}}
         
         # 按股票代码管理的实时更新任务
         self.stock_tasks: Dict[str, Dict[str, Optional[asyncio.Task]]] = {}  
@@ -325,32 +324,23 @@ class AnalysisDataManager:
     def _get_kline_data(self, stock_code: str, period: str, num: int = 100) -> List[KLineData]:
         """获取K线数据"""
         try:
-            # 检查缓存
-            if stock_code in self.kline_cache and period in self.kline_cache[stock_code]:
-                cached_data = self.kline_cache[stock_code][period]
-                # 如果缓存数据足够新（1小时内），直接返回
-                if cached_data and len(cached_data) > 0:
-                    # 简单检查：如果缓存有数据就返回，实际项目中应该检查时间
-                    return cached_data
-            
-            # 从API获取K线数据
+            # 直接从API获取K线数据，不使用缓存
             kline_type = TIME_PERIODS.get(period, 'K_DAY')
+            self.logger.debug(f"获取K线数据: stock={stock_code}, period={kline_type}, num={num}")
+            
             kline_data = self.futu_market.get_cur_kline(
                 [stock_code], num=num, ktype=kline_type
             )
             
             if kline_data:
-                # 缓存数据
-                if stock_code not in self.kline_cache:
-                    self.kline_cache[stock_code] = {}
-                self.kline_cache[stock_code][period] = kline_data
-                
+                self.logger.debug(f"成功获取{len(kline_data)}条K线数据")
                 return kline_data
-            
-            return []
+            else:
+                self.logger.warning(f"API返回空K线数据: {stock_code}")
+                return []
             
         except Exception as e:
-            self.logger.error(f"获取K线数据失败: {e}")
+            self.logger.error(f"获取K线数据失败: stock={stock_code}, period={period}, error={e}")
             return []
     
     def _get_orderbook_data(self, stock_code: str) -> Optional[OrderBookData]:
@@ -751,10 +741,6 @@ class AnalysisDataManager:
                 del self.analysis_data_cache[stock_code]
                 self.logger.debug(f"已从缓存中删除股票 {stock_code} 的分析数据")
             
-            # 从K线缓存中删除该股票的数据
-            if stock_code in self.kline_cache:
-                del self.kline_cache[stock_code]
-                self.logger.debug(f"已从K线缓存中删除股票 {stock_code} 的数据")
             
             self.logger.info(f"股票 {stock_code} 的分析数据和任务清理完成")
             
@@ -766,7 +752,6 @@ class AnalysisDataManager:
         try:
             await self._stop_update_tasks()
             self.analysis_data_cache.clear()
-            self.kline_cache.clear()
             self.last_formatted_values.clear()
             self.current_stock_code = None
             self.logger.info("AnalysisDataManager 清理完成")

@@ -686,7 +686,7 @@ class AnalysisPanel(Container):
         margin-bottom: 0;
     }
     
-    AnalysisPanel .quote-area {
+    AnalysisPanel .kline-area {
         height: 15%;
         border: solid $accent;
         border-title-color: $text;
@@ -767,11 +767,11 @@ class AnalysisPanel(Container):
             self._basic_info_widget = basic_info_widget
             yield basic_info_widget
         
-        # 2. 报价区域  
-        with Container(classes="quote-area"):
+        # 2. K线图区域  
+        with Container(classes="kline-area"):
             yield Static(
-                "最新价: 12.85 ↑    涨跌幅: +2.35%    涨跌额: +0.29    开盘: 12.58    最高: 12.96    最低: 12.51    成交量: 1.2亿手    成交额: 153.7亿    换手率: 0.62%    振幅: 3.58%",
-                id="quote_info_content"
+                "K线图显示区域 - 将集成专业K线图表组件",
+                id="kline_chart_content"
             )
         
         # 3. 三栏布局区域
