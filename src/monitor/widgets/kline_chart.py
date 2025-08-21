@@ -174,7 +174,8 @@ class KLineChartWidget(Container):
         # 设置主题
         plt.theme(self.config.theme)
         
-        # 准备数据格式
+        # 使用连续索引而不是真实日期，避免非交易日产生空隙
+        x_indices = list(range(len(data)))
         dates = [item.time_key for item in data]
         ohlc_data = {
             'Open': [float(item.open) for item in data],
@@ -183,18 +184,31 @@ class KLineChartWidget(Container):
             'Close': [float(item.close) for item in data]
         }
         
-        self.logger.debug(f"[DEBUG] 第一条OHLC: O={ohlc_data['Open'][0] if ohlc_data['Open'] else 'None'}, "
+        self.logger.debug(f"[DEBUG] 绘制{len(data)}根K线, 第一条OHLC: O={ohlc_data['Open'][0] if ohlc_data['Open'] else 'None'}, "
               f"H={ohlc_data['High'][0] if ohlc_data['High'] else 'None'}, "
               f"L={ohlc_data['Low'][0] if ohlc_data['Low'] else 'None'}, "
               f"C={ohlc_data['Close'][0] if ohlc_data['Close'] else 'None'}")
         
         try:
-            # 设置日期格式，支持包含时间的格式
-            #plt.date_form('Y-m-d H:M:S')
-            plt.date_form(input_form = 'Y-m-d H:M:S', output_form = 'Y-m-d H:M')
+            # 绘制K线图 - 使用连续索引作为X轴
+            plt.candlestick(x_indices, ohlc_data, colors = ['red', 'green'])
             
-            # 绘制K线图
-            plt.candlestick(dates, ohlc_data)
+            # 设置X轴标签 - 选择性显示日期，避免过密
+            if len(data) > 10:
+                # 选择显示的日期标签索引，确保不会太密集
+                step = max(1, len(data) // 8)  # 最多显示8个标签
+                label_indices = list(range(0, len(data), step))
+                if label_indices[-1] != len(data) - 1:
+                    label_indices.append(len(data) - 1)  # 确保显示最后一个日期
+                
+                x_labels = [dates[i] for i in label_indices]
+                # 简化日期显示格式
+                x_labels_short = [date.split(' ')[0] for date in x_labels]  # 只显示日期部分
+                plt.xticks(label_indices, x_labels_short)
+            else:
+                # 数据少时显示所有日期
+                x_labels_short = [date.split(' ')[0] for date in dates]
+                plt.xticks(x_indices, x_labels_short)
             
             # 设置图表标题和标签
             plt.title(f"{self.stock_code} K线图 ({self.time_period})")
@@ -207,10 +221,22 @@ class KLineChartWidget(Container):
         except Exception as e:
             self.logger.error(f"[DEBUG] K线图绘制失败: {e}")
             # 如果candlestick失败，使用线图作为后备
-            plt.plot(dates, ohlc_data['Close'], label="收盘价", color="blue")
-            plt.title(f"{self.stock_code} 价格走势 ({self.time_period})")
-            plt.xlabel("时间")
-            plt.ylabel("价格")
+            try:
+                plt.plot(x_indices, ohlc_data['Close'], label="收盘价", color="blue")
+                plt.title(f"{self.stock_code} 价格走势 ({self.time_period})")
+                plt.xlabel("时间")
+                plt.ylabel("价格")
+                # 设置X轴标签
+                if len(data) > 10:
+                    step = max(1, len(data) // 8)
+                    label_indices = list(range(0, len(data), step))
+                    x_labels_short = [dates[i].split(' ')[0] for i in label_indices]
+                    plt.xticks(label_indices, x_labels_short)
+                else:
+                    x_labels_short = [date.split(' ')[0] for date in dates]
+                    plt.xticks(x_indices, x_labels_short)
+            except Exception as fallback_error:
+                self.logger.error(f"[DEBUG] 后备线图绘制也失败: {fallback_error}")
         
         # 强制刷新PlotextPlot组件以确保图表重新渲染
         try:
@@ -234,7 +260,8 @@ class KLineChartWidget(Container):
         # 设置主题
         plt.theme(self.config.theme)
         
-        # 准备成交量数据
+        # 使用连续索引而不是真实日期，与K线图保持一致
+        x_indices = list(range(len(data)))
         dates = [item.time_key for item in data]
         volumes = [int(item.volume) for item in data]
         colors = []
@@ -248,29 +275,32 @@ class KLineChartWidget(Container):
             else:  # 平盘
                 colors.append("yellow")
         
-        
         try:
-            # 设置日期格式
-            plt.date_form('Y-m-d H:M:S')
-            
-            # 先绘制所有成交量条（使用默认颜色）
-            # plt.bar(dates, volumes, color="cyan", width=0.5)
-            
-            # 再分别绘制不同颜色的成交量条（叠加）
+            # 再分别绘制不同颜色的成交量条（使用连续索引）
             for color_type in ["red", "green", "yellow"]:
-                filtered_dates = []
+                filtered_indices = []
                 filtered_volumes = []
                 
                 for i, color in enumerate(colors):
                     if color == color_type:
-                        filtered_dates.append(dates[i])
+                        filtered_indices.append(x_indices[i])
                         filtered_volumes.append(volumes[i])
                 
-                if filtered_dates and filtered_volumes:
-                    plt.bar(filtered_dates, filtered_volumes, color=color_type, width=0.5)
-                else:
-                    self.logger.error(f"没有找到 {color_type} 类型的成交量数据")
+                if filtered_indices and filtered_volumes:
+                    plt.bar(filtered_indices, filtered_volumes, color=color_type, width=0.2)
             
+            # 设置X轴标签与K线图一致
+            if len(data) > 10:
+                step = max(1, len(data) // 8)  # 最多显示8个标签
+                label_indices = list(range(0, len(data), step))
+                if label_indices[-1] != len(data) - 1:
+                    label_indices.append(len(data) - 1)
+                
+                x_labels_short = [dates[i].split(' ')[0] for i in label_indices]
+                plt.xticks(label_indices, x_labels_short)
+            else:
+                x_labels_short = [date.split(' ')[0] for date in dates]
+                plt.xticks(x_indices, x_labels_short)
             
         except Exception as e:
             self.logger.error(f"成交量图绘制失败: {e}")
@@ -392,32 +422,55 @@ class SimpleKLineWidget(PlotextPlot):
         plt.clf()
         plt.theme("dark")
         
-        # 准备数据
-        dates = [item.time_key for item in self.kline_data[-count:]]  
+        # 准备数据 - 使用连续索引避免空隙
+        chart_data = self.kline_data[-count:]
+        x_indices = list(range(len(chart_data)))
+        dates = [item.time_key for item in chart_data]  
         ohlc_data = {
-            'Open': [float(item.open) for item in self.kline_data[-count:]],
-            'High': [float(item.high) for item in self.kline_data[-count:]],
-            'Low': [float(item.low) for item in self.kline_data[-count:]],
-            'Close': [float(item.close) for item in self.kline_data[-count:]]
+            'Open': [float(item.open) for item in chart_data],
+            'High': [float(item.high) for item in chart_data],
+            'Low': [float(item.low) for item in chart_data],
+            'Close': [float(item.close) for item in chart_data]
         }
         
         try:
-            # 设置日期格式，支持包含时间的格式
-            plt.date_form(input_form = 'Y-m-d H:M:S', output_form = 'Y-m-d H:M')
-
+            # 绘制K线图 - 使用连续索引
+            plt.candlestick(x_indices, ohlc_data)
             
-            # 绘制K线图
-            plt.candlestick(dates, ohlc_data)
+            # 设置X轴标签
+            if len(chart_data) > 10:
+                step = max(1, len(chart_data) // 8)
+                label_indices = list(range(0, len(chart_data), step))
+                if label_indices[-1] != len(chart_data) - 1:
+                    label_indices.append(len(chart_data) - 1)
+                
+                x_labels_short = [dates[i].split(' ')[0] for i in label_indices]
+                plt.xticks(label_indices, x_labels_short)
+            else:
+                x_labels_short = [date.split(' ')[0] for date in dates]
+                plt.xticks(x_indices, x_labels_short)
+            
             plt.title(f"{self.stock_code} K线图")
             plt.xlabel("时间")
             plt.ylabel("价格")
         except Exception:
             # 后备方案：使用线图
-            plt.date_form('Y-m-d H:M:S')
-            plt.plot(dates, ohlc_data['Close'], label="收盘价", color="blue")
-            plt.title(f"{self.stock_code} 价格走势")
-            plt.xlabel("时间")  
-            plt.ylabel("价格")
+            try:
+                plt.plot(x_indices, ohlc_data['Close'], label="收盘价", color="blue")
+                plt.title(f"{self.stock_code} 价格走势")
+                plt.xlabel("时间")  
+                plt.ylabel("价格")
+                # 设置X轴标签
+                if len(chart_data) > 10:
+                    step = max(1, len(chart_data) // 8)
+                    label_indices = list(range(0, len(chart_data), step))
+                    x_labels_short = [dates[i].split(' ')[0] for i in label_indices]
+                    plt.xticks(label_indices, x_labels_short)
+                else:
+                    x_labels_short = [date.split(' ')[0] for date in dates]
+                    plt.xticks(x_indices, x_labels_short)
+            except Exception:
+                pass
         
         # 强制刷新PlotextPlot组件以确保图表重新渲染
         try:
