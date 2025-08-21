@@ -197,6 +197,7 @@ class AnalysisPanel(Container):
         self._app_ref = None
         self._basic_info_widget = None
         self._tabbed_content = None
+        self._kline_chart_widget = None
         self.logger = get_logger(__name__)
         
         # 实时更新相关
@@ -298,24 +299,9 @@ class AnalysisPanel(Container):
             if not analysis_data:
                 return
                 
-            # 使用data_manager的格式化方法
-            formatted_quote = data_manager.format_realtime_quote(analysis_data)
-            
-            # 检测变化并应用闪烁效果
-            flash_value, needs_flash = data_manager.get_formatted_data_with_flash(
-                data_manager.current_stock_code, 'quote', formatted_quote
-            )
-            
-            quote_widget = self.query_one("#quote_info_content", expect_type=None)
-            if quote_widget and hasattr(quote_widget, 'update'):
-                if needs_flash:
-                    # 立即应用闪烁样式
-                    quote_widget.update(flash_value)
-                    # 创建恢复任务
-                    await data_manager.create_flash_restore_task(quote_widget, formatted_quote, 0.5)
-                else:
-                    # 直接更新正常样式
-                    quote_widget.update(formatted_quote)
+            # 注意：quote_info_content已改为kline_chart_content，报价信息已统一在基础信息中显示
+            # 这个方法现在不需要单独更新报价信息
+            pass
                 
         except Exception as e:
             self.logger.error(f"更新报价信息失败: {e}")
@@ -488,6 +474,43 @@ class AnalysisPanel(Container):
                 self._basic_info_widget.update(f"数据加载错误: {str(e)}")
             self.logger.error(f"更新基础信息失败: {e}")
 
+    async def update_kline_chart(self):
+        """更新K线图数据"""
+        try:
+            data_manager = self.get_analysis_data_manager()
+            if not data_manager:
+                self.logger.warning("data_manager 为空，无法更新K线图")
+                return
+            if not self._kline_chart_widget:
+                self.logger.warning("_kline_chart_widget 为空，无法更新K线图")
+                return
+                
+            analysis_data = data_manager.get_current_analysis_data()
+            if not analysis_data:
+                self.logger.warning("analysis_data 为空，无法更新K线图")
+                return
+            if not analysis_data.kline_data:
+                self.logger.warning("analysis_data.kline_data 为空，无法更新K线图")
+                return
+                
+            # 打印调试信息
+            self.logger.info(f"准备更新K线图: stock_code={data_manager.current_stock_code}, "
+                           f"time_period={data_manager.current_time_period}, "
+                           f"kline_data_count={len(analysis_data.kline_data)}")
+            
+            # 更新K线图
+            self._kline_chart_widget.set_stock(
+                data_manager.current_stock_code or "",
+                data_manager.current_time_period or "D"
+            )
+            self._kline_chart_widget.update_data(analysis_data.kline_data)
+            self.logger.info("K线图数据更新完成")
+            
+        except Exception as e:
+            self.logger.error(f"更新K线图失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误堆栈: {traceback.format_exc()}")
+
     async def update_data(self):
         """更新信息"""
         try:
@@ -497,6 +520,7 @@ class AnalysisPanel(Container):
             await self.update_tick_data()
             await self.update_broker_queue()
             await self.update_capital_flow()
+            await self.update_kline_chart()
                 
         except Exception as e:
             if self._basic_info_widget:
@@ -559,6 +583,30 @@ class AnalysisPanel(Container):
         except Exception as e:
             #self.logger.debug(f"DEBUG: 未找到 TabbedContent: {e}")
             self._tabbed_content = None
+        
+        # 获取K线图组件引用
+        try:
+            self.logger.info("开始查找K线图组件 #kline_chart_widget")
+            all_widgets = list(self.query("*"))
+            self.logger.info(f"当前所有子组件: {[w.id if hasattr(w, 'id') and w.id else str(type(w).__name__) for w in all_widgets]}")
+            
+            self._kline_chart_widget = self.query_one("#kline_chart_widget")
+            self.logger.info(f"成功找到K线图组件: {self._kline_chart_widget}")
+        except Exception as e:
+            self.logger.warning(f"未找到K线图组件: {e}")
+            # 尝试按类型查找
+            try:
+                from monitor.widgets.kline_chart import KLineChartWidget
+                kline_widgets = list(self.query(KLineChartWidget))
+                if kline_widgets:
+                    self._kline_chart_widget = kline_widgets[0]
+                    self.logger.info(f"通过类型找到K线图组件: {self._kline_chart_widget}")
+                else:
+                    self.logger.warning("通过类型也未找到K线图组件")
+                    self._kline_chart_widget = None
+            except Exception as e2:
+                self.logger.error(f"按类型查找K线图组件也失败: {e2}")
+                self._kline_chart_widget = None
         
         # 初始化 InfoPanel 并显示欢迎信息
         await self.initialize_info_panel()
@@ -650,6 +698,39 @@ class AnalysisPanel(Container):
             return
             
         #self.logger.debug(f"DEBUG: AnalysisPanel 收到按键事件: {event.key}, 焦点状态: {self.has_focus}")
+        
+        # K线图相关快捷键
+        if self._kline_chart_widget and event.key in ['left', 'right', 'up', 'down', 'home', 'end', 'v']:
+            try:
+                # 将按键事件传递给K线图组件
+                action_map = {
+                    'left': 'scroll_left',
+                    'right': 'scroll_right', 
+                    'up': 'zoom_in',
+                    'down': 'zoom_out',
+                    'home': 'jump_start',
+                    'end': 'jump_end',
+                    'v': 'toggle_volume'
+                }
+                action_name = action_map.get(event.key)
+                if action_name and hasattr(self._kline_chart_widget, f'action_{action_name}'):
+                    getattr(self._kline_chart_widget, f'action_{action_name}')()
+                    event.prevent_default()
+                    return
+            except Exception as e:
+                self.logger.error(f"K线图按键处理错误: {e}")
+        
+        # 时间周期切换快捷键
+        if event.key.upper() in ['U', 'J', 'M']:
+            try:
+                period_map = {'U': 'D', 'J': 'W', 'M': 'M'}
+                new_period = period_map[event.key.upper()]
+                asyncio.create_task(self.switch_time_period(new_period))
+                event.prevent_default()
+                return
+            except Exception as e:
+                self.logger.error(f"时间周期切换错误: {e}")
+        
         if event.key == "z":
             #self.logger.debug("DEBUG: z键被按下，返回主界面")
             self.action_return_to_main()
@@ -658,6 +739,24 @@ class AnalysisPanel(Container):
             pass
             #self.logger.debug(f"DEBUG: AnalysisPanel 未处理的按键: {event.key}")
     
+    async def switch_time_period(self, period: str):
+        """切换K线时间周期"""
+        try:
+            data_manager = self.get_analysis_data_manager()
+            if data_manager:
+                # 切换时间周期并重新加载数据
+                await data_manager.change_time_period(period)
+                
+                # 更新K线图显示
+                await self.update_kline_chart()
+                
+                # 显示切换信息
+                period_names = {'D': '日线', 'W': '周线', 'M': '月线'}
+                self.logger.info(f"已切换到{period_names.get(period, period)}")
+                
+        except Exception as e:
+            self.logger.error(f"切换时间周期失败: {e}")
+    
     def action_return_to_main(self) -> None:
         """返回主界面（z键）"""
         try:
@@ -665,9 +764,9 @@ class AnalysisPanel(Container):
             main_tabs = self.app.query_one("#main_tabs", TabbedContent)
             main_tabs.active = "main"
             self.logger.debug("DEBUG: 已返回主界面")
-        except Exception as e:
+        except Exception:
             pass
-            #self.logger.debug(f"DEBUG: 返回主界面失败: {e}")
+            #self.logger.debug("DEBUG: 返回主界面失败")
     
     
     DEFAULT_CSS = """
@@ -678,7 +777,7 @@ class AnalysisPanel(Container):
     }
     
     AnalysisPanel .basic-info-area {
-        height: 15%;
+        height: 6%;
         border: solid $accent;
         border-title-color: $text;
         border-title-background: $surface;
@@ -687,7 +786,7 @@ class AnalysisPanel(Container):
     }
     
     AnalysisPanel .kline-area {
-        height: 15%;
+        height: 50%;
         border: solid $accent;
         border-title-color: $text;
         border-title-background: $surface;
@@ -696,7 +795,7 @@ class AnalysisPanel(Container):
     }
     
     AnalysisPanel .three-column-area {
-        height: 40%;
+        height: 20%;
         layout: horizontal;
         margin-bottom: 0;
     }
@@ -769,9 +868,12 @@ class AnalysisPanel(Container):
         
         # 2. K线图区域  
         with Container(classes="kline-area"):
-            yield Static(
-                "K线图显示区域 - 将集成专业K线图表组件",
-                id="kline_chart_content"
+            # 导入并创建K线图组件
+            from monitor.widgets.kline_chart import KLineChartWidget
+            yield KLineChartWidget(
+                stock_code="",
+                time_period="D",
+                id="kline_chart_widget"
             )
         
         # 3. 三栏布局区域
@@ -1000,11 +1102,11 @@ class MonitorLayout(Container):
     
     MonitorLayout TabbedContent {
         height: 1fr;
-        margin: 1 0;
+        margin: 0;
     }
     
     MonitorLayout TabPane {
-        padding: 1;
+        padding: 0;
     }
     
     /* 全局样式 */

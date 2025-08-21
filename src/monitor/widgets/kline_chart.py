@@ -14,14 +14,14 @@ from textual.binding import Binding
 from textual_plotext import PlotextPlot
 
 from base.futu_class import KLineData
-
+from utils.logger import get_logger
 
 @dataclass
 class ChartConfig:
     """图表配置"""
     show_volume: bool = True
     chart_height: int = 20
-    volume_height: int = 8
+    volume_height: int = 12
     theme: str = "dark"
     title_color: str = "bright_blue"
     up_color: str = "green"
@@ -41,11 +41,12 @@ class KLineChartWidget(Container):
     }
     
     KLineChartWidget .chart-container {
-        height: 3fr;
+        height: 2fr;
     }
     
     KLineChartWidget .volume-container {
         height: 1fr;
+        min-height: 8;
         margin-top: 1;
     }
     
@@ -95,17 +96,18 @@ class KLineChartWidget(Container):
         self.display_count = min(50, len(self.kline_data)) if self.kline_data else 50
         
         self.border_title = f"K线图 - {stock_code} ({time_period})"
+        self.logger = get_logger(__name__)
     
     def compose(self) -> ComposeResult:
         """组合K线图表组件"""
         # 信息栏
-        with Container(classes="info-bar"):
-            yield Static(
-                f"股票: {self.stock_code} | 周期: {self.time_period} | "
-                f"显示: {self.display_count}根K线 | "
-                f"[dim]方向键:滚动 上下:缩放 V:成交量 Home/End:跳转[/dim]",
-                id="chart_info"
-            )
+        #with Container(classes="info-bar"):
+        #    yield Static(
+        #        f"股票: {self.stock_code} | 周期: {self.time_period} | "
+        #        f"显示: {self.display_count}根K线 | "
+        #        f"[dim]方向键:滚动 上下:缩放 V:成交量 Home/End:跳转[/dim]",
+        #        id="chart_info"
+        #    )
         
         # K线图容器
         with Container(classes="chart-container"):
@@ -150,13 +152,18 @@ class KLineChartWidget(Container):
                 volume_plot = self.query_one("#volume_plot", PlotextPlot)
                 if volume_plot:
                     self._draw_volume_chart(display_data)
-            except:
+                else:
+                    self.logger.warning("[DEBUG] volume_plot 组件为None")
+            except Exception as e:
+                self.logger.error(f"[DEBUG] 成交量图组件查询或绘制失败: {e}")
                 pass  # 成交量图组件不存在时忽略
     
     def _draw_kline_chart(self, data: List[KLineData]) -> None:
         """绘制K线图"""
+        
         kline_plot = self.query_one("#kline_plot", PlotextPlot)
         if not kline_plot:
+            self.logger.error("[DEBUG] kline_plot 组件未找到")
             return
         
         plt = kline_plot.plt
@@ -176,9 +183,15 @@ class KLineChartWidget(Container):
             'Close': [float(item.close) for item in data]
         }
         
+        self.logger.debug(f"[DEBUG] 第一条OHLC: O={ohlc_data['Open'][0] if ohlc_data['Open'] else 'None'}, "
+              f"H={ohlc_data['High'][0] if ohlc_data['High'] else 'None'}, "
+              f"L={ohlc_data['Low'][0] if ohlc_data['Low'] else 'None'}, "
+              f"C={ohlc_data['Close'][0] if ohlc_data['Close'] else 'None'}")
+        
         try:
-            # 设置日期格式
-            plt.date_form('Y-m-d')
+            # 设置日期格式，支持包含时间的格式
+            #plt.date_form('Y-m-d H:M:S')
+            plt.date_form(input_form = 'Y-m-d H:M:S', output_form = 'Y-m-d H:M')
             
             # 绘制K线图
             plt.candlestick(dates, ohlc_data)
@@ -191,17 +204,26 @@ class KLineChartWidget(Container):
             # 设置图表尺寸
             plt.plotsize(width=None, height=self.config.chart_height)
             
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"[DEBUG] K线图绘制失败: {e}")
             # 如果candlestick失败，使用线图作为后备
             plt.plot(dates, ohlc_data['Close'], label="收盘价", color="blue")
             plt.title(f"{self.stock_code} 价格走势 ({self.time_period})")
             plt.xlabel("时间")
             plt.ylabel("价格")
-    
+        
+        # 强制刷新PlotextPlot组件以确保图表重新渲染
+        try:
+            kline_plot.refresh()
+        except Exception as e:
+            self.logger.error(f"[DEBUG] 强制刷新K线图失败: {e}")
+            
     def _draw_volume_chart(self, data: List[KLineData]) -> None:
         """绘制成交量图"""
+        
         volume_plot = self.query_one("#volume_plot", PlotextPlot)
         if not volume_plot:
+            self.logger.error("[DEBUG] volume_plot 组件未找到")
             return
         
         plt = volume_plot.plt
@@ -212,44 +234,62 @@ class KLineChartWidget(Container):
         # 设置主题
         plt.theme(self.config.theme)
         
-        # 准备成交量数据，按涨跌分类
+        # 准备成交量数据
         dates = [item.time_key for item in data]
-        up_volumes = []  # 涨日成交量
-        down_volumes = []  # 跌日成交量
+        volumes = [int(item.volume) for item in data]
+        colors = []
         
+        # 根据涨跌确定颜色
         for item in data:
-            volume = int(item.volume)
-            # 判断涨跌：收盘价 vs 开盘价
             if item.close > item.open:  # 涨日
-                up_volumes.append(volume)
-                down_volumes.append(0)
-            else:  # 跌日或平盘
-                up_volumes.append(0)
-                down_volumes.append(volume)
+                colors.append("red")
+            elif item.close < item.open:  # 跌日
+                colors.append("green")
+            else:  # 平盘
+                colors.append("yellow")
         
-        # 设置日期格式
-        plt.date_form('Y-m-d')
         
-        # 使用两次bar调用绘制不同颜色的成交量（避免图例问题）
-        # 先绘制涨日数据（红色）
-        up_dates = [dates[i] for i in range(len(dates)) if up_volumes[i] > 0]
-        up_vols = [up_volumes[i] for i in range(len(up_volumes)) if up_volumes[i] > 0]
-        if up_dates and up_vols:
-            plt.bar(up_dates, up_vols, color="red", width=0.5)
-        
-        # 再绘制跌日数据（绿色）  
-        down_dates = [dates[i] for i in range(len(dates)) if down_volumes[i] > 0]
-        down_vols = [down_volumes[i] for i in range(len(down_volumes)) if down_volumes[i] > 0]
-        if down_dates and down_vols:
-            plt.bar(down_dates, down_vols, color="green", width=0.5)
+        try:
+            # 设置日期格式
+            plt.date_form('Y-m-d H:M:S')
             
+            # 先绘制所有成交量条（使用默认颜色）
+            # plt.bar(dates, volumes, color="cyan", width=0.5)
+            
+            # 再分别绘制不同颜色的成交量条（叠加）
+            for color_type in ["red", "green", "yellow"]:
+                filtered_dates = []
+                filtered_volumes = []
+                
+                for i, color in enumerate(colors):
+                    if color == color_type:
+                        filtered_dates.append(dates[i])
+                        filtered_volumes.append(volumes[i])
+                
+                if filtered_dates and filtered_volumes:
+                    plt.bar(filtered_dates, filtered_volumes, color=color_type, width=0.5)
+                else:
+                    self.logger.error(f"没有找到 {color_type} 类型的成交量数据")
+            
+            
+        except Exception as e:
+            self.logger.error(f"成交量图绘制失败: {e}")
+
+            
+        # 设置图表标题和标签
         plt.title("成交量")
         plt.xlabel("时间")
         plt.ylabel("成交量")
         
         # 设置图表尺寸
         plt.plotsize(width=None, height=self.config.volume_height)
-    
+        
+        # 强制刷新PlotextPlot组件以确保图表重新渲染
+        try:
+            volume_plot.refresh()
+        except Exception as e:
+            self.logger.error(f"强制刷新成交量图失败: {e}")
+            
     def _update_info_bar(self) -> None:
         """更新信息栏"""
         try:
@@ -343,7 +383,7 @@ class SimpleKLineWidget(PlotextPlot):
         self.kline_data = kline_data
         self.draw_chart()
     
-    def draw_chart(self) -> None:
+    def draw_chart(self, count: int = 200) -> None:
         """绘制K线图"""
         if not self.kline_data:
             return
@@ -353,17 +393,18 @@ class SimpleKLineWidget(PlotextPlot):
         plt.theme("dark")
         
         # 准备数据
-        dates = [item.time_key for item in self.kline_data[-50:]]  # 显示最近50根K线
+        dates = [item.time_key for item in self.kline_data[-count:]]  
         ohlc_data = {
-            'Open': [float(item.open) for item in self.kline_data[-50:]],
-            'High': [float(item.high) for item in self.kline_data[-50:]],
-            'Low': [float(item.low) for item in self.kline_data[-50:]],
-            'Close': [float(item.close) for item in self.kline_data[-50:]]
+            'Open': [float(item.open) for item in self.kline_data[-count:]],
+            'High': [float(item.high) for item in self.kline_data[-count:]],
+            'Low': [float(item.low) for item in self.kline_data[-count:]],
+            'Close': [float(item.close) for item in self.kline_data[-count:]]
         }
         
         try:
-            # 设置日期格式
-            plt.date_form('Y-m-d')
+            # 设置日期格式，支持包含时间的格式
+            plt.date_form(input_form = 'Y-m-d H:M:S', output_form = 'Y-m-d H:M')
+
             
             # 绘制K线图
             plt.candlestick(dates, ohlc_data)
@@ -372,8 +413,14 @@ class SimpleKLineWidget(PlotextPlot):
             plt.ylabel("价格")
         except Exception:
             # 后备方案：使用线图
-            plt.date_form('Y-m-d')
+            plt.date_form('Y-m-d H:M:S')
             plt.plot(dates, ohlc_data['Close'], label="收盘价", color="blue")
             plt.title(f"{self.stock_code} 价格走势")
             plt.xlabel("时间")  
             plt.ylabel("价格")
+        
+        # 强制刷新PlotextPlot组件以确保图表重新渲染
+        try:
+            self.refresh()
+        except Exception:
+            pass
