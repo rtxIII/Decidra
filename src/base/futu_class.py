@@ -236,6 +236,21 @@ class OrderBookData:
     bid_volume_2: int = 0
     bid_price_3: float = 0.0
     bid_volume_3: int = 0
+    bid_price_4: float = 0.0
+    bid_volume_4: int = 0
+    bid_price_5: float = 0.0
+    bid_volume_5: int = 0
+    bid_price_6: float = 0.0
+    bid_volume_6: int = 0
+    bid_price_7: float = 0.0
+    bid_volume_7: int = 0
+    bid_price_8: float = 0.0
+    bid_volume_8: int = 0
+    bid_price_9: float = 0.0
+    bid_volume_9: int = 0
+    bid_price_10: float = 0.0
+    bid_volume_10: int = 0
+
     # 卖盘档位 (Ask1-Ask10)  
     ask_price_1: float = 0.0
     ask_volume_1: int = 0
@@ -243,6 +258,20 @@ class OrderBookData:
     ask_volume_2: int = 0
     ask_price_3: float = 0.0
     ask_volume_3: int = 0
+    ask_price_4: float = 0.0
+    ask_volume_4: int = 0
+    ask_price_5: float = 0.0
+    ask_volume_5: int = 0
+    ask_price_6: float = 0.0
+    ask_volume_6: int = 0
+    ask_price_7: float = 0.0
+    ask_volume_7: int = 0
+    ask_price_8: float = 0.0
+    ask_volume_8: int = 0
+    ask_price_9: float = 0.0
+    ask_volume_9: int = 0
+    ask_price_10: float = 0.0
+    ask_volume_10: int = 0
     
     @classmethod
     def from_dict(cls, data: dict) -> 'OrderBookData':
@@ -257,12 +286,41 @@ class OrderBookData:
             bid_volume_2=int(data.get('BidVol2', 0)),
             bid_price_3=safe_float(data.get('Bid3', 0)),
             bid_volume_3=int(data.get('BidVol3', 0)),
+            bid_price_4=safe_float(data.get('Bid4', 0)),
+            bid_volume_4=int(data.get('BidVol4', 0)),
+            bid_price_5=safe_float(data.get('Bid5', 0)),
+            bid_volume_5=int(data.get('BidVol5', 0)),
+            bid_price_6=safe_float(data.get('Bid6', 0)),
+            bid_volume_6=int(data.get('BidVol6', 0)),
+            bid_price_7=safe_float(data.get('Bid7', 0)),
+            bid_volume_7=int(data.get('BidVol7', 0)),
+            bid_price_8=safe_float(data.get('Bid8', 0)),
+            bid_volume_8=int(data.get('BidVol8', 0)),
+            bid_price_9=safe_float(data.get('Bid9', 0)),
+            bid_volume_9=int(data.get('BidVol9', 0)),
+            bid_price_10=safe_float(data.get('Bid10', 0)),
+            bid_volume_10=int(data.get('BidVol10', 0)),
             ask_price_1=safe_float(data.get('Ask1', 0)),
             ask_volume_1=int(data.get('AskVol1', 0)),
             ask_price_2=safe_float(data.get('Ask2', 0)),
             ask_volume_2=int(data.get('AskVol2', 0)),
             ask_price_3=safe_float(data.get('Ask3', 0)),
-            ask_volume_3=int(data.get('AskVol3', 0))
+            ask_volume_3=int(data.get('AskVol3', 0)),
+            ask_price_4=safe_float(data.get('Ask4', 0)),
+            ask_volume_4=int(data.get('AskVol4', 0)),
+            ask_price_5=safe_float(data.get('Ask5', 0)),
+            ask_volume_5=int(data.get('AskVol5', 0)),
+            ask_price_6=safe_float(data.get('Ask6', 0)),
+            ask_volume_6=int(data.get('AskVol6', 0)),
+            ask_price_7=safe_float(data.get('Ask7', 0)),
+            ask_volume_7=int(data.get('AskVol7', 0)),
+            ask_price_8=safe_float(data.get('Ask8', 0)),
+            ask_volume_8=int(data.get('AskVol8', 0)),
+            ask_price_9=safe_float(data.get('Ask9', 0)),
+            ask_volume_9=int(data.get('AskVol9', 0)),
+            ask_price_10=safe_float(data.get('Ask10', 0)),
+            ask_volume_10=int(data.get('AskVol10', 0))
+
         )
 
 

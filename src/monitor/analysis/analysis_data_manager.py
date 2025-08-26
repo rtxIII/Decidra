@@ -10,7 +10,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
-
+from textual import work
 from base.monitor import StockData, MarketStatus, ConnectionStatus
 from base.futu_class import KLineData, OrderBookData, BrokerQueueData
 from modules.futu_market import FutuMarket
@@ -26,6 +26,7 @@ TIME_PERIODS = {
 
 # 数据缓存配置
 KLINE_CACHE_DAYS = 90      # K线数据缓存天数
+KLINE_REFRESH_SEC = 60     # K线数据刷新间隔(秒) - 1分钟更新一次
 ORDERBOOK_REFRESH_SEC = 3   # 五档数据刷新间隔(秒)
 TICK_REFRESH_SEC = 1        # 逐笔数据刷新间隔(秒)
 BASIC_INFO_REFRESH_SEC = 1  # 基础信息刷新间隔(秒)
@@ -578,7 +579,12 @@ class AnalysisDataManager:
             
             # 初始化该股票的任务字典
             if stock_code not in self.stock_tasks:
-                self.stock_tasks[stock_code] = {'realtime': None, 'orderbook': None, 'tick': None, 'basic_info': None}
+                self.stock_tasks[stock_code] = {'realtime': None, 'orderbook': None, 'tick': None, 'basic_info': None, 'kline': None}
+            
+            # 启动K线数据更新任务
+            self.stock_tasks[stock_code]['kline'] = asyncio.create_task(
+                self._kline_update_loop(stock_code)
+            )
             
             # 启动五档数据更新任务
             self.stock_tasks[stock_code]['orderbook'] = asyncio.create_task(
@@ -715,6 +721,39 @@ class AnalysisDataManager:
             except Exception as e:
                 self.logger.error(f"基础信息数据更新错误: {e}")
                 await asyncio.sleep(BASIC_INFO_REFRESH_SEC)
+
+    async def _kline_update_loop(self, stock_code: str):
+        """K线数据更新循环"""
+        while True:
+            try:
+                # 检查股票是否仍在活跃集合中
+                if stock_code not in self.active_stocks:
+                    self.logger.info(f"股票 {stock_code} 已不再活跃，停止K线数据更新")
+                    break
+                    
+                loop = asyncio.get_event_loop()
+                kline_data = await loop.run_in_executor(
+                    None, self._get_kline_data, stock_code, self.current_time_period, 100
+                )
+                    
+                # 更新缓存和重新计算技术指标
+                if stock_code in self.analysis_data_cache:
+                    self.analysis_data_cache[stock_code].kline_data = kline_data
+                    
+                    # 重新计算技术指标
+                    technical_indicators = await self._calculate_technical_indicators(kline_data)
+                    self.analysis_data_cache[stock_code].technical_indicators = technical_indicators
+                    
+                    self.analysis_data_cache[stock_code].last_update = datetime.now()
+                    self.logger.debug(f"K线数据已更新: {stock_code}, 数据量: {len(kline_data)}")
+                
+                await asyncio.sleep(KLINE_REFRESH_SEC)
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.logger.error(f"K线数据更新错误: {e}")
+                await asyncio.sleep(KLINE_REFRESH_SEC)
     
     def get_current_analysis_data(self) -> Optional[AnalysisDataSet]:
         """获取当前分析数据"""
@@ -885,31 +924,58 @@ class AnalysisDataManager:
         # 构建五档显示（简化为三档）
         orderbook_text = ""
         
-        # 卖盘（从上到下）
-        if hasattr(orderbook, 'ask_price_3') and orderbook.ask_price_3 > 0:
-            orderbook_text += f"[bold red]卖三: {orderbook.ask_price_3:.2f}  {orderbook.ask_volume_3}手[/bold red]\n"
-        if hasattr(orderbook, 'ask_price_2') and orderbook.ask_price_2 > 0:
-            orderbook_text += f"[bold red]卖二: {orderbook.ask_price_2:.2f}  {orderbook.ask_volume_2}手[/bold red]\n"
+        # 卖盘买盘（从上到下）
         if hasattr(orderbook, 'ask_price_1') and orderbook.ask_price_1 > 0:
-            orderbook_text += f"[bold red]卖一: {orderbook.ask_price_1:.2f}  {orderbook.ask_volume_1}手[/bold red]\n"
-        
-        orderbook_text += "──────────────────\n"
-        
-        # 买盘（从上到下）
+            orderbook_text += f"[bold red]卖一: {orderbook.ask_price_1:.2f}  {orderbook.ask_volume_1}手[/bold red]    "
         if hasattr(orderbook, 'bid_price_1') and orderbook.bid_price_1 > 0:
             orderbook_text += f"[bold green]买一: {orderbook.bid_price_1:.2f}  {orderbook.bid_volume_1}手[/bold green]\n"
+
+        if hasattr(orderbook, 'ask_price_2') and orderbook.ask_price_2 > 0:
+            orderbook_text += f"[bold red]卖二: {orderbook.ask_price_2:.2f}  {orderbook.ask_volume_2}手[/bold red]    "
         if hasattr(orderbook, 'bid_price_2') and orderbook.bid_price_2 > 0:
             orderbook_text += f"[bold green]买二: {orderbook.bid_price_2:.2f}  {orderbook.bid_volume_2}手[/bold green]\n"
+
+        if hasattr(orderbook, 'ask_price_3') and orderbook.ask_price_3 > 0:
+            orderbook_text += f"[bold red]卖三: {orderbook.ask_price_3:.2f}  {orderbook.ask_volume_3}手[/bold red]    "
         if hasattr(orderbook, 'bid_price_3') and orderbook.bid_price_3 > 0:
             orderbook_text += f"[bold green]买三: {orderbook.bid_price_3:.2f}  {orderbook.bid_volume_3}手[/bold green]\n"
+
+        if hasattr(orderbook, 'ask_price_4') and orderbook.ask_price_4 > 0:
+            orderbook_text += f"[bold red]卖四: {orderbook.ask_price_4:.2f}  {orderbook.ask_volume_4}手[/bold red]    "
+        if hasattr(orderbook, 'bid_price_4') and orderbook.bid_price_4 > 0:
+            orderbook_text += f"[bold green]买四: {orderbook.bid_price_4:.2f}  {orderbook.bid_volume_4}手[/bold green]\n"
+
+        if hasattr(orderbook, 'ask_price_5') and orderbook.ask_price_5 > 0:
+            orderbook_text += f"[bold red]卖五: {orderbook.ask_price_5:.2f}  {orderbook.ask_volume_5}手[/bold red]    "
+        if hasattr(orderbook, 'bid_price_5') and orderbook.bid_price_5 > 0:
+            orderbook_text += f"[bold green]买五: {orderbook.bid_price_5:.2f}  {orderbook.bid_volume_5}手[/bold green]\n"
+
+        #orderbook_text += "──────────────────\n"
+        
         
         # 计算委比和委差
         total_bid_vol = (getattr(orderbook, 'bid_volume_1', 0) + 
                         getattr(orderbook, 'bid_volume_2', 0) + 
-                        getattr(orderbook, 'bid_volume_3', 0))
+                        getattr(orderbook, 'bid_volume_3', 0) +
+                        getattr(orderbook, 'bid_volume_4', 0) +
+                        getattr(orderbook, 'bid_volume_5', 0) +
+                        getattr(orderbook, 'bid_volume_6', 0) +
+                        getattr(orderbook, 'bid_volume_7', 0) +
+                        getattr(orderbook, 'bid_volume_8', 0) +
+                        getattr(orderbook, 'bid_volume_9', 0) +
+                        getattr(orderbook, 'bid_volume_10', 0)
+                        )
         total_ask_vol = (getattr(orderbook, 'ask_volume_1', 0) + 
                         getattr(orderbook, 'ask_volume_2', 0) + 
-                        getattr(orderbook, 'ask_volume_3', 0))
+                        getattr(orderbook, 'ask_volume_3', 0) +
+                        getattr(orderbook, 'ask_volume_4', 0) +
+                        getattr(orderbook, 'ask_volume_5', 0) +
+                        getattr(orderbook, 'ask_volume_6', 0) +
+                        getattr(orderbook, 'ask_volume_7', 0) +
+                        getattr(orderbook, 'ask_volume_8', 0) +
+                        getattr(orderbook, 'ask_volume_9', 0) +
+                        getattr(orderbook, 'ask_volume_10', 0)
+                        ) 
         
         if (total_bid_vol + total_ask_vol) > 0:
             wei_bi = ((total_bid_vol - total_ask_vol) / (total_bid_vol + total_ask_vol)) * 100
@@ -920,7 +986,7 @@ class AnalysisDataManager:
             else:
                 wei_cha_str = f"{wei_cha}手"
             
-            orderbook_text += f"\n📈 委比: {wei_bi:+.1f}%\n"
+            orderbook_text += f"📈 委比: {wei_bi:+.1f}%    "
             orderbook_text += f"📊 委差: {wei_cha_str}"
         
         return orderbook_text
@@ -1093,6 +1159,11 @@ class AnalysisDataManager:
             if time_info:
                 capital_text += f"    {time_info}"
             
+            # 添加技术指标信息
+            tech_text = self._format_technical_indicators_for_money_flow(analysis_data)
+            if tech_text:
+                capital_text += f"\n{tech_text}"
+            
             return capital_text
             
         except Exception as e:
@@ -1148,7 +1219,80 @@ class AnalysisDataManager:
             f"活跃度: {activity}    热度: {activity_stars}"
         )
         
+        # 添加技术指标信息
+        tech_text = self._format_technical_indicators_for_money_flow(analysis_data)
+        if tech_text:
+            capital_text += f"\n{tech_text}"
+        
         return capital_text
+    
+    def _format_technical_indicators_for_money_flow(self, analysis_data) -> str:
+        """格式化技术指标信息用于资金流向区域显示"""
+        if not analysis_data or not hasattr(analysis_data, 'technical_indicators') or not analysis_data.technical_indicators:
+            return ""
+        
+        tech_indicators = analysis_data.technical_indicators
+        tech_text = "📊 技术指标: "
+        
+        # MA移动平均线
+        ma_parts = []
+        for ma_period in ['ma5', 'ma10', 'ma20', 'ma60']:
+            if tech_indicators.get(ma_period):
+                ma_parts.append(f"{ma_period.upper()}: {tech_indicators[ma_period]:.2f}")
+        
+        if ma_parts:
+            tech_text += "  ".join(ma_parts) + "    "
+        
+        # RSI指标
+        if tech_indicators.get('rsi'):
+            rsi_value = tech_indicators['rsi']
+            if rsi_value > 70:
+                rsi_status = "[red]超买[/red]"
+            elif rsi_value < 30:
+                rsi_status = "[green]超卖[/green]"
+            else:
+                rsi_status = "正常"
+            tech_text += f"RSI(14): {rsi_value:.1f}({rsi_status})    "
+        
+        # MACD指标
+        if tech_indicators.get('macd') and isinstance(tech_indicators['macd'], dict):
+            macd_data = tech_indicators['macd']
+            dif = macd_data.get('dif', 0)
+            dea = macd_data.get('dea', 0)
+            histogram = macd_data.get('histogram', 0)
+            
+            # 判断金叉死叉
+            if dif > dea:
+                macd_trend = "[green]金叉[/green]" if histogram > 0 else "[yellow]转强[/yellow]"
+            else:
+                macd_trend = "[red]死叉[/red]" if histogram < 0 else "[yellow]转弱[/yellow]"
+            
+            tech_text += f"MACD: DIF({dif:.3f}) DEA({dea:.3f}) 柱({histogram:.3f}) {macd_trend}    "
+        
+        # 趋势分析
+        trend_parts = []
+        if tech_indicators.get('price_trend'):
+            price_trend = tech_indicators['price_trend']
+            if "上升" in price_trend or "上涨" in price_trend:
+                trend_parts.append(f"价格: [green]{price_trend}[/green]")
+            elif "下降" in price_trend or "下跌" in price_trend:
+                trend_parts.append(f"价格: [red]{price_trend}[/red]")
+            else:
+                trend_parts.append(f"价格: {price_trend}")
+        
+        if tech_indicators.get('volume_trend'):
+            volume_trend = tech_indicators['volume_trend']
+            if "放量" in volume_trend or "增加" in volume_trend:
+                trend_parts.append(f"成交量: [blue]{volume_trend}[/blue]")
+            elif "缩量" in volume_trend or "减少" in volume_trend:
+                trend_parts.append(f"成交量: [dim]{volume_trend}[/dim]")
+            else:
+                trend_parts.append(f"成交量: {volume_trend}")
+        
+        if trend_parts:
+            tech_text += "    ".join(trend_parts)
+        
+        return tech_text
     
     # ==================== 市场状态检查方法 ====================
     

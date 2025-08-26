@@ -795,7 +795,7 @@ class AnalysisPanel(Container):
     }
     
     AnalysisPanel .three-column-area {
-        height: 20%;
+        height: 15%;
         layout: horizontal;
         margin-bottom: 0;
     }
@@ -901,15 +901,6 @@ class AnalysisPanel(Container):
             # 3.2 实时数据区域（37%宽度）
             with Container(classes="realtime-data-column"):
                 yield Static("实时数据区域", id="realtime_data_title")
-                    # K线数据标签页
-                yield Static(
-                            "[bold blue]K线数据[/bold blue]\n" +
-                            "开盘:12.58  最高:12.96\n" +
-                            "最低:12.51  收盘:12.85\n" +
-                            "成交:1.2亿  涨跌:+2.35%",
-                            id="kline_content"
-                        )
-                    
                     # 逐笔数据标签页
                 yield Static(
                             "[bold yellow]逐笔数据[/bold yellow]\n" +

@@ -38,8 +38,7 @@ from monitor.manager import (
 from monitor.analysis import (
     AnalysisDataManager,
     ChartManager,
-    AIAnalysisManager,
-    AnalysisEventHandler
+    AIAnalysisManager
 )
 
 
@@ -124,11 +123,6 @@ class MonitorApp(App):
         self.analysis_data_manager = AnalysisDataManager(self.app_core, self.futu_market)
         self.chart_manager = ChartManager(self.analysis_data_manager)
         self.ai_analysis_manager = AIAnalysisManager(self.analysis_data_manager)
-        self.analysis_event_handler = AnalysisEventHandler(
-            self.analysis_data_manager,
-            self.chart_manager,
-            self.ai_analysis_manager
-        )
         
         # 将管理器引用添加到app_core，以便各管理器之间可以相互访问
         self.app_core.data_manager = self.data_manager
@@ -141,7 +135,6 @@ class MonitorApp(App):
         self.app_core.analysis_data_manager = self.analysis_data_manager
         self.app_core.chart_manager = self.chart_manager
         self.app_core.ai_analysis_manager = self.ai_analysis_manager
-        self.app_core.analysis_event_handler = self.analysis_event_handler
         
         self.managers_initialized = True
         self.logger.info("管理器初始化完成")
@@ -464,10 +457,6 @@ class MonitorApp(App):
         """AI分析管理器引用"""
         return self.ai_analysis_manager
     
-    @property
-    def analysis_events(self):
-        """分析事件处理器引用"""
-        return self.analysis_event_handler
 
 
 def main():

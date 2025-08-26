@@ -184,10 +184,10 @@ class KLineChartWidget(Container):
             'Close': [float(item.close) for item in data]
         }
         
-        self.logger.debug(f"[DEBUG] 绘制{len(data)}根K线, 第一条OHLC: O={ohlc_data['Open'][0] if ohlc_data['Open'] else 'None'}, "
-              f"H={ohlc_data['High'][0] if ohlc_data['High'] else 'None'}, "
-              f"L={ohlc_data['Low'][0] if ohlc_data['Low'] else 'None'}, "
-              f"C={ohlc_data['Close'][0] if ohlc_data['Close'] else 'None'}")
+        #self.logger.debug(f"[DEBUG] 绘制{len(data)}根K线, 第一条OHLC: O={ohlc_data['Open'][0] if ohlc_data['Open'] else 'None'}, "
+        #      f"H={ohlc_data['High'][0] if ohlc_data['High'] else 'None'}, "
+        #      f"L={ohlc_data['Low'][0] if ohlc_data['Low'] else 'None'}, "
+        #      f"C={ohlc_data['Close'][0] if ohlc_data['Close'] else 'None'}")
         
         try:
             # 绘制K线图 - 使用连续索引作为X轴

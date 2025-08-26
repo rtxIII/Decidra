@@ -1111,7 +1111,7 @@ class QuoteManager:
                 raise
             raise FutuQuoteException(-1, f"获取逐笔数据异常: {str(e)}")
     
-    def get_order_book(self, code: str) -> OrderBookData:
+    def get_order_book(self, code: str, num = 10) -> OrderBookData:
         """
         获取买卖盘数据
         
@@ -1123,7 +1123,7 @@ class QuoteManager:
         """
         try:
             quote_ctx = self._get_quote_context()
-            ret, data = quote_ctx.get_order_book(code)
+            ret, data = quote_ctx.get_order_book(code, num = num)
             
             df = self._handle_response(ret, data, f"获取{code}的买卖盘数据")
             
@@ -1152,7 +1152,7 @@ class QuoteManager:
                 raise
             raise FutuQuoteException(-1, f"获取买卖盘数据异常: {str(e)}")
     
-    def _convert_orderbook_format(self, data: dict) -> dict:
+    def _convert_orderbook_format(self, data: dict, num = 10) -> dict:
         """
         转换富途API返回的买卖盘数据格式
         
@@ -1170,7 +1170,7 @@ class QuoteManager:
         
         # 处理买盘数据 (Bid)
         bid_data = data.get('Bid', [])
-        for i in range(3):  # 只处理前3档
+        for i in range(num):  
             if i < len(bid_data):
                 price, volume, count, extra = bid_data[i]
                 converted[f'Bid{i+1}'] = price
@@ -1181,7 +1181,7 @@ class QuoteManager:
         
         # 处理卖盘数据 (Ask)
         ask_data = data.get('Ask', [])
-        for i in range(3):  # 只处理前3档
+        for i in range(num):  
             if i < len(ask_data):
                 price, volume, count, extra = ask_data[i]
                 converted[f'Ask{i+1}'] = price
