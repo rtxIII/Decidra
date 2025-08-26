@@ -1031,23 +1031,70 @@ class AnalysisDataManager:
         
         broker = analysis_data.broker_queue
         
-        if not broker:
-            return "暂无经纪队列数据"
+        # 检查是否为字典格式且包含必要的字段
+        if not isinstance(broker, dict) or 'bid_frame_table' not in broker or 'ask_frame_table' not in broker:
+            return "经纪队列数据格式异常"
         
         broker_text = "[bold cyan]经纪队列[/bold cyan]\n"
         
-        # 简化处理：如果有经纪队列数据，显示简要信息
-        if hasattr(broker, 'bid_frame_table') and broker.bid_frame_table:
-            broker_text += "买方队列: 有数据\n"
+        # 处理买方队列
+        bid_table = broker.get('bid_frame_table', {})
+        if bid_table and 'bid_broker_pos' in bid_table and 'bid_broker_name' in bid_table:
+            broker_text += "[green]买方队列:[/green]\n"
+            bid_positions = self._group_brokers_by_position(
+                bid_table.get('bid_broker_pos', {}),
+                bid_table.get('bid_broker_name', {})
+            )
+            for pos in sorted(bid_positions.keys()):
+                brokers = ', '.join(bid_positions[pos][:3])  # 最多显示3个经纪商
+                broker_text += f"  {pos}档: {brokers}\n"
         else:
-            broker_text += "买方队列: 无\n"
+            broker_text += "[green]买方队列:[/green] 暂无数据\n"
         
-        if hasattr(broker, 'ask_frame_table') and broker.ask_frame_table:
-            broker_text += "卖方队列: 有数据"
+        # 处理卖方队列
+        ask_table = broker.get('ask_frame_table', {})
+        if ask_table and 'ask_broker_pos' in ask_table and 'ask_broker_name' in ask_table:
+            broker_text += "[red]卖方队列:[/red]\n"
+            ask_positions = self._group_brokers_by_position(
+                ask_table.get('ask_broker_pos', {}),
+                ask_table.get('ask_broker_name', {})
+            )
+            for pos in sorted(ask_positions.keys()):
+                brokers = ', '.join(ask_positions[pos][:3])  # 最多显示3个经纪商
+                broker_text += f"  {pos}档: {brokers}"
+                if pos < max(ask_positions.keys()):
+                    broker_text += "\n"
         else:
-            broker_text += "卖方队列: 无"
+            broker_text += "[red]卖方队列:[/red] 暂无数据"
         
         return broker_text
+    
+    def _group_brokers_by_position(self, positions, names):
+        """按档位分组经纪商"""
+        grouped = {}
+        for idx, pos in positions.items():
+            if pos not in grouped:
+                grouped[pos] = set()
+            if idx in names:
+                broker_name = names[idx]
+                # 简化经纪商名称显示
+                simplified_name = self._simplify_broker_name(broker_name)
+                grouped[pos].add(simplified_name)
+        
+        # 转换为列表并去重
+        for pos in grouped:
+            grouped[pos] = list(grouped[pos])
+        
+        return grouped
+    
+    def _simplify_broker_name(self, full_name):
+        """简化经纪商名称以便显示"""
+        # 移除常见后缀
+        name = full_name.replace('有限公司', '').replace('(香港)', '').replace('证券', '')
+        # 如果名称太长，截取前8个字符
+        if len(name) > 8:
+            name = name[:8] + '...'
+        return name
     
     async def format_capital_flow(self, analysis_data=None) -> str:
         """格式化资金流向数据"""

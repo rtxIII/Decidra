@@ -844,6 +844,16 @@ class AnalysisPanel(Container):
         padding: 0;
     }
     
+    AnalysisPanel .data-content-horizontal {
+        layout: horizontal;
+        height: 1fr;
+    }
+    
+    AnalysisPanel .data-content-horizontal Static {
+        width: 1fr;
+        margin-right: 1;
+    }
+    
     /* AI交互区域样式 - 使用InfoPanel */
     AnalysisPanel .ai-interaction-area InfoPanel {
         width: 100%;
@@ -901,24 +911,26 @@ class AnalysisPanel(Container):
             # 3.2 实时数据区域（37%宽度）
             with Container(classes="realtime-data-column"):
                 yield Static("实时数据区域", id="realtime_data_title")
-                    # 逐笔数据标签页
-                yield Static(
-                            "[bold yellow]逐笔数据[/bold yellow]\n" +
-                            "14:32:15  12.85↑125  89手\n" +
-                            "14:32:18  12.84↓89   45手\n" +
-                            "14:32:20  12.85↑201  156手\n" +
-                            "14:32:22  12.86↑67   67手",
-                            id="tick_content"
-                        )
-                    
-                    # 经纪队列数据标签页
-                yield Static(
-                            "[bold cyan]经纪队列[/bold cyan]\n" +
-                            "中信证券 买入排队 1.2万手\n" +
-                            "平安证券 卖出排队 8.9千手\n" +
-                            "招商证券 买入排队 6.8千手",
-                            id="broker_content"
-                        )
+                # 水平布局容器包含逐笔数据和经纪队列
+                with Horizontal(classes="data-content-horizontal"):
+                    # 逐笔数据（50%宽度）
+                    yield Static(
+                                "[bold yellow]逐笔数据[/bold yellow]\n" +
+                                "14:32:15  12.85↑125  89手\n" +
+                                "14:32:18  12.84↓89   45手\n" +
+                                "14:32:20  12.85↑201  156手\n" +
+                                "14:32:22  12.86↑67   67手",
+                                id="tick_content"
+                            )
+                        
+                        # 经纪队列数据（50%宽度）
+                    yield Static(
+                                "[bold cyan]经纪队列[/bold cyan]\n" +
+                                "中信证券 买入排队 1.2万手\n" +
+                                "平安证券 卖出排队 8.9千手\n" +
+                                "招商证券 买入排队 6.8千手",
+                                id="broker_content"
+                            )
             
             # 3.3 资金流向区域（38%宽度） 
             with Container(classes="money-flow-column"):
