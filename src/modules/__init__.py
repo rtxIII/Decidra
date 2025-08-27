@@ -9,7 +9,7 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from base.futu_modue import FutuModuleBase
 from .futu_market import FutuMarket
-from .claude_ai_client import ClaudeAIClient, AIAnalysisRequest, AIAnalysisResponse, create_claude_client, quick_stock_analysis
+from .ai.claude_ai_client import ClaudeAIClient, AIAnalysisRequest, AIAnalysisResponse, create_claude_client, quick_stock_analysis
 
 #对应https://openapi.futunn.com/futu-api-doc/quote/overview.html
 """
