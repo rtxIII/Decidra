@@ -13,16 +13,13 @@
 
 from __future__ import annotations
 from datetime import datetime
-from typing import Dict, List, Optional, Union, Callable, Any
+from typing import Dict, List, Optional, Callable, Any
 from enum import Enum
 from dataclasses import dataclass
-import json
-import asyncio
 from collections import deque
 
 from rich.json import JSON
 from rich.text import Text
-from rich.console import Console
 
 from textual.app import ComposeResult
 from textual.containers import ScrollableContainer, Horizontal, Vertical
@@ -32,6 +29,16 @@ from textual.reactive import reactive
 from textual.message import Message
 
 from utils import logger
+
+# 导入AI相关模块
+try:
+    from modules.ai.claude_ai_client import create_claude_client
+    from monitor.widgets.window_dialog import WindowInputDialog
+    AI_MODULES_AVAILABLE = True
+except ImportError:
+    create_claude_client = None
+    WindowInputDialog = None
+    AI_MODULES_AVAILABLE = False
 
 
 class InfoType(Enum):
@@ -259,7 +266,6 @@ class InfoDisplay(Widget):
         # 处理JSON数据
         if self.message.data and self.message.info_type == InfoType.STOCK_DATA:
             try:
-                json_text = json.dumps(self.message.data, ensure_ascii=False, indent=2)
                 yield Static(JSON.from_data(self.message.data), expand=True)
                 return
             except Exception:
@@ -298,6 +304,17 @@ class InfoFilterBar(Horizontal):
         width: 8;
         margin-right: 1;
     }
+    
+    InfoFilterBar #ai_button {
+        width: 8;
+        margin-right: 1;
+        background: $primary;
+        color: $text;
+    }
+    
+    InfoFilterBar #ai_button:hover {
+        background: $primary-lighten-2;
+    }
     """
     
     class FilterChanged(Message):
@@ -315,6 +332,10 @@ class InfoFilterBar(Horizontal):
         """组合过滤工具栏"""
         # 搜索输入框
         yield Input(placeholder="搜索信息...", id="search_input")
+        
+        # AI交互按钮
+        if AI_MODULES_AVAILABLE:
+            yield Button("💻 AI", id="ai_button", variant="primary")
         
         # 类型选择器
         type_options = [("全部", "all")] + [(t.value, t.value) for t in InfoType]
@@ -347,6 +368,20 @@ class InfoFilterBar(Horizontal):
         if event.button.id == "clear_button":
             self.current_filters["clear"] = True
             self.post_message(self.FilterChanged(self.current_filters))
+        elif event.button.id == "ai_button":
+            await self._handle_ai_interaction()
+    
+    async def _handle_ai_interaction(self) -> None:
+        """处理AI交互"""
+        if not AI_MODULES_AVAILABLE:
+            # 如果AI模块不可用，发送错误消息
+            self.current_filters["ai_error"] = "AI功能不可用，请检查相关模块安装。"
+            self.post_message(self.FilterChanged(self.current_filters))
+            return
+        
+        # 发送AI交互请求，由InfoPanel处理具体的对话框显示和AI调用
+        self.current_filters["show_ai_dialog"] = True
+        self.post_message(self.FilterChanged(self.current_filters))
 
 
 class InfoPanel(ScrollableContainer):
@@ -392,6 +427,12 @@ class InfoPanel(ScrollableContainer):
             super().__init__()
             self.message = message
     
+    class AIRequestMessage(Message):
+        """AI请求消息"""
+        def __init__(self, user_input: str):
+            super().__init__()
+            self.user_input = user_input
+    
     def __init__(self, title: str = "信息输出", **kwargs):
         """初始化信息面板"""
         super().__init__(**kwargs)
@@ -434,6 +475,21 @@ class InfoPanel(ScrollableContainer):
         
         if "clear" in event.filters:
             await self.clear_all()
+            return
+        
+        # 处理AI错误信息
+        if "ai_error" in event.filters:
+            await self.add_info(
+                content=event.filters["ai_error"],
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="AI助手"
+            )
+            return
+        
+        # 处理显示AI对话框请求
+        if "show_ai_dialog" in event.filters:
+            await self._show_ai_dialog()
             return
         
         await self.refresh_display()
@@ -579,6 +635,121 @@ class InfoPanel(ScrollableContainer):
     async def add_performance_info(self, content: str, data: Dict[str, Any] = None, source: str = "") -> None:
         """添加性能信息"""
         await self.add_info(content, InfoType.PERFORMANCE, InfoLevel.INFO, source, data)
+    
+    async def _show_ai_dialog(self) -> None:
+        """显示AI对话框并处理用户交互"""
+        if not AI_MODULES_AVAILABLE:
+            await self.add_info(
+                content="AI功能不可用，请检查相关模块安装。",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="AI助手"
+            )
+            return
+        
+        def handle_submit(value: str):
+            """处理提交回调"""
+            # 添加调试日志
+            self.logger.info(f"AI对话框提交回调被触发，用户输入: {value}")
+            
+            if value and value.strip():
+                # 直接调用处理方法而不是发送消息
+                self.logger.debug(f"[DEBUG] 直接调用_process_ai_request: {value.strip()}")
+                import asyncio
+                # 创建异步任务来处理AI请求
+                asyncio.create_task(self._process_ai_request(value.strip()))
+        
+        def handle_cancel():
+            """处理取消回调"""
+            # 记录取消操作，使用简单的同步方式
+            pass
+        
+        try:
+            # 创建AI输入对话框，使用回调方式
+            ai_dialog = WindowInputDialog(
+                message="请输入您想要咨询的问题:",
+                title="💻 AI 智能助手",
+                placeholder="例如: 请分析一下腾讯这只股票的投资价值...",
+                submit_text="提交",
+                cancel_text="取消",
+                dialog_id="ai_input_dialog",
+                submit_callback=handle_submit,
+                cancel_callback=handle_cancel
+            )
+            
+            # 使用push_screen而不是push_screen_wait
+            self.app.push_screen(ai_dialog)
+            
+        except Exception as e:
+            self.logger.error(f"显示AI对话框失败: {e}")
+            await self.add_info(
+                content=f"AI对话框显示失败: {str(e)}",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="AI助手"
+            )
+    
+    async def on_ai_request_message(self, message: AIRequestMessage) -> None:
+        """处理AI请求消息"""
+        self.logger.info(f"收到AI请求消息: {message.user_input}")
+        # 直接调用处理方法
+        await self._process_ai_request(message.user_input)
+    
+    async def _process_ai_request(self, user_input: str) -> None:
+        """处理AI请求并显示响应"""
+        self.logger.info(f"开始处理AI请求: {user_input}")
+        
+        if not user_input.strip():
+            self.logger.debug(f"[DEBUG] 用户输入为空，返回")
+            return
+        
+        try:
+            # 显示用户问题
+            await self.add_info(
+                content=f"用户提问: {user_input}",
+                info_type=InfoType.USER_ACTION,
+                level=InfoLevel.INFO,
+                source="用户"
+            )
+            
+            # 显示正在思考的提示
+            await self.add_info(
+                content="🤔 AI正在思考中...",
+                info_type=InfoType.LOG,
+                level=InfoLevel.INFO,
+                source="AI助手"
+            )
+            
+            # 创建AI客户端并获取响应
+            ai_client = await create_claude_client()
+            if not ai_client.is_available():
+                await self.add_info(
+                    content="AI服务暂不可用，请稍后重试。",
+                    info_type=InfoType.ERROR,
+                    level=InfoLevel.ERROR,
+                    source="AI助手"
+                )
+                return
+            
+            # 调用AI进行对话
+            ai_response = await ai_client.chat_with_ai(user_input)
+            
+            # 显示AI回复
+            await self.add_info(
+                content=f"🤖 AI回复:\n{ai_response}",
+                info_type=InfoType.LOG,
+                level=InfoLevel.INFO,
+                source="AI助手"
+            )
+            
+        except Exception as e:
+            self.logger.error(f"处理AI请求失败: {e}")
+            await self.add_info(
+                content=f"AI处理失败: {str(e)}",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="AI助手"
+            )
 
 
 # 向后兼容的类名
