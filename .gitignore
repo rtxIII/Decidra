@@ -46,6 +46,7 @@ lib/
 lib64/
 parts/
 sdist/
+dist/
 var/
 *.egg-info/
 .installed.cfg
@@ -145,5 +146,5 @@ CLAUDE.md
 .serena
 
 #not readey doc
-doc/_*
+docs/*
 

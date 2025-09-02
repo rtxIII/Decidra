@@ -1,0 +1,303 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "decidra"
+version = "1.0.0"
+description = "Intelligent Trading Decision System - Python Stock Trading Analysis Platform Based on Futu OpenAPI"
+readme = "README.md"
+license = "MIT"
+authors = [
+    {name = "rtx3", email = "r@rtx3.com"}
+]
+maintainers = [
+    {name = "rtx3", email = "r@rtx3.com"}
+]
+keywords = ["trading", "stock", "futu", "api", "finance", "analysis", "textual", "terminal"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Monitoring",
+    "Topic :: Terminals"
+]
+requires-python = ">=3.8"
+dependencies = [
+    # Core dependencies
+    "setuptools",
+    "wheel",
+    "numpy",
+    "six",
+    "backports.functools_lru_cache",
+    "pandas==1.5.3",
+    "lxml",
+    "requests",
+    "cached-property",
+    "tqdm",
+    "python-dateutil",
+    "pytz",
+    "idna",
+    "certifi",
+    "soupsieve",
+    "websocket-client",
+    "charset_normalizer",
+    
+    # Financial data sources
+    "tushare",
+    "akshare",
+    "yfinance==0.2.64",
+    "yahooquery==2.4.1",
+    "futu_api==9.3.5308",
+    
+    # Data processing and analysis
+    "funcat3==1.1.8",
+    "jsonlite",
+    "humanize",
+    "candlestick-chart==3.1.0",
+    "psutil",
+    "pyyaml",
+    "pyarrow",
+    "scikit-learn==1.7.0",
+    
+    # CLI and UI
+    "click==8.1.7",
+    "rich==14.0.0",
+    "rich_interactive==0.6.0",
+    "colorama",
+    
+    # Textual UI framework
+    "textual",
+    "textual-window==0.5.2",
+    "textual-autocomplete==4.0.4",
+    "textual-slidecontainer",
+    "textual-plotext==1.0.1",
+    
+    # AI integration
+    "claude-code-sdk"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pylint",
+    "pytest>=6.0",
+    "pytest-cov",
+    "pytest-asyncio",
+    "black",
+    "isort",
+    "mypy",
+    "pre-commit"
+]
+test = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "pytest-asyncio",
+    "pytest-mock"
+]
+docs = [
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings[python]"
+]
+
+[project.scripts]
+decidra = "src.cli:cli"
+decidra-monitor = "src.monitor_app:main"
+
+[project.urls]
+Homepage = "https://github.com/rtxIII/decidra"
+Documentation = "https://decidra.readthedocs.io/"
+Repository = "https://github.com/rtxIII/decidra.git"
+"Bug Tracker" = "https://github.com/rtxIII/decidra/issues"
+Changelog = "https://github.com/rtxIII/decidra/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+# Use find directive to automatically discover all packages in src/
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+exclude = ["src.tests*", "src.*test*", "src.*.runtime*"]
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[tool.setuptools.package-data]
+"*" = ["*.txt", "*.md", "*.json", "*.yaml", "*.yml", "*.ini", "*.toml", "*.css"]
+
+# Remove dynamic version since we don't have __version__.py
+# [tool.setuptools.dynamic]
+# version = {attr = "src.__version__"}
+
+# Black formatting
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | \.runtime
+)/
+'''
+
+# isort configuration
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["src"]
+skip_glob = ["*/.runtime/*"]
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+disallow_untyped_decorators = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+exclude = [
+    "build/",
+    "dist/",
+    ".runtime/"
+]
+
+# Pytest configuration
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["src/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "futu: marks tests that require FutuOpenD",
+    "api: marks tests that require external API calls"
+]
+filterwarnings = [
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+    "ignore::ResourceWarning"
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/.*",
+    "*/build/*",
+    "*/dist/*",
+    "*/.runtime/*"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod"
+]
+ignore_errors = true
+
+[tool.pylint]
+[tool.pylint.messages_control]
+disable = [
+    "C0114",  # missing-module-docstring
+    "C0115",  # missing-class-docstring
+    "C0116",  # missing-function-docstring
+    "R0903",  # too-few-public-methods
+    "R0913",  # too-many-arguments
+    "W0212",  # protected-access
+    "C0103",  # invalid-name
+    "R0901",  # too-many-ancestors
+    "R0902",  # too-many-instance-attributes
+    "R0914",  # too-many-locals
+    "R0915",  # too-many-statements
+]
+
+[tool.pylint.format]
+max-line-length = 88
+
+# Ruff configuration (alternative to flake8)
+[tool.ruff]
+target-version = "py38"
+line-length = 88
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+    ".runtime",
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+"src/tests/*" = ["E501"]
+
+# Note: Pre-commit configuration should be in .pre-commit-config.yaml file
