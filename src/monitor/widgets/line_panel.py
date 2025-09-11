@@ -34,10 +34,12 @@ from utils import logger
 try:
     from modules.ai.claude_ai_client import create_claude_client
     from monitor.widgets.window_dialog import WindowInputDialog
+    from monitor.widgets.thinking_animation import ThinkingAnimation
     AI_MODULES_AVAILABLE = True
 except ImportError:
     create_claude_client = None
     WindowInputDialog = None
+    ThinkingAnimation = None
     AI_MODULES_AVAILABLE = False
 
 
@@ -402,6 +404,35 @@ class InfoPanel(ScrollableContainer):
         border: heavy $accent;
     }
     
+    InfoPanel .main-content {
+        layout: horizontal;
+        height: 1fr;
+        width: 1fr;
+    }
+    
+    InfoPanel .left-panel {
+        width: 3fr;  /* 60% */
+        height: 1fr;
+        overflow-y: auto;
+        border-right: solid $border;
+    }
+    
+    InfoPanel .right-panel {
+        width: 2fr;  /* 40% */
+        height: 1fr;
+        overflow-y: auto;
+        background: $surface;
+    }
+    
+    InfoPanel .ai-title {
+        height: 3;
+        text-align: center;
+        background: $primary;
+        color: $text;
+        padding: 1;
+        dock: top;
+    }
+    
     InfoPanel .info-container {
         layout: vertical;
         height: auto;
@@ -444,6 +475,11 @@ class InfoPanel(ScrollableContainer):
         self.current_filters = {}
         self.display_widgets: List[InfoDisplay] = []
         
+        # 新增AI建议管理器
+        self.ai_display_widget = None
+        self.ai_suggestions = []  # AI建议缓存
+        self.thinking_animation = None  # 思考动画组件
+        
         # 与项目logger系统集成
         self._setup_logger_handler()
     
@@ -457,14 +493,35 @@ class InfoPanel(ScrollableContainer):
         # 这里可以添加自定义的logging handler来捕获系统日志
         pass
     
+    async def on_mount(self) -> None:
+        """组件挂载时初始化AI显示组件"""
+        try:
+            self.ai_display_widget = self.query_one("#ai_display")
+            self.logger.info("AI显示组件初始化成功")
+        except Exception as e:
+            self.logger.error(f"AI显示组件初始化失败: {e}")
+            self.ai_display_widget = None
+    
     def compose(self) -> ComposeResult:
         """组合信息面板"""
         # 过滤工具栏
         yield InfoFilterBar(id="filter_bar")
         
-        # 信息显示容器
-        with Vertical(classes="info-container", id="info_container"):
-            pass
+        # 主体区域修改为左右布局
+        with Horizontal(id="main_content", classes="main-content"):
+            # 左侧 - 原有信息显示区域 (60%)
+            with Vertical(id="left_panel", classes="left-panel"):
+                # 原有的信息显示容器
+                with Vertical(classes="info-container", id="info_container"):
+                    pass
+            
+            # 右侧 - AI建议显示区域 (40%)  
+            with Vertical(id="right_panel", classes="right-panel"):
+                # AI建议显示标题
+                yield Static("🤖 AI 智能建议", classes="ai-title", id="ai_title")
+                # AI显示组件
+                from .ai_display_widget import AIDisplayWidget
+                yield AIDisplayWidget(id="ai_display")
         
         # 统计信息栏
         yield Static("就绪", classes="stats-bar", id="stats_bar")
@@ -712,13 +769,8 @@ class InfoPanel(ScrollableContainer):
                 source="用户"
             )
             
-            # 显示正在思考的提示
-            await self.add_info(
-                content="🤔 AI正在思考中...",
-                info_type=InfoType.LOG,
-                level=InfoLevel.INFO,
-                source="AI助手"
-            )
+            # 显示思考动画
+            await self._start_thinking_animation()
             
             # 创建AI客户端并获取响应
             ai_client = await create_claude_client()
@@ -734,6 +786,9 @@ class InfoPanel(ScrollableContainer):
             # 调用AI进行对话
             ai_response = await ai_client.chat_with_ai(user_input)
             
+            # 停止思考动画
+            await self._stop_thinking_animation()
+            
             # 显示AI回复
             await self.add_info(
                 content=f"🤖 AI回复:\n{ai_response}",
@@ -742,7 +797,20 @@ class InfoPanel(ScrollableContainer):
                 source="AI助手"
             )
             
+            # 新增: 生成结构化AI建议
+            try:
+                ai_suggestion = await self._generate_structured_suggestion(
+                    user_input, ai_response
+                )
+                if ai_suggestion and self.ai_display_widget:
+                    await self.ai_display_widget.add_suggestion(ai_suggestion)
+            except Exception as e:
+                self.logger.error(f"生成AI建议失败: {e}")
+            
         except Exception as e:
+            # 确保停止动画
+            await self._stop_thinking_animation()
+            
             self.logger.error(f"处理AI请求失败: {e}")
             await self.add_info(
                 content=f"AI处理失败: {str(e)}",
@@ -750,6 +818,148 @@ class InfoPanel(ScrollableContainer):
                 level=InfoLevel.ERROR,
                 source="AI助手"
             )
+    
+    async def _generate_structured_suggestion(self, 
+                                            user_input: str, 
+                                            ai_response: str) -> Optional[Any]:
+        """将AI回复转换为结构化建议"""
+        try:
+            # 导入AIDisplayWidget相关类
+            from .ai_display_widget import create_ai_suggestion_from_response
+            
+            # 提取股票代码（如果有的话）
+            stock_code = self._extract_stock_code(user_input)
+            
+            # 创建AI建议
+            ai_suggestion = create_ai_suggestion_from_response(
+                user_input, ai_response, stock_code
+            )
+            
+            return ai_suggestion
+            
+        except Exception as e:
+            self.logger.error(f"生成结构化建议失败: {e}")
+            return None
+    
+    def _extract_stock_code(self, user_input: str) -> str:
+        """从用户输入中提取股票代码"""
+        import re
+        
+        # 匹配常见的股票代码格式
+        patterns = [
+            r'([A-Z]{2}\.[0-9]{5})',  # HK.00700
+            r'([A-Z]{2}\.[A-Z]{3,4})',  # US.AAPL
+            r'([SH|SZ]\.[0-9]{6})',  # SH.600000, SZ.000001
+            r'([0-9]{6})',  # 000001, 600000
+            r'([A-Z]{3,4})'  # AAPL
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, user_input.upper())
+            if match:
+                return match.group(1)
+        
+        return ""
+    
+    # AI建议事件处理方法
+    async def on_ai_display_widget_suggestion_accepted(self, event) -> None:
+        """处理AI建议被接受事件"""
+        try:
+            suggestion_id = event.suggestion_id
+            await self.add_info(
+                content=f"✅ AI建议已接受: {suggestion_id[:8]}...",
+                info_type=InfoType.USER_ACTION,
+                level=InfoLevel.INFO,
+                source="用户操作"
+            )
+            self.logger.info(f"用户接受了AI建议: {suggestion_id}")
+        except Exception as e:
+            self.logger.error(f"处理AI建议接受事件失败: {e}")
+    
+    async def on_ai_display_widget_suggestion_ignored(self, event) -> None:
+        """处理AI建议被忽略事件"""
+        try:
+            suggestion_id = event.suggestion_id
+            await self.add_info(
+                content=f"❌ AI建议已忽略: {suggestion_id[:8]}...",
+                info_type=InfoType.USER_ACTION,
+                level=InfoLevel.INFO,
+                source="用户操作"
+            )
+            self.logger.info(f"用户忽略了AI建议: {suggestion_id}")
+        except Exception as e:
+            self.logger.error(f"处理AI建议忽略事件失败: {e}")
+    
+    async def on_ai_display_widget_suggestion_saved(self, event) -> None:
+        """处理AI建议被保存事件"""
+        try:
+            suggestion_id = event.suggestion_id
+            await self.add_info(
+                content=f"💾 AI建议已保存: {suggestion_id[:8]}...",
+                info_type=InfoType.USER_ACTION,
+                level=InfoLevel.INFO,
+                source="用户操作"
+            )
+            self.logger.info(f"用户保存了AI建议: {suggestion_id}")
+        except Exception as e:
+            self.logger.error(f"处理AI建议保存事件失败: {e}")
+    
+    async def _start_thinking_animation(self) -> None:
+        """启动思考动画"""
+        try:
+            if not AI_MODULES_AVAILABLE or ThinkingAnimation is None:
+                # 如果动画组件不可用，使用静态文本
+                await self.add_info(
+                    content="🤔 AI正在思考中...",
+                    info_type=InfoType.LOG,
+                    level=InfoLevel.INFO,
+                    source="AI助手"
+                )
+                return
+            
+            # 创建思考动画组件
+            self.thinking_animation = ThinkingAnimation()
+            self.thinking_animation.add_class("log")  # 添加日志样式类
+            self.thinking_animation.add_class("info")  # 添加信息级别样式类
+            
+            # 直接将动画组件挂载到信息容器
+            container = self.query_one("#info_container")
+            await container.mount(self.thinking_animation)
+            
+            # 启动动画
+            await self.thinking_animation.start_animation()
+            
+            # 自动滚动到底部
+            if self.auto_scroll:
+                self.scroll_end(animate=False)
+                
+        except Exception as e:
+            self.logger.error(f"启动思考动画失败: {e}")
+            # 降级到静态文本
+            await self.add_info(
+                content="🤔 AI正在思考中...",
+                info_type=InfoType.LOG,
+                level=InfoLevel.INFO,
+                source="AI助手"
+            )
+    
+    async def _stop_thinking_animation(self) -> None:
+        """停止思考动画"""
+        try:
+            if self.thinking_animation:
+                # 停止动画
+                await self.thinking_animation.stop_animation()
+                
+                # 从界面中移除动画组件
+                if self.thinking_animation.parent:
+                    await self.thinking_animation.remove()
+                
+                self.thinking_animation = None
+                
+                self.logger.debug("思考动画已停止并清理")
+                
+        except Exception as e:
+            self.logger.error(f"停止思考动画失败: {e}")
 
 
 # 向后兼容的类名
