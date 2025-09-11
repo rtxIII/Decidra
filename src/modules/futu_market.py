@@ -12,7 +12,6 @@ from base.futu_class import MarketState, GlobalMarketState, OrderBookData, KLine
 
 import pandas as pd
 
-from modules import DataProcessingInterface
 from utils import logger
 from utils.global_vars import *
 

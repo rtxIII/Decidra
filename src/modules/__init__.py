@@ -1,5 +1,5 @@
 # 导入其他模块
-from .yahoo_data import DataProcessingInterface, HKEXInterface, YahooFinanceInterface, TuShareInterface
+
 try:
     from ..base.futu_modue import FutuModuleBase
 except ImportError:
