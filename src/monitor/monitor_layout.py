@@ -92,7 +92,7 @@ class StockListPanel(Container):
         # 快捷键提示区域
         with Container(classes="button-bar"):
             yield Static(
-                "[bold green]A[/bold green] 添加股票  [bold red]D[/bold red] 删除股票  [bold blue]R[/bold blue] 刷新数据  [bold yellow]Space[/bold yellow] 选择分组",
+                "[bold green]N[/bold green] 添加股票  [bold red]M[/bold red] 删除股票  [bold blue]R[/bold blue] 刷新数据  [bold yellow]Space[/bold yellow] 选择分组",
                 id="hotkey_hints"
             )
 
@@ -109,24 +109,19 @@ class UserGroupPanel(Container):
         layout: vertical;
     }
     
-    UserGroupPanel .group-info-combined {
+    UserGroupPanel .group-table-area {
         height: 50%;
         background: $surface;
         overflow-y: auto;
         padding: 1;
         margin-bottom: 1;
     }
-    
-    UserGroupPanel .group-info-combined DataTable {
-        height: 40%;
+
+    UserGroupPanel .group-table-area DataTable {
+        height: 1fr;
         margin-bottom: 1;
     }
-    
-    UserGroupPanel .group-info-combined .info-content {
-        height: 60%;
-        padding: 1;
-    }
-    
+
     UserGroupPanel .position-info {
         height: 50%;
         background: $surface;
@@ -147,8 +142,8 @@ class UserGroupPanel(Container):
         
     def compose(self) -> ComposeResult:
         """组合完全统一的单一窗口"""
-        # 合并的分组表格和信息显示区域（50%空间）
-        with Container(classes="group-info-combined"):
+        # 分组表格区域（50%空间）
+        with Container(classes="group-table-area"):
             # 分组表格
             group_table = DataTable(
                 show_cursor=True,
@@ -160,15 +155,8 @@ class UserGroupPanel(Container):
             )
             group_table.add_columns("分组名称", "股票数量", "类型")
             yield group_table
-            
-            # 信息显示内容
-            with Container(classes="info-content"):
-                yield Static(
-                    "[dim]使用 k/l 键选择分组\n使用 Space 键切换监控列表\n\n选择分组后将显示包含的股票详情[/dim]",
-                    id="group_stocks_content"
-                )
-        
-        # 持仓信息区域（30%空间，位于最下面）
+
+        # 持仓信息区域（50%空间，位于上方）
         with Container(classes="position-info"):
             yield Static("持仓订单信息", id="position_title")
             yield Static(
@@ -912,7 +900,7 @@ class MainLayoutTab(Container):
         layout: grid;
         grid-size: 2 2;
         grid-columns: 7fr 3fr;
-        grid-rows: 3fr 2fr;
+        grid-rows: 9fr 11fr;
         grid-gutter: 1;
         height: 1fr;
     }
@@ -924,11 +912,11 @@ class MainLayoutTab(Container):
     
     MainLayoutTab #user_group_panel {
         column-span: 1;
-        row-span: 2;
+        row-span: 1;
     }
     
     MainLayoutTab #info_panel {
-        column-span: 1;
+        column-span: 2;
         row-span: 1;
     }
     """
@@ -1043,7 +1031,7 @@ class MonitorLayout(Container):
         Binding("r", "refresh", "刷新", priority=True),
         Binding("h", "help", "帮助"),
         Binding("a", "add_stock", "添加股票"),
-        Binding("d", "delete_stock", "删除股票"),
+        Binding("m", "delete_stock", "删除股票"),
         Binding("escape", "go_back", "返回"),
         Binding("tab", "switch_tab", "切换标签"),
         Binding("enter", "enter_analysis", "进入分析"),
@@ -1104,11 +1092,36 @@ class MonitorLayout(Container):
     }
     """
     
+    async def action_delete_stock(self) -> None:
+        """删除股票动作 - 委托给主应用处理"""
+        if hasattr(self.app, 'action_delete_stock'):
+            await self.app.action_delete_stock()
+
+    async def action_add_stock(self) -> None:
+        """添加股票动作 - 委托给主应用处理"""
+        if hasattr(self.app, 'action_add_stock'):
+            await self.app.action_add_stock()
+
+    async def action_refresh(self) -> None:
+        """刷新动作 - 委托给主应用处理"""
+        if hasattr(self.app, 'action_refresh'):
+            await self.app.action_refresh()
+
+    async def action_help(self) -> None:
+        """帮助动作 - 委托给主应用处理"""
+        if hasattr(self.app, 'action_help'):
+            await self.app.action_help()
+
+    async def action_enter_analysis(self) -> None:
+        """进入分析动作 - 委托给主应用处理"""
+        if hasattr(self.app, 'action_enter_analysis'):
+            await self.app.action_enter_analysis()
+
     def compose(self) -> ComposeResult:
         """组合完整监控界面"""
         # 状态栏保留，但去除Header和Footer让界面更紧凑
         yield StatusBar(id="status_bar")
-        
+
         # 主体标签页内容
         with TabbedContent(initial="main", id="main_tabs"):
             # 主界面标签页

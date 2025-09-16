@@ -339,12 +339,29 @@ class InfoFilterBar(Horizontal):
         if AI_MODULES_AVAILABLE:
             yield Button("💻 AI", id="ai_button", variant="primary")
         
-        # 类型选择器
-        type_options = [("全部", "all")] + [(t.value, t.value) for t in InfoType]
+        # 类型选择器 - 提供中文标签
+        type_labels = {
+            "log": "系统日志",
+            "stock_data": "股票数据",
+            "trade_info": "交易信息",
+            "performance": "性能指标",
+            "api_status": "API状态",
+            "user_action": "用户操作",
+            "error": "错误信息",
+            "warning": "警告信息"
+        }
+        type_options = [("全部", "all")] + [(type_labels.get(t.value, t.value), t.value) for t in InfoType]
         yield Select(type_options, value="all", id="type_select")
-        
-        # 级别选择器
-        level_options = [("全部", "all")] + [(l.value, l.value) for l in InfoLevel]
+
+        # 级别选择器 - 提供中文标签
+        level_labels = {
+            "debug": "调试",
+            "info": "信息",
+            "warning": "警告",
+            "error": "错误",
+            "critical": "严重"
+        }
+        level_options = [("全部", "all")] + [(level_labels.get(l.value, l.value), l.value) for l in InfoLevel]
         yield Select(level_options, value="all", id="level_select")
         
         # 清空按钮
