@@ -551,23 +551,6 @@ class AnalysisPanel(Container):
             if self._basic_info_widget:
                 self._basic_info_widget.update(f"股票切换错误: {str(e)}")
     
-    async def initialize_info_panel(self) -> None:
-        """初始化 InfoPanel 并显示欢迎信息"""
-        try:
-            # 等待一小段时间确保InfoPanel完全初始化
-            await asyncio.sleep(0.1)
-            
-            # 查找 InfoPanel
-            info_panel = self.query_one("#ai_info_panel", expect_type=None)
-            if info_panel and hasattr(info_panel, 'log_info'):
-                await info_panel.log_info("欢迎使用股票分析功能！", "系统")
-                await info_panel.log_info("您可以选择股票进行深度分析", "系统")
-                self.logger.info("AnalysisPanel InfoPanel 欢迎信息已显示")
-            else:
-                self.logger.warning(f"未找到InfoPanel或InfoPanel不支持log_info方法: {info_panel}")
-                
-        except Exception as e:
-            self.logger.error(f"初始化AnalysisPanel InfoPanel失败: {e}")
     
     async def on_mount(self) -> None:
         """组件挂载时初始化"""
@@ -608,8 +591,6 @@ class AnalysisPanel(Container):
                 self.logger.error(f"按类型查找K线图组件也失败: {e2}")
                 self._kline_chart_widget = None
         
-        # 初始化 InfoPanel 并显示欢迎信息
-        await self.initialize_info_panel()
             
         # 设置焦点，确保能接收键盘事件
         self.can_focus = True
@@ -795,7 +776,7 @@ class AnalysisPanel(Container):
     }
     
     AnalysisPanel .three-column-area {
-        height: 15%;
+        height: 45%;
         layout: horizontal;
         margin-bottom: 0;
     }
@@ -827,41 +808,22 @@ class AnalysisPanel(Container):
         layout: vertical;
     }
     
-    AnalysisPanel .ai-interaction-area {
-        height: 30%;
-        border: solid $accent;
-        border-title-color: $text;
-        border-title-background: $surface;
-        padding: 0;
-        layout: vertical;
-    }
-    
     AnalysisPanel .realtime-data-column TabbedContent {
         height: 1fr;
     }
-    
+
     AnalysisPanel .realtime-data-column TabPane {
         padding: 0;
     }
-    
+
     AnalysisPanel .data-content-horizontal {
         layout: horizontal;
         height: 1fr;
     }
-    
+
     AnalysisPanel .data-content-horizontal Static {
         width: 1fr;
         margin-right: 1;
-    }
-    
-    /* AI交互区域样式 - 使用InfoPanel */
-    AnalysisPanel .ai-interaction-area InfoPanel {
-        width: 100%;
-        height: 1fr;
-        overflow-y: auto;
-        background: $surface;
-        border: solid $secondary;
-        padding: 0;
     }
     """
     
@@ -940,11 +902,6 @@ class AnalysisPanel(Container):
                     id="money_flow_content_column"
                 )
         
-        # 4. AI交互区域 - 使用InfoPanel替代Container
-        with Container(classes="ai-interaction-area"):
-            # 导入InfoPanel并使用
-            from monitor.widgets.line_panel import InfoPanel
-            yield InfoPanel(title="AI智能分析", id="ai_info_panel")
 
 
 class MainLayoutTab(Container):
