@@ -328,22 +328,58 @@ class AnalysisDataManager:
             # 直接从API获取K线数据，不使用缓存
             kline_type = TIME_PERIODS.get(period, 'K_DAY')
             self.logger.debug(f"获取K线数据: stock={stock_code}, period={kline_type}, num={num}")
-            
+
+            # 首先尝试获取当前K线数据
             kline_data = self.futu_market.get_cur_kline(
                 [stock_code], num=num, ktype=kline_type
             )
-            
-            if kline_data:
-                self.logger.debug(f"成功获取{len(kline_data)}条K线数据")
+
+            if kline_data and len(kline_data) > 0:
+                self.logger.debug(f"通过get_cur_kline成功获取{len(kline_data)}条K线数据")
                 return kline_data
             else:
-                self.logger.warning(f"API返回空K线数据: {stock_code}")
-                return []
-            
+                # get_cur_kline返回空数据，尝试使用历史K线数据作为回退
+                self.logger.warning(f"get_cur_kline返回空数据，尝试使用历史K线数据: {stock_code}")
+                return self._get_history_kline_fallback(stock_code, kline_type, num)
+
         except Exception as e:
             self.logger.error(f"获取K线数据失败: stock={stock_code}, period={period}, error={e}")
+            # 异常情况下也尝试使用历史数据
+            try:
+                return self._get_history_kline_fallback(stock_code, TIME_PERIODS.get(period, 'K_DAY'), num)
+            except Exception as fallback_e:
+                self.logger.error(f"历史K线数据回退也失败: {fallback_e}")
+                return []
+
+    def _get_history_kline_fallback(self, stock_code: str, kline_type: str, num: int = 100) -> List[KLineData]:
+        """使用历史K线数据作为回退方案"""
+        try:
+            from datetime import datetime, timedelta
+
+            # 计算日期范围：从今天往前推num天
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=num + 30)).strftime('%Y-%m-%d')  # 多取30天确保有足够数据
+
+            self.logger.debug(f"尝试获取历史K线数据: {stock_code}, {start_date} ~ {end_date}, type={kline_type}")
+
+            # 调用富途API的历史K线接口
+            history_klines = self.futu_market.client.quote.get_history_kline(
+                stock_code, start_date, end_date, kline_type, autype="qfq"
+            )
+
+            if history_klines and len(history_klines) > 0:
+                # 只取最近的num条数据
+                recent_klines = history_klines[-num:] if len(history_klines) > num else history_klines
+                self.logger.info(f"通过历史K线数据成功获取{len(recent_klines)}条数据（共{len(history_klines)}条）")
+                return recent_klines
+            else:
+                self.logger.warning(f"历史K线数据也为空: {stock_code}")
+                return []
+
+        except Exception as e:
+            self.logger.error(f"获取历史K线数据失败: {stock_code}, error={e}")
             return []
-    
+
     def _get_orderbook_data(self, stock_code: str) -> Optional[OrderBookData]:
         """获取五档买卖盘数据"""
         try:
