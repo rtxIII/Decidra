@@ -226,31 +226,31 @@ class InfoDisplay(Widget):
     
     InfoDisplay.error {
         background: rgba(255, 0, 0, 0.1);
-        border-left: thick red;
+        border-left: thick $error;
     }
     
     InfoDisplay.warning {
         background: rgba(255, 255, 0, 0.1);
-        border-left: thick yellow;
+        border-left: thick $warning;
     }
     
     InfoDisplay.info {
-        border-left: thick blue;
+        border-left: thick $primary;
     }
     
     InfoDisplay.debug {
         opacity: 0.7;
-        border-left: thick gray;
+        border-left: thick $text-muted;
     }
     
     InfoDisplay.stock-data {
         background: rgba(0, 255, 0, 0.05);
-        border-left: thick green;
+        border-left: thick $success;
     }
     
     InfoDisplay.trade-info {
         background: rgba(255, 215, 0, 0.1);
-        border-left: thick gold;
+        border-left: thick $secondary;
     }
     """
     
@@ -386,65 +386,44 @@ class InfoFilterBar(Horizontal):
         self.post_message(self.FilterChanged(self.current_filters))
 
 
-class InfoPanel(ScrollableContainer):
-    """专业信息面板组件"""
-    
+class InfoPanel(Widget):
+    """专业信息面板组件 - 参考toolong双面板设计"""
+
     DEFAULT_CSS = """
     InfoPanel {
+        layout: horizontal;
         background: $panel;
-        overflow-y: auto;
-        overflow-x: hidden;
         border: solid $border;
         border-title-color: $text;
         border-title-background: $surface;
-        scrollbar-gutter: stable;
+        height: 1fr;
+        width: 1fr;
     }
-    
+
     InfoPanel:focus {
         border: heavy $accent;
     }
-    
-    InfoPanel .main-content {
-        layout: horizontal;
-        height: 1fr;
-        width: 1fr;
-    }
-    
+
     InfoPanel .left-panel {
-        width: 3fr;  /* 60% */
+        width: 1fr;  /* 50% */
         height: 1fr;
-        overflow-y: auto;
+        background: $surface;
         border-right: solid $border;
     }
-    
+
     InfoPanel .right-panel {
-        width: 2fr;  /* 40% */
+        width: 1fr;  /* 50% */
         height: 1fr;
-        overflow-y: auto;
-        background: $surface;
+        background: $panel;
     }
-    
-    InfoPanel .ai-title {
-        height: 3;
-        text-align: center;
+
+    InfoPanel .panel-title {
+        height: 1;
+        dock: top;
         background: $primary;
         color: $text;
-        padding: 1;
-        dock: top;
-    }
-    
-    InfoPanel .info-container {
-        layout: vertical;
-        height: auto;
-        width: 1fr;
-    }
-    
-    InfoPanel .stats-bar {
-        height: 1;
-        dock: bottom;
-        background: $surface;
-        color: $text-muted;
         text-align: center;
+        text-style: bold;
     }
     """
     
@@ -494,37 +473,25 @@ class InfoPanel(ScrollableContainer):
         pass
     
     async def on_mount(self) -> None:
-        """组件挂载时初始化AI显示组件"""
-        try:
-            self.ai_display_widget = self.query_one("#ai_display")
-            self.logger.info("AI显示组件初始化成功")
-        except Exception as e:
-            self.logger.error(f"AI显示组件初始化失败: {e}")
-            self.ai_display_widget = None
+        """组件挂载时初始化"""
+        # 重构后的InfoPanel不再包含AI显示组件
+        # AI功能已移至独立的AIDisplayWidget组件中
+        self.ai_display_widget = None
+        self.logger.info("InfoPanel双面板组件初始化完成")
     
     def compose(self) -> ComposeResult:
-        """组合信息面板"""
-        # 过滤工具栏
-        yield InfoFilterBar(id="filter_bar")
-        
-        # 主体区域修改为左右布局
-        with Horizontal(id="main_content", classes="main-content"):
-            # 左侧 - 原有信息显示区域 (60%)
-            with Vertical(id="left_panel", classes="left-panel"):
-                # 原有的信息显示容器
-                with Vertical(classes="info-container", id="info_container"):
-                    pass
-            
-            # 右侧 - AI建议显示区域 (40%)  
-            with Vertical(id="right_panel", classes="right-panel"):
-                # AI建议显示标题
-                yield Static("🤖 AI 智能建议", classes="ai-title", id="ai_title")
-                # AI显示组件
-                from .ai_display_widget import AIDisplayWidget
-                yield AIDisplayWidget(id="ai_display")
-        
-        # 统计信息栏
-        yield Static("就绪", classes="stats-bar", id="stats_bar")
+        """组合信息面板 - 左右分栏设计"""
+        # 左侧面板 - 信息选择区域 (50%)
+        with Vertical(classes="left-panel", id="left_panel"):
+            yield Static("📋 信息列表", classes="panel-title")
+            yield InfoFilterBar(id="filter_bar")
+            yield InfoMessageList(id="info_message_list", buffer=self.buffer)
+            yield Static("就绪", classes="stats-bar", id="stats_bar")
+
+        # 右侧面板 - 详细信息显示区域 (50%)
+        with Vertical(classes="right-panel", id="right_panel"):
+            yield Static("📄 详细信息", classes="panel-title")
+            yield InfoDetailView(id="info_detail_view")
     
     async def on_info_filter_bar_filter_changed(self, event: InfoFilterBar.FilterChanged) -> None:
         """处理过滤条件改变"""
@@ -581,36 +548,28 @@ class InfoPanel(ScrollableContainer):
         
         # 发送消息，处理测试环境
         try:
-            await self.post_message(self.InfoAdded(message))
+            self.post_message(self.InfoAdded(message))
         except (AttributeError, TypeError):
             # 在测试环境中可能没有post_message方法
             pass
     
     async def refresh_display(self) -> None:
-        """刷新显示"""
-        # 获取过滤后的消息
-        filtered_messages = self._get_filtered_messages()
-        
-        # 限制显示数量，只显示最新的消息
-        display_messages = filtered_messages[-self.max_display_count:]
-        
-        # 批量更新
-        with self._app_instance.batch_update():
-            # 清空现有显示
-            container = self.query_one("#info_container")
-            await container.query(InfoDisplay).remove()
-            
-            # 添加新的显示组件
-            for message in display_messages:
-                info_display = InfoDisplay(message)
-                await container.mount(info_display)
-        
-        # 更新统计信息
-        await self._update_stats()
-        
-        # 自动滚动到底部
-        if self.auto_scroll:
-            self.scroll_end(animate=False)
+        """刷新显示 - 适配双面板设计"""
+        try:
+            # 获取过滤后的消息
+            filtered_messages = self._get_filtered_messages()
+
+            # 刷新左侧消息列表
+            message_list = self.query_one("#info_message_list", InfoMessageList)
+            await message_list.refresh_messages(filtered_messages)
+
+            # 更新统计信息
+            await self._update_stats()
+
+        except Exception as e:
+            self.logger.error(f"刷新显示失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
     
     def _get_filtered_messages(self) -> List[InfoMessage]:
         """获取过滤后的消息"""
@@ -655,14 +614,33 @@ class InfoPanel(ScrollableContainer):
     
     async def clear_all(self) -> None:
         """清空所有信息"""
-        self.buffer.clear()
-        
-        with self._app_instance.batch_update():
-            container = self.query_one("#info_container")
-            await container.query(InfoDisplay).remove()
-        
-        await self._update_stats()
-        self.logger.info("Info panel cleared")
+        try:
+            self.buffer.clear()
+
+            # 清空左侧消息列表
+            message_list = self.query_one("#info_message_list", InfoMessageList)
+            await message_list.refresh_messages([])
+
+            # 重置右侧详情视图
+            detail_view = self.query_one("#info_detail_view", InfoDetailView)
+            await detail_view.query("*").remove()
+            await detail_view.mount(Static("选择左侧消息查看详细信息", classes="detail-content", id="empty_detail"))
+
+            await self._update_stats()
+            self.logger.info("Info panel cleared")
+        except Exception as e:
+            self.logger.error(f"清空信息面板失败: {e}")
+
+    async def on_info_message_list_message_selected(self, event: InfoMessageList.MessageSelected) -> None:
+        """处理消息选择事件"""
+        try:
+            # 获取右侧详情视图组件
+            detail_view = self.query_one("#info_detail_view", InfoDetailView)
+            # 更新详情显示
+            await detail_view.update_detail(event.message)
+            self.logger.info(f"选择消息并更新详情: {event.message.content[:50]}...")
+        except Exception as e:
+            self.logger.error(f"处理消息选择事件失败: {e}")
     
     # 便捷方法
     async def log_debug(self, content: str, source: str = "") -> None:
@@ -797,15 +775,6 @@ class InfoPanel(ScrollableContainer):
                 source="AI助手"
             )
             
-            # 新增: 生成结构化AI建议
-            try:
-                ai_suggestion = await self._generate_structured_suggestion(
-                    user_input, ai_response
-                )
-                if ai_suggestion and self.ai_display_widget:
-                    await self.ai_display_widget.add_suggestion(ai_suggestion)
-            except Exception as e:
-                self.logger.error(f"生成AI建议失败: {e}")
             
         except Exception as e:
             # 确保停止动画
@@ -818,28 +787,6 @@ class InfoPanel(ScrollableContainer):
                 level=InfoLevel.ERROR,
                 source="AI助手"
             )
-    
-    async def _generate_structured_suggestion(self, 
-                                            user_input: str, 
-                                            ai_response: str) -> Optional[Any]:
-        """将AI回复转换为结构化建议"""
-        try:
-            # 导入AIDisplayWidget相关类
-            from .ai_display_widget import create_ai_suggestion_from_response
-            
-            # 提取股票代码（如果有的话）
-            stock_code = self._extract_stock_code(user_input)
-            
-            # 创建AI建议
-            ai_suggestion = create_ai_suggestion_from_response(
-                user_input, ai_response, stock_code
-            )
-            
-            return ai_suggestion
-            
-        except Exception as e:
-            self.logger.error(f"生成结构化建议失败: {e}")
-            return None
     
     def _extract_stock_code(self, user_input: str) -> str:
         """从用户输入中提取股票代码"""
@@ -861,11 +808,11 @@ class InfoPanel(ScrollableContainer):
         
         return ""
     
-    # AI建议事件处理方法
+    # AI建议事件处理方法 - 为兼容性保留
     async def on_ai_display_widget_suggestion_accepted(self, event) -> None:
-        """处理AI建议被接受事件"""
+        """处理AI建议被接受事件 - 兼容性方法"""
         try:
-            suggestion_id = event.suggestion_id
+            suggestion_id = getattr(event, 'suggestion_id', 'unknown')
             await self.add_info(
                 content=f"✅ AI建议已接受: {suggestion_id[:8]}...",
                 info_type=InfoType.USER_ACTION,
@@ -874,12 +821,12 @@ class InfoPanel(ScrollableContainer):
             )
             self.logger.info(f"用户接受了AI建议: {suggestion_id}")
         except Exception as e:
-            self.logger.error(f"处理AI建议接受事件失败: {e}")
-    
+            self.logger.debug(f"AI建议接受事件处理失败（重构后正常）: {e}")
+
     async def on_ai_display_widget_suggestion_ignored(self, event) -> None:
-        """处理AI建议被忽略事件"""
+        """处理AI建议被忽略事件 - 兼容性方法"""
         try:
-            suggestion_id = event.suggestion_id
+            suggestion_id = getattr(event, 'suggestion_id', 'unknown')
             await self.add_info(
                 content=f"❌ AI建议已忽略: {suggestion_id[:8]}...",
                 info_type=InfoType.USER_ACTION,
@@ -888,12 +835,12 @@ class InfoPanel(ScrollableContainer):
             )
             self.logger.info(f"用户忽略了AI建议: {suggestion_id}")
         except Exception as e:
-            self.logger.error(f"处理AI建议忽略事件失败: {e}")
-    
+            self.logger.debug(f"AI建议忽略事件处理失败（重构后正常）: {e}")
+
     async def on_ai_display_widget_suggestion_saved(self, event) -> None:
-        """处理AI建议被保存事件"""
+        """处理AI建议被保存事件 - 兼容性方法"""
         try:
-            suggestion_id = event.suggestion_id
+            suggestion_id = getattr(event, 'suggestion_id', 'unknown')
             await self.add_info(
                 content=f"💾 AI建议已保存: {suggestion_id[:8]}...",
                 info_type=InfoType.USER_ACTION,
@@ -902,7 +849,7 @@ class InfoPanel(ScrollableContainer):
             )
             self.logger.info(f"用户保存了AI建议: {suggestion_id}")
         except Exception as e:
-            self.logger.error(f"处理AI建议保存事件失败: {e}")
+            self.logger.debug(f"AI建议保存事件处理失败（重构后正常）: {e}")
     
     async def _start_thinking_animation(self) -> None:
         """启动思考动画"""
@@ -922,9 +869,21 @@ class InfoPanel(ScrollableContainer):
             self.thinking_animation.add_class("log")  # 添加日志样式类
             self.thinking_animation.add_class("info")  # 添加信息级别样式类
             
-            # 直接将动画组件挂载到信息容器
-            container = self.query_one("#info_container")
-            await container.mount(self.thinking_animation)
+            # 适配新的双面板结构 - 将动画挂载到消息列表
+            try:
+                # 尝试新的结构
+                container = self.query_one("#info_message_list")
+                await container.mount(self.thinking_animation)
+            except Exception:
+                # 兼容旧结构或降级处理
+                self.logger.warning("无法找到消息容器，使用静态文本代替动画")
+                await self.add_info(
+                    content="🤔 AI正在思考中...",
+                    info_type=InfoType.LOG,
+                    level=InfoLevel.INFO,
+                    source="AI助手"
+                )
+                return
             
             # 启动动画
             await self.thinking_animation.start_animation()
@@ -960,6 +919,328 @@ class InfoPanel(ScrollableContainer):
                 
         except Exception as e:
             self.logger.error(f"停止思考动画失败: {e}")
+
+
+class MessageItem(Vertical):
+    """单条消息组件"""
+
+    def __init__(self, message: InfoMessage, **kwargs):
+        message_id = f"msg_{id(message)}"
+        super().__init__(id=message_id, classes=f"message-item {message.level.value}", **kwargs)
+        self.message = message
+
+    def compose(self) -> ComposeResult:
+        """组合消息组件"""
+        # 消息头部
+        time_str = self.message.timestamp.strftime("%H:%M:%S")
+        type_str = self.message.info_type.value.upper()
+        header_text = f"[{time_str}] {type_str}"
+        if self.message.source:
+            header_text += f" ({self.message.source})"
+
+        yield Static(header_text, classes="message-header")
+
+        # 消息内容（截断长消息）
+        content = self.message.content
+        if len(content) > 100:
+            content = content[:97] + "..."
+
+        yield Static(content, classes="message-content")
+
+
+class InfoMessageList(ScrollableContainer):
+    """信息消息列表组件 - 参考toolong的LogLines"""
+
+    DEFAULT_CSS = """
+    InfoMessageList {
+        background: $surface;
+        height: 1fr;
+        width: 1fr;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+        padding: 1;
+    }
+
+    InfoMessageList:focus {
+        border: solid $accent;
+    }
+
+    InfoMessageList .message-item {
+        height: auto;
+        min-height: 3;
+        width: 1fr;
+        padding: 0 1;
+        margin: 0;
+        border: solid $border;
+        background: $surface;
+    }
+
+    InfoMessageList .message-item:hover {
+        background: $surface-lighten-1;
+    }
+
+    InfoMessageList .message-item.selected {
+        background: $primary-darken-1;
+        border: solid $accent;
+    }
+
+    InfoMessageList .message-item.error {
+        border-left: solid $error;
+    }
+
+    InfoMessageList .message-item.warning {
+        border-left: solid $warning;
+    }
+
+    InfoMessageList .message-item.info {
+        border-left: solid $success;
+    }
+
+    InfoMessageList .message-item.debug {
+        border-left: solid $panel;
+        opacity: 0.8;
+    }
+
+    InfoMessageList .message-header {
+        height: 1;
+        text-style: bold;
+    }
+
+    InfoMessageList .message-content {
+        height: 1;
+        color: $text-muted;
+        text-wrap: wrap;
+    }
+    """
+
+    class MessageSelected(Message):
+        """消息选择事件"""
+        def __init__(self, message: InfoMessage):
+            super().__init__()
+            self.message = message
+
+    def __init__(self, buffer: InfoBuffer, **kwargs):
+        """初始化消息列表"""
+        super().__init__(**kwargs)
+        self.buffer = buffer
+        self.selected_message: Optional[InfoMessage] = None
+        self.message_widgets: Dict[str, Widget] = {}
+        self.logger = logger.get_logger("info_message_list")
+
+    def compose(self) -> ComposeResult:
+        """组合消息列表"""
+        with Vertical():
+            yield Static("暂无消息", classes="empty-state", id="empty_state")
+
+    async def refresh_messages(self, filtered_messages: List[InfoMessage]) -> None:
+        """刷新消息列表"""
+        try:
+            # 清空现有消息组件
+            await self.query(".message-item").remove()
+            self.message_widgets.clear()
+
+            empty_state = self.query_one("#empty_state")
+
+            if filtered_messages:
+                empty_state.display = False
+
+                # 只显示最新的消息（限制数量避免性能问题）
+                display_messages = filtered_messages[-100:]  # 最多显示100条
+
+                for message in display_messages:
+                    message_id = f"msg_{id(message)}"
+                    message_widget = MessageItem(message)
+                    self.message_widgets[message_id] = message_widget
+                    await self.mount(message_widget)
+
+                self.logger.debug(f"刷新消息列表: {len(display_messages)} 条消息")
+            else:
+                empty_state.display = True
+
+            # 滚动到底部显示最新消息
+            self.scroll_end(animate=True)
+
+        except Exception as e:
+            self.logger.error(f"刷新消息列表失败: {e}")
+
+
+    async def on_click(self, event) -> None:
+        """处理点击事件"""
+        # 寻找被点击的消息项
+        clicked_widget = event.widget
+        while clicked_widget and not clicked_widget.classes or "message-item" not in clicked_widget.classes:
+            clicked_widget = clicked_widget.parent
+            if not clicked_widget:
+                return
+
+        # 找到对应的消息
+        message_id = clicked_widget.id
+        if message_id in self.message_widgets:
+            widget = self.message_widgets[message_id]
+            # 获取对应的消息对象
+            for message in self.buffer.messages:
+                if f"msg_{id(message)}" == message_id:
+                    await self.select_message(message, widget)
+                    break
+
+    async def select_message(self, message: InfoMessage, widget: Widget) -> None:
+        """选择消息"""
+        # 更新选中状态
+        if self.selected_message:
+            # 移除之前选中项的选中样式
+            for msg_widget in self.message_widgets.values():
+                msg_widget.remove_class("selected")
+
+        # 添加新选中项的样式
+        widget.add_class("selected")
+        self.selected_message = message
+
+        # 发送选择事件
+        self.post_message(self.MessageSelected(message))
+
+        self.logger.info(f"选中消息: {message.content[:50]}...")
+
+
+class InfoDetailView(ScrollableContainer):
+    """信息详情视图组件 - 参考toolong的LinePanel"""
+
+    DEFAULT_CSS = """
+    InfoDetailView {
+        background: $panel;
+        height: 1fr;
+        width: 1fr;
+        overflow-y: auto;
+        padding: 1;
+    }
+
+    InfoDetailView:focus {
+        border: solid $accent;
+    }
+
+    InfoDetailView .detail-header {
+        height: auto;
+        padding: 0 0 1 0;
+        text-style: bold;
+        border-bottom: solid $border;
+        margin-bottom: 1;
+    }
+
+    InfoDetailView .detail-section {
+        height: auto;
+        padding: 1 0;
+        margin: 1 0;
+    }
+
+    InfoDetailView .detail-content {
+        height: auto;
+        padding: 1;
+        background: $surface;
+        border: solid $border;
+        margin: 1 0;
+    }
+
+    InfoDetailView .detail-metadata {
+        height: auto;
+        color: $text-muted;
+        border-top: solid $border;
+        padding: 1 0 0 0;
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self, **kwargs):
+        """初始化详情视图"""
+        super().__init__(**kwargs)
+        self.current_message: Optional[InfoMessage] = None
+        self.logger = logger.get_logger("info_detail_view")
+
+    def compose(self) -> ComposeResult:
+        """组合详情视图"""
+        with Vertical():
+            yield Static("选择左侧消息查看详细信息", classes="detail-content", id="empty_detail")
+
+    async def update_detail(self, message: InfoMessage) -> None:
+        """更新详情显示"""
+        try:
+            self.current_message = message
+
+            # 清空当前内容
+            await self.query("*").remove()
+
+            with self.app.batch_update():
+                # 标题
+                level_icon = self._get_level_icon(message.level)
+                type_icon = self._get_type_icon(message.info_type)
+                title = f"{level_icon} {type_icon} {message.info_type.value.upper()}"
+                await self.mount(Static(title, classes="detail-header"))
+
+                # 消息内容
+                await self.mount(Static("消息内容:", classes="detail-section"))
+                await self.mount(Static(message.content, classes="detail-content"))
+
+                # 如果有附加数据，显示为JSON
+                if message.data:
+                    try:
+                        await self.mount(Static("附加数据:", classes="detail-section"))
+                        json_content = JSON.from_data(message.data)
+                        await self.mount(Static(json_content, classes="detail-content"))
+                    except Exception:
+                        await self.mount(Static(f"数据: {str(message.data)}", classes="detail-content"))
+
+                # 元数据
+                metadata_text = self._format_metadata(message)
+                await self.mount(Static(metadata_text, classes="detail-metadata"))
+
+            self.logger.info(f"更新消息详情: {message.content[:50]}...")
+
+        except Exception as e:
+            self.logger.error(f"更新详情显示失败: {e}")
+
+    def _get_level_icon(self, level: InfoLevel) -> str:
+        """获取级别图标"""
+        level_icons = {
+            InfoLevel.DEBUG: "🔍",
+            InfoLevel.INFO: "ℹ️",
+            InfoLevel.WARNING: "⚠️",
+            InfoLevel.ERROR: "❌",
+            InfoLevel.CRITICAL: "🚨",
+        }
+        return level_icons.get(level, "•")
+
+    def _get_type_icon(self, info_type: InfoType) -> str:
+        """获取类型图标"""
+        type_icons = {
+            InfoType.LOG: "📝",
+            InfoType.STOCK_DATA: "📈",
+            InfoType.TRADE_INFO: "💰",
+            InfoType.PERFORMANCE: "⚡",
+            InfoType.API_STATUS: "🔗",
+            InfoType.USER_ACTION: "👤",
+            InfoType.ERROR: "❌",
+            InfoType.WARNING: "⚠️",
+        }
+        return type_icons.get(info_type, "•")
+
+    def _format_metadata(self, message: InfoMessage) -> str:
+        """格式化元数据"""
+        metadata = []
+
+        # 基本信息
+        metadata.append(f"消息ID: {id(message)}")
+        metadata.append(f"消息类型: {message.info_type.value}")
+        metadata.append(f"消息级别: {message.level.value}")
+        metadata.append(f"时间戳: {message.timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+
+        if message.source:
+            metadata.append(f"消息源: {message.source}")
+
+        # 消息统计
+        metadata.append(f"内容长度: {len(message.content)} 字符")
+
+        if message.data:
+            metadata.append(f"附加数据: {len(str(message.data))} 字符")
+
+        return "\n".join(metadata)
 
 
 # 向后兼容的类名

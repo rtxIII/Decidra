@@ -19,11 +19,13 @@ import json
 import os
 import uuid
 
+
 from textual.app import ComposeResult
-from textual.containers import ScrollableContainer, Horizontal, Vertical, Container
+from textual.containers import ScrollableContainer, Horizontal, Container
 from textual.widgets import Static, Button, Select
 from textual.reactive import reactive
 from textual.message import Message
+from textual.binding import Binding
 
 from utils import logger
 
@@ -107,10 +109,10 @@ class AIDisplayItem:
         return status_map.get(self.status, "")
 
 
-@dataclass 
+@dataclass
 class AIDisplayConfig:
     """AI显示配置"""
-    max_display_items: int = 10
+    max_display_items: int = 50  # 增加到50个以便测试滚动
     auto_refresh_interval: int = 30
     confidence_threshold: float = 0.5
     show_ignored_items: bool = False
@@ -123,7 +125,9 @@ class SuggestionCard(Container):
     
     DEFAULT_CSS = """
     SuggestionCard {
-        height: 6;
+        height: 12;
+        min-height: 12;
+        max-height: 12;
         margin: 1 0;
         padding: 1;
         border: solid $accent;
@@ -159,26 +163,36 @@ class SuggestionCard(Container):
     }
     
     SuggestionCard .suggestion-footer {
-        height: 1;
+        height: 4;
         width: 1fr;
         layout: horizontal;
     }
-    
+
     SuggestionCard .confidence-info {
         width: 1fr;
         color: $text-muted;
+        text-align: left;
     }
-    
+
+    SuggestionCard .debug-info {
+        width: 1fr;
+        color: $warning;
+        text-style: italic;
+        height: 1;
+    }
+
     SuggestionCard .action-buttons {
-        dock: right;
         layout: horizontal;
         width: auto;
+        height: 3;
+        text-align: right;
     }
     
     SuggestionCard .action-buttons Button {
-        width: 8;
-        height: 1;
+        width: 12;
+        height: 3;
         margin-left: 1;
+        min-width: 8;
     }
     
     SuggestionCard .confidence-stars { 
@@ -209,27 +223,38 @@ class SuggestionCard(Container):
         
         # 底部信息和操作按钮
         with Horizontal(classes="suggestion-footer"):
+            # 置信度和时间信息
             confidence_text = f"置信度: {self.item.confidence:.0%} | {self.item.timestamp.strftime('%H:%M:%S')}"
             if self.item.status != SuggestionStatus.NEW:
                 confidence_text += f" | 状态: {self.item.status.value} ✓"
             yield Static(confidence_text, classes="confidence-info")
             
-            # 操作按钮
-            if self.item.action_buttons:
+            # 调试：添加按钮状态信息
+            debug_text = f"按钮状态: buttons={self.item.action_buttons}, status={self.item.status}"
+            yield Static(debug_text, classes="debug-info")
+            
+            # 操作按钮区域 - 简化条件判断，强制显示按钮用于调试
+            if self.item.status == SuggestionStatus.NEW:
                 with Horizontal(classes="action-buttons"):
-                    for action in self.item.action_buttons:
-                        button_text, button_id = self._get_button_config(action)
-                        yield Button(button_text, id=f"{action}_{self.item.suggestion_id}", 
-                                   variant="primary" if action == "accept" else "default")
+                    # 强制显示按钮，忽略action_buttons检查
+                    buttons = self.item.action_buttons or ['accept', 'ignore', 'save']
+                    for action in buttons:
+                        button_text, _ = self._get_button_config(action)
+                        yield Button(button_text, 
+                                   id=f"{action}_{self.item.suggestion_id}", 
+                                   variant="success" if action == "accept" 
+                                   else "warning" if action == "save"
+                                   else "default")
     
     def _get_button_config(self, action: str) -> tuple[str, str]:
         """获取按钮配置"""
         button_map = {
             'accept': ("✅接受", "accept"),
-            'ignore': ("❌忽略", "ignore"),
+            'ignore': ("❌忽略", "ignore"), 
             'save': ("💾保存", "save")
         }
-        return button_map.get(action, (action, action))
+        text, _ = button_map.get(action, (action, action))
+        return text, action
     
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """处理按钮点击"""
@@ -247,27 +272,38 @@ class SuggestionCard(Container):
 
 class AIDisplayWidget(ScrollableContainer):
     """AI建议显示组件"""
-    
+
+    # 键盘绑定，支持滚动操作
+    BINDINGS = [
+        Binding("up", "scroll_up", "向上滚动", show=False),
+        Binding("down", "scroll_down", "向下滚动", show=False),
+        Binding("pageup", "page_up", "向上翻页", show=False),
+        Binding("pagedown", "page_down", "向下翻页", show=False),
+        Binding("home", "scroll_home", "滚动到顶部", show=False),
+        Binding("end", "scroll_end", "滚动到底部", show=False),
+    ]
+
     DEFAULT_CSS = """
     AIDisplayWidget {
         height: 100%;
         background: $surface;
         border: solid $primary;
         padding: 1;
-        overflow-y: auto;
+        overflow-y: scroll;
+        scrollbar-background: $surface;
+        scrollbar-color: $accent;
+        scrollbar-corner-color: $surface;
         scrollbar-gutter: stable;
+        scrollbar-size-vertical: 2;
+        scrollbar-size-horizontal: 0;
     }
-    
+
     AIDisplayWidget:focus {
         border: heavy $accent;
+        scrollbar-color: $success;
     }
-    
-    AIDisplayWidget .suggestion-container {
-        layout: vertical;
-        height: auto;
-        width: 1fr;
-    }
-    
+
+
     AIDisplayWidget .filter-bar {
         height: 3;
         dock: top;
@@ -275,20 +311,21 @@ class AIDisplayWidget(ScrollableContainer):
         padding: 0 1;
         border-bottom: solid $border;
         layout: horizontal;
+        min-height: 3;
     }
-    
+
     AIDisplayWidget .filter-bar Select {
         width: 15;
         margin-right: 1;
     }
-    
+
     AIDisplayWidget .filter-bar Button {
         width: 8;
         margin-right: 1;
     }
-    
+
     AIDisplayWidget .empty-state {
-        height: 5;
+        height: 10;
         text-align: center;
         color: $text-muted;
         margin: 2;
@@ -332,8 +369,168 @@ class AIDisplayWidget(ScrollableContainer):
     async def on_mount(self) -> None:
         """组件挂载时的初始化"""
         self._mounted = True
-        self.logger.info("AI显示组件已挂载")
-    
+
+        # 强制启用滚动相关设置
+        self.can_focus = True
+        self.show_vertical_scrollbar = True
+
+        # 确保滚动条正确设置
+        self.ensure_scrollable_content()
+        self.logger.info("AI显示组件已挂载，滚动条已启用")
+
+    # 滚动操作方法
+    def action_scroll_up(self) -> None:
+        """向上滚动"""
+        self.scroll_relative(y=-3, animate=True)
+
+    def action_scroll_down(self) -> None:
+        """向下滚动"""
+        self.scroll_relative(y=3, animate=True)
+
+    def action_page_up(self) -> None:
+        """向上翻页"""
+        self.scroll_page_up()
+
+    def action_page_down(self) -> None:
+        """向下翻页"""
+        self.scroll_page_down()
+
+    def action_scroll_home(self) -> None:
+        """滚动到顶部"""
+        self.scroll_home(animate=True)
+
+    def action_scroll_end(self) -> None:
+        """滚动到底部"""
+        self.scroll_end(animate=True)
+
+    async def scroll_to_top_with_new_item(self) -> None:
+        """新项目添加时自动滚动到顶部"""
+        try:
+            self.scroll_home(animate=True)
+            # 确保滚动条状态正确
+            self.ensure_scrollable_content()
+            self.logger.debug("自动滚动到顶部")
+        except Exception as e:
+            self.logger.error(f"自动滚动失败: {e}")
+
+    def ensure_scrollable_content(self) -> None:
+        """确保内容可滚动时正确显示滚动条"""
+        try:
+            # 获取详细的调试信息
+            debug_info = self._get_scroll_debug_info()
+
+            # 记录详细信息
+            self.logger.info(f"滚动条调试信息: {debug_info}")
+
+            # 强制显示滚动条的条件
+            should_show_scrollbar = (
+                debug_info['suggestion_count'] > 0 and  # 有内容
+                (debug_info['content_height'] > debug_info['widget_height'] or debug_info['suggestion_count'] >= 3)
+            )
+
+            if should_show_scrollbar:
+                # 强制启用滚动
+                self.can_focus = True
+                self.show_vertical_scrollbar = True
+
+                # 尝试设置虚拟尺寸来强制显示滚动条
+                try:
+                    from textual.geometry import Size
+                    if hasattr(self, 'virtual_size'):
+                        # 设置虚拟尺寸大于实际尺寸来强制滚动条
+                        virtual_height = max(debug_info['content_height'], debug_info['widget_height'] + 20)
+                        self.virtual_size = Size(debug_info['widget_width'], virtual_height)
+                        self.logger.info(f"✅ 设置虚拟尺寸: {self.virtual_size}")
+                except Exception as e:
+                    self.logger.error(f"❌ 设置虚拟尺寸失败: {e}")
+
+                self.refresh(layout=True)
+                self.logger.info(f"✅ 强制启用滚动条: {debug_info['suggestion_count']}个建议")
+            else:
+                self.logger.info(f"ℹ️ 无需滚动条: {debug_info['suggestion_count']}个建议")
+
+        except Exception as e:
+            self.logger.error(f"❌ 确保滚动条显示失败: {e}")
+
+    def _get_scroll_debug_info(self) -> dict:
+        """获取滚动相关的调试信息"""
+        try:
+            suggestions = self._get_filtered_suggestions()
+            content_height = self._calculate_content_height()
+
+            debug_info = {
+                'suggestion_count': len(suggestions),
+                'content_height': content_height,
+                'widget_height': getattr(self.size, 'height', 0),
+                'widget_width': getattr(self.size, 'width', 0),
+                'can_focus': getattr(self, 'can_focus', False),
+                'show_vertical_scrollbar': getattr(self, 'show_vertical_scrollbar', False),
+                'has_virtual_size': hasattr(self, 'virtual_size'),
+                'virtual_size': getattr(self, 'virtual_size', None),
+                'children_count': len(self.children),
+                'suggestion_cards_count': len(self.suggestion_cards),
+                'filter_value': self.current_filter,
+                'mounted': getattr(self, '_mounted', False)
+            }
+
+            # 添加子组件信息
+            children_info = []
+            for child in self.children:
+                children_info.append(f"{child.__class__.__name__}({getattr(child, 'id', 'no-id')})")
+            debug_info['children_types'] = children_info
+
+            return debug_info
+
+        except Exception as e:
+            self.logger.error(f"获取调试信息失败: {e}")
+            return {
+                'error': str(e),
+                'suggestion_count': 0,
+                'content_height': 0,
+                'widget_height': 0,
+                'widget_width': 0
+            }
+
+    def _test_card_css_validity(self, card: 'SuggestionCard') -> bool:
+        """测试建议卡片的CSS有效性"""
+        try:
+            # 简单测试：检查卡片是否有必要的属性
+            required_attrs = ['DEFAULT_CSS', 'compose']
+
+            for attr in required_attrs:
+                if not hasattr(card, attr):
+                    self.logger.error(f"建议卡片缺少必要属性: {attr}")
+                    return False
+
+            # 检查CSS字符串是否不为空
+            if not getattr(card, 'DEFAULT_CSS', '').strip():
+                self.logger.error("建议卡片CSS为空")
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"测试CSS有效性失败: {e}")
+            return False
+
+    def _calculate_content_height(self) -> int:
+        """计算内容总高度"""
+        try:
+            # 每个建议卡片高度为12，加上间距
+            card_count = len(self._get_filtered_suggestions())
+            filter_bar_height = 3
+            card_height = 12
+            card_margin = 2
+
+            # 总高度 = filter_bar + (卡片数量 * (卡片高度 + 间距))
+            content_height = filter_bar_height + (card_count * (card_height + card_margin))
+
+            self.logger.debug(f"内容高度计算: {card_count}个卡片 × {card_height+card_margin} + {filter_bar_height} = {content_height}")
+            return content_height
+        except Exception as e:
+            self.logger.error(f"计算内容高度失败: {e}")
+            return 0
+
     def _ensure_data_directory(self) -> None:
         """确保数据目录存在"""
         try:
@@ -349,21 +546,19 @@ class AIDisplayWidget(ScrollableContainer):
             # 类型过滤器
             type_options = [
                 ("全部", "all"),
-                ("技术分析", "technical"), 
+                ("技术分析", "technical"),
                 ("基本面", "fundamental"),
                 ("风险评估", "risk"),
                 ("通用", "general")
             ]
             yield Select(type_options, value="all", id="type_filter")
-            
+
             # 清空按钮
             yield Button("清空", id="clear_button")
-        
-        # 建议显示容器
-        with Vertical(classes="suggestion-container", id="suggestion_container"):
-            # 空状态提示
-            yield Static("暂无AI建议\n\n💡 使用AI助手功能\n开始获取智能建议", 
-                        classes="empty-state", id="empty_state")
+
+        # 空状态提示 - 直接在ScrollableContainer中显示
+        yield Static("暂无AI建议\n\n💡 使用AI助手功能\n开始获取智能建议",
+                    classes="empty-state", id="empty_state")
     
     async def add_suggestion(self, suggestion: AIDisplayItem) -> None:
         """添加新的AI建议"""
@@ -391,6 +586,8 @@ class AIDisplayWidget(ScrollableContainer):
             # 如果组件未挂载，手动触发刷新
             if hasattr(self, '_mounted') and self._mounted:
                 await self._refresh_display()
+                # 新建议添加时自动滚动到顶部
+                await self.scroll_to_top_with_new_item()
             
         except Exception as e:
             self.logger.error(f"添加AI建议失败: {e}")
@@ -437,38 +634,79 @@ class AIDisplayWidget(ScrollableContainer):
             # 获取过滤后的建议
             filtered_suggestions = self._get_filtered_suggestions()
             
-            # 查找容器和空状态组件
+            # 查找空状态组件，容器就是self
             try:
-                container = self.query_one("#suggestion_container")
                 empty_state = self.query_one("#empty_state")
             except Exception as query_error:
                 self.logger.error(f"查找UI组件失败: {query_error}")
                 return
             
-            # 移除所有建议卡片
-            for card in self.suggestion_cards.values():
+            # 移除所有建议卡片 - 使用list()避免迭代时修改字典的错误
+            cards_to_remove = list(self.suggestion_cards.values())
+            for card in cards_to_remove:
                 try:
                     if card.parent:
                         await card.remove()
-                except Exception:
-                    pass  # 忽略移除失败的情况
+                except Exception as e:
+                    self.logger.debug(f"移除建议卡片失败: {e}")
             self.suggestion_cards.clear()
+
+            # 额外检查：移除ScrollableContainer中可能残留的SuggestionCard组件
+            try:
+                for child in list(self.children):
+                    if child.__class__.__name__ == "SuggestionCard":
+                        await child.remove()
+                        self.logger.debug("移除残留的建议卡片")
+            except Exception as e:
+                self.logger.debug(f"清理残留组件失败: {e}")
             
             # 显示空状态或建议
             if filtered_suggestions:
                 empty_state.display = False
-                
-                # 添加新的建议卡片
+
+                # 添加新的建议卡片 - 直接挂载到ScrollableContainer
+                new_cards = {}
                 for suggestion in filtered_suggestions:
                     try:
+                        # 先创建卡片测试CSS
                         card = SuggestionCard(suggestion)
-                        self.suggestion_cards[suggestion.suggestion_id] = card
-                        await container.mount(card)
+
+                        # 测试卡片的CSS是否正常
+                        if not self._test_card_css_validity(card):
+                            self.logger.error(f"跳过有CSS问题的建议卡片: {suggestion.title}")
+                            continue
+
+                        new_cards[suggestion.suggestion_id] = card
+                        await self.mount(card)
+                        self.logger.debug(f"✅ 成功挂载建议卡片: {suggestion.title}")
+
                     except Exception as mount_error:
-                        self.logger.error(f"挂载建议卡片失败: {mount_error}")
+                        # 详细记录CSS错误信息
+                        error_details = str(mount_error)
+                        if hasattr(mount_error, 'errors'):
+                            error_details = f"CSS错误: {mount_error.errors}"
+                        elif hasattr(mount_error, '__dict__'):
+                            error_details = f"错误详情: {mount_error.__dict__}"
+
+                        self.logger.error(f"❌ 挂载建议卡片失败: {error_details}")
+
+                        # 尝试获取具体的CSS错误
+                        try:
+                            if hasattr(mount_error, 'errors'):
+                                for error in mount_error.errors:
+                                    self.logger.error(f"CSS具体错误: {error}")
+                        except:
+                            pass
+
+                # 统一更新字典，减少并发修改的风险
+                self.suggestion_cards.update(new_cards)
+                self.logger.info(f"✅ 成功挂载 {len(new_cards)} 个建议卡片")
             else:
                 empty_state.display = True
             
+            # 确保滚动条状态正确
+            self.ensure_scrollable_content()
+
             self.logger.debug(f"刷新显示完成，显示 {len(filtered_suggestions)} 个建议")
                 
         except Exception as e:
@@ -525,8 +763,45 @@ class AIDisplayWidget(ScrollableContainer):
     
     async def clear_suggestions(self) -> None:
         """清空所有建议"""
-        self.suggestions = []
-        self.logger.info("清空所有AI建议")
+        try:
+            # 先清空建议卡片缓存 - 使用list()避免迭代时修改字典的错误
+            cards_to_remove = list(self.suggestion_cards.values())
+            for card in cards_to_remove:
+                try:
+                    if card.parent:
+                        await card.remove()
+                except Exception as e:
+                    self.logger.debug(f"移除卡片失败: {e}")
+            self.suggestion_cards.clear()
+
+            # 清空建议数据 - 这应该触发watch_suggestions
+            self.suggestions = []
+
+            # 手动强制刷新显示
+            if hasattr(self, '_mounted') and self._mounted:
+                await self._refresh_display()
+
+            # 确保空状态显示
+            try:
+                empty_state = self.query_one("#empty_state")
+                empty_state.display = True
+                # 强制刷新组件
+                empty_state.refresh()
+            except Exception as e:
+                self.logger.debug(f"设置空状态失败: {e}")
+
+            # 强制刷新整个组件
+            try:
+                self.refresh(layout=True)
+            except Exception as e:
+                self.logger.debug(f"强制刷新失败: {e}")
+
+            self.logger.info("清空所有AI建议完成")
+
+        except Exception as e:
+            self.logger.error(f"清空建议失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
     
     def get_suggestion_count(self) -> int:
         """获取当前显示的建议数量"""
@@ -597,10 +872,47 @@ class AIDisplayWidget(ScrollableContainer):
                 return json.dumps(suggestions_data, ensure_ascii=False, indent=2)
             else:
                 raise ValueError(f"不支持的导出格式: {format}")
-                
+
         except Exception as e:
             self.logger.error(f"导出建议失败: {e}")
             return ""
+
+    async def add_test_suggestions(self, count: int = 20) -> None:
+        """添加测试建议项，用于测试滚动功能"""
+        try:
+            test_suggestions = [
+                ("RSI技术分析建议", "当前RSI指标显示超买状态，建议适当减仓", SuggestionType.TECHNICAL),
+                ("基本面分析建议", "PE估值偏低，可考虑逢低建仓", SuggestionType.FUNDAMENTAL),
+                ("风险管理建议", "大盘震荡加剧，注意控制仓位", SuggestionType.RISK),
+                ("MACD金叉信号", "MACD指标出现金叉，短期看涨", SuggestionType.TECHNICAL),
+                ("估值分析建议", "PB估值处于历史低位，价值投资机会", SuggestionType.FUNDAMENTAL),
+                ("止损建议", "跌破重要支撑位，建议设置止损", SuggestionType.RISK),
+                ("成交量分析", "成交量放大，关注突破信号", SuggestionType.TECHNICAL),
+                ("财报分析", "Q3财报超预期，盈利能力提升", SuggestionType.FUNDAMENTAL),
+            ]
+
+            for i in range(count):
+                idx = i % len(test_suggestions)
+                title, content, suggestion_type = test_suggestions[idx]
+
+                suggestion = AIDisplayItem(
+                    suggestion_id=str(uuid.uuid4()),
+                    suggestion_type=suggestion_type,
+                    title=f"{title} #{i+1}",
+                    content=f"{content}（测试项目 {i+1}）",
+                    confidence=0.5 + (i % 5) * 0.1,
+                    timestamp=datetime.now(),
+                    status=SuggestionStatus.NEW,
+                    stock_code="HK.00700",
+                    action_buttons=['accept', 'ignore', 'save']
+                )
+
+                await self.add_suggestion(suggestion)
+
+            self.logger.info(f"添加了 {count} 个测试建议项，用于测试滚动功能")
+
+        except Exception as e:
+            self.logger.error(f"添加测试建议失败: {e}")
 
 
 # 便捷函数
@@ -618,7 +930,9 @@ def create_ai_suggestion_from_response(user_input: str, ai_response: str, stock_
         content=content,
         confidence=confidence,
         timestamp=datetime.now(),
-        stock_code=stock_code
+        status=SuggestionStatus.NEW,
+        stock_code=stock_code,
+        action_buttons=['accept', 'ignore', 'save']
     )
 
 
