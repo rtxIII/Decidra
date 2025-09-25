@@ -46,11 +46,12 @@ class FutuTrade(FutuModuleBase):
         self.risk_config = {
             "max_single_order_amount": 100000,  # 单笔最大下单金额
             "max_position_ratio": 0.3,  # 单只股票最大持仓比例
-            "max_daily_loss": 0.05,  # 单日最大亏损比例
             "enable_risk_control": True  # 是否启用风险控制
         }
         
         self.logger.info(f"FutuTrade initialized with {default_trd_env} environment")
+
+        self.check()
 
     # ================== 账户管理接口 ==================
     
@@ -91,7 +92,11 @@ class FutuTrade(FutuModuleBase):
         except Exception as e:
             self.logger.error(f"Unlock trading error: {e}")
             return False
-    
+
+    def unlock_trade(self, password: str = None, market: str = None) -> bool:
+        """解锁交易功能 - 兼容性方法"""
+        return self.unlock_trading(password, market)
+
     def get_account_info(self, trd_env: str = None, market: str = None, currency: str = None) -> Dict:
         """获取账户信息"""
         try:
@@ -147,6 +152,14 @@ class FutuTrade(FutuModuleBase):
         except Exception as e:
             self.logger.error(f"Get cash flow error: {e}")
             return []
+
+    def get_funds(self, trd_env: str = None, market: str = None, currency: str = None) -> Dict:
+        """获取资金信息 - 兼容性方法"""
+        return self.get_funds_info(trd_env, market, currency)
+
+    def get_acc_list(self, market: str = None) -> List[Dict]:
+        """获取账户列表 - 兼容性方法"""
+        return self.get_account_list(market)
 
     # ================== 持仓管理接口 ==================
     
@@ -204,10 +217,14 @@ class FutuTrade(FutuModuleBase):
 
     # ================== 订单管理接口 ==================
     
-    def place_order(self, code: str, price: float, qty: int, 
-                   order_type: str = "NORMAL", trd_side: str = "BUY", 
-                   trd_env: str = None, market: str = None, 
-                   currency: str = None, enable_risk_check: bool = True) -> Dict:
+    def place_order(self, code: str, price: float, qty: int,
+                   order_type: str = "NORMAL",
+                   trd_side: str = "BUY",
+                   aux_price: Optional[float] = None,
+                   trd_env: str = "SIMULATE",
+                   market: str = None,
+                   currency: str = None,
+                   enable_risk_check: bool = True) -> Dict:
         """下单"""
         try:
             trd_env = trd_env or self.default_trd_env
@@ -224,8 +241,9 @@ class FutuTrade(FutuModuleBase):
                     return {"success": False, "message": "Trading not unlocked"}
             
             result = self.client.trade.place_order(
-                code=code, price=price, qty=qty, 
+                code=code, price=price, qty=qty,
                 order_type=order_type, trd_side=trd_side,
+                aux_price=aux_price,
                 trd_env=trd_env, market=market, currency=currency
             )
             
@@ -326,6 +344,42 @@ class FutuTrade(FutuModuleBase):
             
         except Exception as e:
             self.logger.error(f"Get deal list error: {e}")
+            return []
+
+    def get_history_order_list(self, trd_env: str = None, market: str = None,
+                              start: str = None, end: str = None) -> List[Dict]:
+        """获取历史订单列表"""
+        try:
+            trd_env = trd_env or self.default_trd_env
+            market = market or self.default_market
+
+            result = self.client.trade.get_history_order_list(trd_env, market, start, end)
+
+            if isinstance(result, pd.DataFrame):
+                return result.to_dict('records')
+
+            return []
+
+        except Exception as e:
+            self.logger.error(f"Get history order list error: {e}")
+            return []
+
+    def get_history_deal_list(self, trd_env: str = None, market: str = None,
+                             start: str = None, end: str = None) -> List[Dict]:
+        """获取历史成交列表"""
+        try:
+            trd_env = trd_env or self.default_trd_env
+            market = market or self.default_market
+
+            result = self.client.trade.get_history_deal_list(trd_env, market, start, end)
+
+            if isinstance(result, pd.DataFrame):
+                return result.to_dict('records')
+
+            return []
+
+        except Exception as e:
+            self.logger.error(f"Get history deal list error: {e}")
             return []
 
     # ================== 交易工具接口 ==================
