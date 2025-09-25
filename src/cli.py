@@ -600,7 +600,6 @@ def config_summary(verbose: bool):
         click.echo(f"配置目录: {summary['config_dir']}")
         click.echo(f"配置文件: {summary['config_file']}")
         click.echo(f"配置文件存在: {'是' if summary['config_exists'] else '否'}")
-        click.echo(f"策略映射存在: {'是' if summary['strategy_map_exists'] else '否'}")
         click.echo(f"配置节数量: {len(summary['sections'])}")
         
         if summary['env_overrides']:

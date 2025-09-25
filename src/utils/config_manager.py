@@ -61,12 +61,9 @@ class ConfigManager:
         # 配置文件路径
         self.config_ini_path = self.config_dir / 'config.ini'
         self.config_template_path = self.config_dir / 'config_template.ini'
-        self.strategy_map_path = self.config_dir / 'stock_strategy_map.yml'
-        self.strategy_template_path = self.config_dir / 'stock_strategy_map_template.yml'
         
         # 配置数据存储
         self._config_data = {}
-        self._strategy_map = {}
         self._env_overrides = {}
         
         # 默认配置
@@ -125,9 +122,7 @@ class ConfigManager:
             
             # 2. 加载INI配置文件
             self._load_ini_config()
-            
-            # 3. 加载YAML策略映射
-            self._load_strategy_map()
+
             
             # 4. 加载环境变量覆盖
             self._load_env_overrides()
@@ -167,29 +162,6 @@ class ConfigManager:
         except Exception as e:
             self.logger.error(f"Failed to load INI config from {config_path}: {e}")
             raise
-    
-    def _load_strategy_map(self):
-        """加载策略映射配置"""
-        strategy_path = self.strategy_map_path
-        
-        if not strategy_path.exists():
-            if self.strategy_template_path.exists():
-                self.logger.warning(f"Strategy map not found, using template: {self.strategy_template_path}")
-                strategy_path = self.strategy_template_path
-            else:
-                self.logger.warning("No strategy map found, using empty mapping")
-                self._strategy_map = {}
-                return
-        
-        try:
-            with open(strategy_path, 'r', encoding='utf-8') as f:
-                self._strategy_map = yaml.safe_load(f) or {}
-            
-            self.logger.info(f"Strategy mapping loaded from: {strategy_path}")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to load strategy map from {strategy_path}: {e}")
-            self._strategy_map = {}
     
     def _load_env_overrides(self):
         """加载环境变量覆盖"""
@@ -257,9 +229,6 @@ class ConfigManager:
             self.logger.error(f"Failed to set config [{section}].{key}: {e}")
             raise
     
-    def get_strategy_map(self) -> Dict[str, Any]:
-        """获取策略映射"""
-        return self._strategy_map.copy()
     
     def validate_config(self) -> ConfigValidationResult:
         """验证配置完整性"""
@@ -299,9 +268,6 @@ class ConfigManager:
             if email_config.get('SmtpServer') and not email_config.get('EmailUser'):
                 warnings.append("Email server configured but no user specified")
             
-            # 验证策略映射
-            if not self._strategy_map:
-                warnings.append("No strategy mapping configured")
             
             # 验证配置文件存在性
             if not self.config_ini_path.exists():
@@ -420,7 +386,6 @@ class ConfigManager:
             'config_dir': str(self.config_dir),
             'config_file': str(self.config_ini_path),
             'config_exists': self.config_ini_path.exists(),
-            'strategy_map_exists': self.strategy_map_path.exists(),
             'sections': list(self._config_data.keys()),
             'env_overrides': list(self._env_overrides.keys()) if self._env_overrides else [],
             'validation': self.validate_config(),
@@ -454,7 +419,3 @@ def get_config(section: str, key: Optional[str] = None, default: Any = None) -> 
     """获取配置值（兼容性函数）"""
     return get_config_manager().get_config(section, key, default)
 
-
-def get_strategy_map() -> Dict[str, Any]:
-    """获取策略映射（兼容性函数）"""
-    return get_config_manager().get_strategy_map()

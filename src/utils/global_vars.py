@@ -18,7 +18,6 @@ PATH_LOG = PATH_RUNTIME / 'log'
 PATH_FILTERS = PATH / 'filters'
 PATH_STRATEGIES = PATH / 'strategies'
 PATH_FILTER_REPORT = PATH / 'stock_filter_report'
-PATH_STRATEGY_REPORT = PATH / 'stock_strategy_report'
 
 # 常量定义
 DATETIME_FORMAT_DW = '%Y-%m-%d'
@@ -27,7 +26,7 @@ ORDER_RETRY_MAX = 3
 
 # 导入新的配置管理器
 try:
-    from utils.config_manager import get_config_manager, get_config, get_strategy_map
+    from utils.config_manager import get_config_manager, get_config
     
     # 使用新的配置管理器
     _config_manager = get_config_manager()
@@ -63,8 +62,6 @@ try:
     # 创建兼容性配置对象
     config = CompatibilityConfigProxy(_config_manager)
     
-    # 获取策略映射
-    stock_strategy_map = get_strategy_map()
     
 except ImportError as e:
     # 如果新配置管理器不可用，回退到旧方式
@@ -82,16 +79,6 @@ except ImportError as e:
     config.read(
         PATH_CONFIG / 'config.ini' if (PATH_CONFIG / 'config.ini').is_file() else PATH_CONFIG / 'config_template.ini')
 
-    if not (PATH_CONFIG / "stock_strategy_map.yml").is_file():
-        if not (PATH_CONFIG / "stock_strategy_map_template.yml").is_file():
-            raise SystemExit(
-                "Missing stock_strategy_map.yml. Please use the stock_strategy_map_template.yml to create your configuration.")
-        else:
-            print("Please rename stock_strategy_map_template.yml to stock_strategy_map.yml and update it.")
-
-    with open(PATH_CONFIG / "stock_strategy_map.yml" if (PATH_CONFIG / "stock_strategy_map.yml").is_file()
-              else PATH_CONFIG / "stock_strategy_map_template.yml", 'r') as infile:
-        stock_strategy_map = yaml.safe_load(infile)
 
 
 def timeit(method):

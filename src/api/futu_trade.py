@@ -335,22 +335,24 @@ class TradeManager:
                    qty: int,
                    order_type: str = "NORMAL",
                    trd_side: str = "BUY",
+                   aux_price: Optional[float] = None,
                    trd_env: str = "SIMULATE",
                    market: str = "HK",
                    currency: str = "HKD") -> Dict:
         """
         下单
-        
+
         Args:
             code: 股票代码 (如 "HK.00700")
             price: 下单价格
             qty: 下单数量
-            order_type: 订单类型 (NORMAL-限价单, MARKET-市价单)
+            order_type: 订单类型 (NORMAL-限价单, MARKET-市价单, STOP-止损单, STOP_LIMIT-止盈限价单)
             trd_side: 交易方向 (BUY-买入, SELL-卖出)
+            aux_price: 辅助价格，用于止损止盈订单的触发价格
             trd_env: 交易环境 (REAL/SIMULATE)
             market: 市场代码
             currency: 货币类型
-        
+
         Returns:
             Dict: 下单结果
         """
@@ -363,6 +365,10 @@ class TradeManager:
             # 转换订单类型
             if order_type.upper() == "MARKET":
                 futu_order_type = ft.OrderType.MARKET
+            elif order_type.upper() == "STOP":
+                futu_order_type = ft.OrderType.STOP
+            elif order_type.upper() == "STOP_LIMIT":
+                futu_order_type = ft.OrderType.STOP_LIMIT
             elif order_type.upper() == "ABSOLUTE_LIMIT":
                 futu_order_type = ft.OrderType.ABSOLUTE_LIMIT
             elif order_type.upper() == "AUCTION":
@@ -391,6 +397,7 @@ class TradeManager:
                 code=code,
                 trd_side=futu_trd_side,
                 order_type=futu_order_type,
+                aux_price=aux_price,
                 trd_env=futu_env,
                 acc_id=0,
                 acc_index=0,
