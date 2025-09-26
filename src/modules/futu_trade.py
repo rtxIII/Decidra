@@ -69,7 +69,7 @@ class FutuTrade(FutuModuleBase):
             self.logger.error(f"Get account list error: {e}")
             return []
     
-    def unlock_trading(self, password: str = None, market: str = None) -> bool:
+    def unlock_trading(self, password: str = None, market: str = "HK") -> bool:
         """解锁交易功能"""
         try:
             market = market or self.default_market
@@ -103,15 +103,20 @@ class FutuTrade(FutuModuleBase):
             trd_env = trd_env or self.default_trd_env
             market = market or self.default_market
             currency = currency or self.default_currency
-            
+
             result = self.client.trade.get_account_info(trd_env, market, currency)
-            
+
             if isinstance(result, pd.DataFrame) and not result.empty:
+                # 如果返回DataFrame，取第一行转为字典
                 self.account_info = result.iloc[0].to_dict()
                 return self.account_info
-            
+            elif isinstance(result, dict) and result:
+                # 如果返回字典，直接使用
+                self.account_info = result
+                return self.account_info
+
             return {}
-            
+
         except Exception as e:
             self.logger.error(f"Get account info error: {e}")
             return {}
@@ -122,14 +127,16 @@ class FutuTrade(FutuModuleBase):
             trd_env = trd_env or self.default_trd_env
             market = market or self.default_market
             currency = currency or self.default_currency
-            
+
             result = self.client.trade.get_funds(trd_env, market, currency)
-            
+
             if isinstance(result, pd.DataFrame) and not result.empty:
                 return result.iloc[0].to_dict()
-            
+            elif isinstance(result, dict) and result:
+                return result
+
             return {}
-            
+
         except Exception as e:
             self.logger.error(f"Get funds info error: {e}")
             return {}
@@ -206,7 +213,7 @@ class FutuTrade(FutuModuleBase):
             total_value = 0.0
             for position in positions:
                 qty = position.get('qty', 0)
-                cur_price = position.get('cur_price', 0)
+                cur_price = position.get('nominal_price', 0)
                 total_value += qty * cur_price
             
             return total_value

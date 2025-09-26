@@ -6,8 +6,9 @@
 """
 
 import logging
-from typing import Optional, Dict, Any, TYPE_CHECKING
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from utils.logger import get_logger
+import pandas as pd
 if TYPE_CHECKING:
     from .futu_client import FutuClient
 
@@ -78,32 +79,41 @@ class TradeManager:
             self.logger.warning(f"数据格式处理异常: {e}，返回原始数据")
             return ret_data
     
-    def get_acc_list(self, market: str = "HK") -> Dict:
+    def get_acc_list(self, market: str = "HK") -> List[Dict]:
         """
         获取账户列表
-        
+
         Args:
             market: 市场代码 (HK/US/CN)
-        
+
         Returns:
             Dict: 账户列表信息
         """
         try:
             trade_ctx = self._get_trade_context(market)
-            
+
             ret, data = trade_ctx.get_acc_list()
-            
-            df = self._handle_response(ret, data, "获取账户列表")
-            
-            self.logger.info("获取账户列表成功")
-            return df
-            
+
+            # 直接检查返回状态，不使用_handle_response（因为它会处理多行数据）
+            if ret != ft.RET_OK:
+                error_msg = f"获取账户列表失败: {data}"
+                self.logger.error(error_msg)
+                raise FutuTradeException(ret, data)
+
+            # 对于账户列表，我们需要返回完整的DataFrame数据
+            if isinstance(data, pd.DataFrame) and not data.empty:
+                self.logger.info(f"获取账户列表成功，共 {len(data)} 个账户")
+                return data.to_dict('records')  # 转换为字典列表
+            else:
+                self.logger.warning("获取账户列表返回空数据")
+                return []
+
         except Exception as e:
             if isinstance(e, FutuException):
                 raise
             raise FutuTradeException(-1, f"获取账户列表异常: {str(e)}")
     
-    def unlock_trade(self, password: str, market: str = "HK") -> Dict:
+    def unlock_trade(self, password: str, market: str = "HK"):
         """
         解锁交易
         
@@ -119,17 +129,19 @@ class TradeManager:
             
             ret, data = trade_ctx.unlock_trade(password)
             
-            result = self._handle_response(ret, data, "解锁交易")
-            
-            self.logger.info("交易解锁成功")
-            return result
+            if ret == 0:         
+                self.logger.info("交易解锁成功")
+                return True
+            else:
+                self.logger.error(f"交易解锁失败: {data}")
+                return False
             
         except Exception as e:
             if isinstance(e, FutuException):
                 raise
             raise FutuTradeException(-1, f"解锁交易异常: {str(e)}")
     
-    def get_cash_flow(self, 
+    def get_cash_flow(self,
                      trd_env: str = "SIMULATE",
                      market: str = "HK",
                      start: Optional[str] = None,
@@ -137,42 +149,114 @@ class TradeManager:
                      currency: str = "HKD") -> Dict:
         """
         获取现金流水
-        
+
         Args:
             trd_env: 交易环境 (REAL/SIMULATE)
             market: 市场代码
             start: 开始日期 (YYYY-MM-DD)
             end: 结束日期 (YYYY-MM-DD)
-            currency: 货币类型
-        
+            currency: 货币类型 (注意: API不直接支持货币过滤)
+
         Returns:
             Dict: 现金流水信息
         """
         try:
             trade_ctx = self._get_trade_context(market)
-            
+
             # 转换交易环境
             futu_env = ft.TrdEnv.REAL if trd_env.upper() == "REAL" else ft.TrdEnv.SIMULATE
+
+            # 注意: get_acc_cash_flow 不需要currency参数，现金流水会显示各种货币
             
-            # 转换货币类型
-            currency_map = {
-                "HKD": ft.Currency.HKD,
-                "USD": ft.Currency.USD,
-                "CNY": ft.Currency.CNY
-            }
-            futu_currency = currency_map.get(currency.upper(), ft.Currency.HKD)
-            
-            ret, data = trade_ctx.cash_flow_query(
-                trd_env=futu_env,
-                acc_id=0,
-                acc_index=0,
-                start=start,
-                end=end,
-                currency=futu_currency,
-                refresh_cache=False
-            )
-            
-            df = self._handle_response(ret, data, "获取现金流水")
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境现金流水")
+
+            # get_acc_cash_flow只支持单日查询，需要按日期逐一查询
+            # 富途API要求日期格式为 "yyyy-MM-dd"，例如："2017-06-20"
+
+            def validate_date_format(date_str):
+                """验证并标准化日期格式"""
+                if not date_str:
+                    return ""
+                try:
+                    # 尝试解析日期并重新格式化确保格式正确
+                    import datetime as dt
+                    parsed_date = dt.datetime.strptime(date_str, "%Y-%m-%d")
+                    return parsed_date.strftime("%Y-%m-%d")
+                except ValueError as e:
+                    self.logger.error(f"日期格式错误: {date_str}, 需要格式: YYYY-MM-DD, 错误: {e}")
+                    return None
+
+            if start and end:
+                # 验证日期格式
+                validated_start = validate_date_format(start)
+                validated_end = validate_date_format(end)
+
+                if not validated_start or not validated_end:
+                    return []
+
+                # 如果指定了日期范围，需要逐日查询并合并结果
+                import datetime as dt
+                from datetime import timedelta
+
+                all_data = []
+                current_date = dt.datetime.strptime(validated_start, "%Y-%m-%d")
+                end_date = dt.datetime.strptime(validated_end, "%Y-%m-%d")
+
+                self.logger.info(f"查询日期范围: {validated_start} 到 {validated_end}")
+
+                while current_date <= end_date:
+                    date_str = current_date.strftime("%Y-%m-%d")
+
+                    self.logger.debug(f"查询日期: {date_str}")
+
+                    ret, data = trade_ctx.get_acc_cash_flow(
+                        clearing_date=date_str,
+                        trd_env=futu_env,
+                        acc_id=acc_id,
+                        acc_index=0
+                    )
+
+                    if ret == ft.RET_OK and isinstance(data, pd.DataFrame) and not data.empty:
+                        all_data.append(data)
+                        self.logger.debug(f"找到 {date_str} 的现金流水 {len(data)} 条记录")
+                    elif ret != ft.RET_OK:
+                        self.logger.warning(f"查询日期 {date_str} 失败: {data}")
+
+                    current_date += timedelta(days=1)
+
+                # 合并所有日期的数据
+                if all_data:
+                    combined_data = pd.concat(all_data, ignore_index=True)
+                    df = self._handle_response(ft.RET_OK, combined_data, "获取现金流水")
+                else:
+                    self.logger.warning(f"未找到 {validated_start} 到 {validated_end} 期间的现金流水数据")
+                    return []
+            else:
+                # 单日查询或查询今日
+                if start:
+                    validated_date = validate_date_format(start)
+                    if not validated_date:
+                        return []
+                    clearing_date = validated_date
+                    self.logger.info(f"查询单日现金流水: {clearing_date}")
+                else:
+                    # 查询今日，需要传入今天的日期
+                    import datetime as dt
+                    today = dt.datetime.now().strftime("%Y-%m-%d")
+                    clearing_date = today
+                    self.logger.info(f"查询今日现金流水: {clearing_date}")
+
+                ret, data = trade_ctx.get_acc_cash_flow(
+                    clearing_date=clearing_date,
+                    trd_env=futu_env,
+                    acc_id=acc_id,
+                    acc_index=0
+                )
+
+                df = self._handle_response(ret, data, "获取现金流水")
             
             self.logger.info(f"获取 {trd_env} 环境现金流水成功")
             return df
@@ -182,48 +266,95 @@ class TradeManager:
                 raise
             raise FutuTradeException(-1, f"获取现金流水异常: {str(e)}")
     
-    def get_funds(self, 
-                  trd_env: str = "SIMULATE", 
+    def _get_active_account_id(self, trd_env: str, market: str) -> int:
+        """
+        获取指定交易环境下的可用账户ID
+
+        Args:
+            trd_env: 交易环境 (REAL/SIMULATE)
+            market: 市场代码
+
+        Returns:
+            int: 可用的账户ID，如果没有找到则返回0（使用默认）
+        """
+        try:
+            # 获取账户列表
+            acc_list = self.get_acc_list(market)
+
+            if not acc_list:
+                self.logger.warning(f"未找到 {market} 市场的账户列表")
+                return 0
+
+            # 筛选指定环境和状态为ACTIVE的账户
+            for acc in acc_list:
+                if (acc.get('trd_env') == trd_env.upper() and
+                    acc.get('acc_status') == 'ACTIVE'):
+                    acc_id = acc.get('acc_id')
+                    self.logger.info(f"找到可用的{trd_env}账户: {acc_id}")
+                    return int(acc_id)
+
+            # 如果没有找到ACTIVE账户，尝试使用任何可用的账户（状态不是DISABLED）
+            for acc in acc_list:
+                if (acc.get('trd_env') == trd_env.upper() and
+                    acc.get('acc_status') != 'DISABLED'):
+                    acc_id = acc.get('acc_id')
+                    self.logger.warning(f"使用非ACTIVE状态的{trd_env}账户: {acc_id}, 状态: {acc.get('acc_status')}")
+                    return int(acc_id)
+
+            self.logger.error(f"未找到可用的{trd_env}账户")
+            return 0
+
+        except Exception as e:
+            self.logger.error(f"获取可用账户ID失败: {e}")
+            return 0
+
+    def get_funds(self,
+                  trd_env: str = "SIMULATE",
                   market: str = "HK",
                   currency: str = "HKD") -> Dict:
         """
         获取账户资金信息
-        
+
         Args:
             trd_env: 交易环境 (REAL/SIMULATE)
             market: 市场代码
             currency: 货币类型
-        
+
         Returns:
             Dict: 资金信息
         """
         try:
             trade_ctx = self._get_trade_context(market)
-            
+
             # 转换交易环境
             futu_env = ft.TrdEnv.REAL if trd_env.upper() == "REAL" else ft.TrdEnv.SIMULATE
-            
-            # 转换货币类型  
+
+            # 转换货币类型
             currency_map = {
                 "HKD": ft.Currency.HKD,
-                "USD": ft.Currency.USD,
-                "CNY": ft.Currency.CNY
+                "USD": ft.Currency.USD
+                # CNY is not supported in this version of futu-api
             }
             futu_currency = currency_map.get(currency.upper(), ft.Currency.HKD)
-            
-            ret, data = trade_ctx.get_funds(
+
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境资金信息")
+
+            ret, data = trade_ctx.accinfo_query(
                 trd_env=futu_env,
-                acc_id=0,
+                acc_id=acc_id,
                 acc_index=0,
                 currency=futu_currency,
                 refresh_cache=False
             )
-            
+
             df = self._handle_response(ret, data, "获取账户资金")
-            
+
             self.logger.info(f"获取 {trd_env} 环境账户资金成功")
             return df
-            
+
         except Exception as e:
             if isinstance(e, FutuException):
                 raise
@@ -250,21 +381,26 @@ class TradeManager:
             # 转换货币类型
             currency_map = {
                 "HKD": ft.Currency.HKD,
-                "USD": ft.Currency.USD,
-                "CNY": ft.Currency.CNY
+                "USD": ft.Currency.USD
+                # CNY is not supported in this version of futu-api
             }
             futu_currency = currency_map.get(currency.upper(), ft.Currency.HKD)
             
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境账户信息")
+
             ret, data = trade_ctx.accinfo_query(
-                trd_env=futu_env, 
-                acc_id=0, 
-                acc_index=0, 
+                trd_env=futu_env,
+                acc_id=acc_id,
+                acc_index=0,
                 refresh_cache=False,
                 currency=futu_currency
             )
             
             df = self._handle_response(ret, data, "获取账户信息")
-            
+
             self.logger.info(f"获取 {trd_env} 环境账户信息成功")
             return df
             
@@ -273,49 +409,47 @@ class TradeManager:
                 raise
             raise FutuTradeException(-1, f"获取账户信息异常: {str(e)}")
     
-    def get_position_list(self, 
-                         trd_env: str = "SIMULATE", 
-                         market: str = "HK", 
+    def get_position_list(self,
+                         trd_env: str = "SIMULATE",
+                         market: str = "HK",
                          code: Optional[str] = None,
                          pl_ratio_min: Optional[float] = None,
                          pl_ratio_max: Optional[float] = None,
                          currency: str = "HKD") -> Dict:
         """
         获取持仓列表
-        
+
         Args:
             trd_env: 交易环境 (REAL/SIMULATE)
             market: 市场代码 (HK/US/CN)
             code: 股票代码，为None则获取所有持仓
             pl_ratio_min: 盈亏比例下限
             pl_ratio_max: 盈亏比例上限
-            currency: 货币类型
-        
+            currency: 货币类型 (注意: API不支持货币过滤，返回所有货币持仓)
+
         Returns:
             Dict: 持仓信息
         """
         try:
             trade_ctx = self._get_trade_context(market)
-            
+
             # 转换交易环境
             futu_env = ft.TrdEnv.REAL if trd_env.upper() == "REAL" else ft.TrdEnv.SIMULATE
+
+            # 注意: position_list_query 不支持currency参数，持仓数据会显示各种货币
             
-            # 转换货币类型
-            currency_map = {
-                "HKD": ft.Currency.HKD,
-                "USD": ft.Currency.USD,
-                "CNY": ft.Currency.CNY
-            }
-            futu_currency = currency_map.get(currency.upper(), ft.Currency.HKD)
-            
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境持仓列表")
+
             ret, data = trade_ctx.position_list_query(
                 trd_env=futu_env,
-                acc_id=0,
+                acc_id=acc_id,
                 acc_index=0,
                 code=code,
                 pl_ratio_min=pl_ratio_min,
                 pl_ratio_max=pl_ratio_max,
-                currency=futu_currency,
                 refresh_cache=False
             )
             
@@ -386,11 +520,16 @@ class TradeManager:
             # 转换货币类型
             currency_map = {
                 "HKD": ft.Currency.HKD,
-                "USD": ft.Currency.USD,
-                "CNY": ft.Currency.CNY
+                "USD": ft.Currency.USD
+                # CNY is not supported in this version of futu-api
             }
             futu_currency = currency_map.get(currency.upper(), ft.Currency.HKD)
             
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 在 {trd_env} 环境下单: {code} {trd_side} {qty}@{price}")
+
             ret, data = trade_ctx.place_order(
                 price=price,
                 qty=qty,
@@ -399,7 +538,7 @@ class TradeManager:
                 order_type=futu_order_type,
                 aux_price=aux_price,
                 trd_env=futu_env,
-                acc_id=0,
+                acc_id=acc_id,
                 acc_index=0,
                 currency=futu_currency
             )
@@ -439,13 +578,18 @@ class TradeManager:
             # 转换交易环境
             futu_env = ft.TrdEnv.REAL if trd_env.upper() == "REAL" else ft.TrdEnv.SIMULATE
             
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 在 {trd_env} 环境修改订单: {order_id}")
+
             ret, data = trade_ctx.modify_order(
                 modify_order_op=ft.ModifyOrderOp.NORMAL,
                 order_id=order_id,
                 price=price,
                 qty=qty,
                 trd_env=futu_env,
-                acc_id=0,
+                acc_id=acc_id,
                 acc_index=0
             )
             
@@ -480,11 +624,16 @@ class TradeManager:
             # 转换交易环境
             futu_env = ft.TrdEnv.REAL if trd_env.upper() == "REAL" else ft.TrdEnv.SIMULATE
             
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 在 {trd_env} 环境撤销订单: {order_id}")
+
             ret, data = trade_ctx.modify_order(
                 modify_order_op=ft.ModifyOrderOp.CANCEL,
                 order_id=order_id,
                 trd_env=futu_env,
-                acc_id=0,
+                acc_id=acc_id,
                 acc_index=0
             )
             
@@ -542,6 +691,11 @@ class TradeManager:
                 if order_status.upper() in status_map:
                     futu_status_filter_list = [status_map[order_status.upper()]]
             
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境订单列表")
+
             ret, data = trade_ctx.order_list_query(
                 order_id="",
                 status_filter_list=futu_status_filter_list,
@@ -549,7 +703,7 @@ class TradeManager:
                 start=start,
                 end=end,
                 trd_env=futu_env,
-                acc_id=0,
+                acc_id=acc_id,
                 acc_index=0,
                 refresh_cache=False
             )
@@ -587,12 +741,17 @@ class TradeManager:
             # 转换交易环境
             futu_env = ft.TrdEnv.REAL if trd_env.upper() == "REAL" else ft.TrdEnv.SIMULATE
             
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境成交列表")
+
             ret, data = trade_ctx.deal_list_query(
                 code="",
                 start=start,
                 end=end,
                 trd_env=futu_env,
-                acc_id=0,
+                acc_id=acc_id,
                 acc_index=0,
                 refresh_cache=False
             )
@@ -630,13 +789,18 @@ class TradeManager:
             # 转换交易环境
             futu_env = ft.TrdEnv.REAL if trd_env.upper() == "REAL" else ft.TrdEnv.SIMULATE
             
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境历史订单列表")
+
             ret, data = trade_ctx.history_order_list_query(
                 status_filter_list=[],
                 code="",
                 start=start,
                 end=end,
                 trd_env=futu_env,
-                acc_id=0,
+                acc_id=acc_id,
                 acc_index=0
             )
             
@@ -673,12 +837,17 @@ class TradeManager:
             # 转换交易环境
             futu_env = ft.TrdEnv.REAL if trd_env.upper() == "REAL" else ft.TrdEnv.SIMULATE
             
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境历史成交列表")
+
             ret, data = trade_ctx.history_deal_list_query(
                 code="",
                 start=start,
                 end=end,
                 trd_env=futu_env,
-                acc_id=0,
+                acc_id=acc_id,
                 acc_index=0
             )
             
@@ -728,13 +897,18 @@ class TradeManager:
             # 转换交易方向
             futu_trd_side = ft.TrdSide.BUY if trd_side.upper() == "BUY" else ft.TrdSide.SELL
             
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 查询 {code} 最大交易数量")
+
             ret, data = trade_ctx.acctradinginfo_query(
                 order_type=futu_order_type,
                 code=code,
                 price=price,
                 trd_side=futu_trd_side,
                 trd_env=futu_env,
-                acc_id=0,
+                acc_id=acc_id,
                 acc_index=0
             )
             
@@ -786,6 +960,11 @@ class TradeManager:
             # 转换交易方向
             futu_trd_side = ft.TrdSide.BUY if trd_side.upper() == "BUY" else ft.TrdSide.SELL
             
+            # 动态获取可用的账户ID
+            acc_id = self._get_active_account_id(trd_env, market)
+
+            self.logger.info(f"使用账户ID {acc_id} 查询 {code} 订单费用")
+
             ret, data = trade_ctx.order_fee_query(
                 order_type=futu_order_type,
                 code=code,
@@ -793,7 +972,7 @@ class TradeManager:
                 qty=qty,
                 trd_side=futu_trd_side,
                 trd_env=futu_env,
-                acc_id=0,
+                acc_id=acc_id,
                 acc_index=0
             )
             

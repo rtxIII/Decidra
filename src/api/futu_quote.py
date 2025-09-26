@@ -191,7 +191,7 @@ class QuoteManager:
             ret, data = quote_ctx.get_market_snapshot(codes)
             
             df = self._handle_response(ret, data, "获取市场快照")
-            print(df)
+            
             # 转换为MarketSnapshot对象列表
             snapshot_list = []
             for _, row in df.iterrows():

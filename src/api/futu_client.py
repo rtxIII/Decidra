@@ -169,21 +169,28 @@ class FutuClient:
         
         if market == "HK":
             if self._trade_hk_ctx is None:
-                self._trade_hk_ctx = ft.OpenHKTradeContext(
+                self._trade_hk_ctx = ft.OpenSecTradeContext(
+                    filter_trdmarket=ft.TrdMarket.HK,
                     host=self.config.host,
                     port=self.config.port,
                     is_encrypt=self.config.enable_proto_encrypt,
-                    is_async_connect=False
+                    security_firm=ft.SecurityFirm.FUTUSECURITIES
                 )
             return self._trade_hk_ctx
+            #if self._trade_hk_ctx is None:
+            #    self._trade_hk_ctx = ft.OpenHKTradeContext(
+            #        host=self.config.host,
+            #        port=self.config.port,
+            #        is_encrypt=self.config.enable_proto_encrypt
+            #    )
+            #return self._trade_hk_ctx
         
         elif market == "US":
             if self._trade_us_ctx is None:
                 self._trade_us_ctx = ft.OpenUSTradeContext(
                     host=self.config.host,
                     port=self.config.port,
-                    is_encrypt=self.config.enable_proto_encrypt,
-                    is_async_connect=False
+                    is_encrypt=self.config.enable_proto_encrypt
                 )
             return self._trade_us_ctx
         
@@ -192,8 +199,7 @@ class FutuClient:
                 self._trade_cn_ctx = ft.OpenCNTradeContext(
                     host=self.config.host,
                     port=self.config.port,
-                    is_encrypt=self.config.enable_proto_encrypt,
-                    is_async_connect=False
+                    is_encrypt=self.config.enable_proto_encrypt
                 )
             return self._trade_cn_ctx
         
