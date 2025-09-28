@@ -126,7 +126,7 @@ class UIManager:
         
         self.logger.info("UI组件引用设置完成")
     
-    async def initialize_info_panel(self) -> None:
+    async def initialize_info(self) -> None:
         """初始化InfoPanel"""
         try:
             if self.info_panel:

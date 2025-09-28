@@ -91,6 +91,14 @@ class DataManager:
         self.set_trading_mode(new_mode)
         return new_mode
 
+    def get_trading_mode_constants(self) -> tuple:
+        """获取交易模式常量
+
+        Returns:
+            tuple: (TRADING_MODE_SIMULATION, TRADING_MODE_REAL)
+        """
+        return TRADING_MODE_SIMULATION, TRADING_MODE_REAL
+
     async def initialize_data_managers(self) -> None:
         """初始化数据管理器"""
         try:

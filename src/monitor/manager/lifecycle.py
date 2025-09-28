@@ -70,9 +70,9 @@ class LifecycleManager:
         if data_manager:
             await data_manager.start_data_refresh()
         
-        # 初始化InfoPanel
+        # 初始化info
         if ui_manager:
-            await ui_manager.initialize_info_panel()
+            await ui_manager.initialize_info()
         
         # 初始化AnalysisPanel InfoPanel
         await self.initialize_analysis_info_panel()
