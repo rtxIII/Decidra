@@ -27,7 +27,7 @@ class UIManager:
         # UI组件引用
         self.stock_table: Optional[DataTable] = None
         self.group_table: Optional[DataTable] = None
-        self.group_stocks_content: Optional[Static] = None
+        self.trading_mode_display: Optional[Static] = None
         self.chart_panel: Optional[Static] = None
         self.ai_analysis_panel: Optional[Static] = None
         self.info_panel: Optional = None
@@ -58,7 +58,6 @@ class UIManager:
         # 获取用户分组相关组件
         try:
             self.group_table = self.app.query_one("#group_table", DataTable)
-            self.group_stocks_content = self.app.query_one("#group_stocks_content", Static)
             # 配置分组表格的光标特性
             if self.group_table:
                 self.group_table.cursor_type = "row"
@@ -67,6 +66,13 @@ class UIManager:
             self.logger.debug("分组表格引用设置成功")
         except Exception as e:
             self.logger.error(f"获取分组表格引用失败: {e}")
+
+        # 获取交易模式显示组件
+        try:
+            self.trading_mode_display = self.app.query_one("#trading_mode_display", Static)
+            self.logger.debug("交易模式显示组件引用设置成功")
+        except Exception as e:
+            self.logger.error(f"获取交易模式显示组件引用失败: {e}")
         
         # 获取图表面板（可能在分析界面标签页中）
         try:
@@ -139,6 +145,10 @@ class UIManager:
                 )
                 
                 self.logger.info("InfoPanel 初始化完成")
+
+            # 初始化交易模式显示
+            await self.update_trading_mode_display()
+
         except Exception as e:
             self.logger.error(f"初始化InfoPanel失败: {e}")
     
@@ -304,45 +314,38 @@ class UIManager:
         try:
             if 0 <= self.app_core.current_group_cursor < len(self.app_core.group_data):
                 current_group = self.app_core.group_data[self.app_core.current_group_cursor]
-                if self.group_stocks_content:
-                    # 统一窗口中的信息显示
-                    preview_text = f"[bold cyan]{current_group['name']}[/bold cyan] [dim]({current_group['stock_count']}只股票)[/dim]\n\n"
-                    
-                    # 显示股票列表
-                    stock_list = current_group.get('stock_list', [])
-                    if stock_list and len(stock_list) > 0:
-                        # 使用列表格式显示股票
-                        for stock in stock_list[:12]:  # 显示前12只股票以充分利用空间
-                            if isinstance(stock, dict):
-                                stock_code = stock.get('code', 'Unknown')
-                                stock_name = stock.get('name', '')
-                                if stock_name:
-                                    preview_text += f"• {stock_code} {stock_name[:8]}\n"
-                                else:
-                                    preview_text += f"• {stock_code}\n"
-                            else:
-                                preview_text += f"• {stock}\n"
-                        
-                        if len(stock_list) > 12:
-                            preview_text += f"\n[dim]...还有 {len(stock_list) - 12} 只股票[/dim]\n"
-                    else:
-                        preview_text += "[dim]该分组暂无股票[/dim]\n"
-                    
-                    preview_text += "\n[yellow]Space键选择此分组作为主监控列表[/yellow]"
-                    
-                    self.group_stocks_content.update(preview_text)
-                    self.logger.debug(f"已更新分组信息: {current_group['name']}")
+                self.logger.debug(f"当前选中分组: {current_group['name']}")
             else:
-                # 无效的光标位置
-                if self.group_stocks_content:
-                    self.group_stocks_content.update("[dim]使用 k/l 键选择分组\n使用 Space 键切换监控列表[/dim]")
-                    
+                self.logger.debug("无效的分组光标位置")
+
         except Exception as e:
             self.logger.error(f"更新分组信息失败: {e}")
-            if self.group_stocks_content:
-                self.group_stocks_content.update("[red]信息加载失败[/red]")
 
-    
+    async def update_trading_mode_display(self) -> None:
+        """更新交易模式显示"""
+        try:
+            if self.trading_mode_display:
+                # 从 data_manager 获取当前交易模式
+                data_manager = getattr(self.app_core, 'data_manager', None)
+                if data_manager:
+                    current_mode = data_manager.get_trading_mode()
+                    is_simulation = data_manager.is_simulation_mode()
+
+                    # 根据交易模式设置不同的显示样式
+                    if is_simulation:
+                        display_text = "[bold yellow]🔄 当前交易模式: 模拟交易[/bold yellow]"
+                    else:
+                        display_text = "[bold red]⚠️ 当前交易模式: 真实交易[/bold red]"
+
+                    self.trading_mode_display.update(display_text)
+                    self.logger.debug(f"交易模式显示已更新: {current_mode}")
+                else:
+                    self.trading_mode_display.update("[dim]交易模式: 未知[/dim]")
+                    self.logger.warning("无法获取 data_manager，交易模式显示为未知")
+        except Exception as e:
+            self.logger.error(f"更新交易模式显示失败: {e}")
+
+
     async def add_stock_to_table(self, stock_code: str) -> None:
         """添加股票到表格"""
 

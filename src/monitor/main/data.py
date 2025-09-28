@@ -22,6 +22,11 @@ REALTIME_REFRESH_INTERVAL = 1
 CACHE_EXPIRY_HOURS = 8
 BASICINFO_CACHE_FILE = "stock_basicinfo_cache.json"
 
+# 全局交易模式配置
+TRADING_MODE_SIMULATION = "模拟交易"
+TRADING_MODE_REAL = "真实交易"
+CURRENT_TRADING_MODE = TRADING_MODE_SIMULATION  # 默认为模拟交易模式
+
 
 class DataManager:
     """
@@ -47,7 +52,45 @@ class DataManager:
         self._market_status_cache_ttl = 30.0  # 缓存有效期30秒
         
         self.logger.info("DataManager 初始化完成")
-    
+
+    def get_trading_mode(self) -> str:
+        """获取当前交易模式"""
+        global CURRENT_TRADING_MODE
+        return CURRENT_TRADING_MODE
+
+    def set_trading_mode(self, mode: str) -> bool:
+        """设置交易模式
+
+        Args:
+            mode: 交易模式，必须是 TRADING_MODE_SIMULATION 或 TRADING_MODE_REAL
+
+        Returns:
+            bool: 设置是否成功
+        """
+        global CURRENT_TRADING_MODE
+        if mode in [TRADING_MODE_SIMULATION, TRADING_MODE_REAL]:
+            CURRENT_TRADING_MODE = mode
+            self.logger.info(f"交易模式已切换为: {mode}")
+            return True
+        else:
+            self.logger.error(f"无效的交易模式: {mode}")
+            return False
+
+    def is_simulation_mode(self) -> bool:
+        """判断是否为模拟交易模式"""
+        return self.get_trading_mode() == TRADING_MODE_SIMULATION
+
+    def toggle_trading_mode(self) -> str:
+        """切换交易模式
+
+        Returns:
+            str: 切换后的交易模式
+        """
+        current_mode = self.get_trading_mode()
+        new_mode = TRADING_MODE_REAL if current_mode == TRADING_MODE_SIMULATION else TRADING_MODE_SIMULATION
+        self.set_trading_mode(new_mode)
+        return new_mode
+
     async def initialize_data_managers(self) -> None:
         """初始化数据管理器"""
         try:

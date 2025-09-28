@@ -27,7 +27,7 @@ STOCK_COLUMNS = {
 
 
 class StockListPanel(Container):
-    """股票列表面板 - 左侧70%区域"""
+    """股票列表面板 - 左侧50%区域"""
     
     DEFAULT_CSS = """
     StockListPanel {
@@ -98,7 +98,7 @@ class StockListPanel(Container):
 
 
 class UserGroupPanel(Container):
-    """用户分组面板 - 右侧30%区域（完全合并的单一窗口）"""
+    """用户分组面板 - 右侧50%区域（完全合并的单一窗口）"""
     
     DEFAULT_CSS = """
     UserGroupPanel {
@@ -106,15 +106,16 @@ class UserGroupPanel(Container):
         border-title-color: $text;
         border-title-background: $surface;
         padding: 1;
-        layout: vertical;
+        layout: horizontal;
     }
     
     UserGroupPanel .group-table-area {
-        height: 50%;
+        width: 30%;
+        height: 1fr;
         background: $surface;
         overflow-y: auto;
         padding: 1;
-        margin-bottom: 1;
+        margin-right: 1;
     }
 
     UserGroupPanel .group-table-area DataTable {
@@ -123,7 +124,8 @@ class UserGroupPanel(Container):
     }
 
     UserGroupPanel .position-info {
-        height: 50%;
+        width: 70%;
+        height: 1fr;
         background: $surface;
         border: solid $accent;
         border-title-color: $text;
@@ -155,6 +157,12 @@ class UserGroupPanel(Container):
             )
             group_table.add_columns("分组名称", "股票数量", "类型")
             yield group_table
+
+            # 交易模式显示
+            yield Static(
+                "[bold yellow]🔄 当前交易模式: 模拟交易[/bold yellow]",
+                id="trading_mode_display"
+            )
 
         # 持仓信息区域（50%空间，位于上方）
         with Container(classes="position-info"):
@@ -899,7 +907,7 @@ class MainLayoutTab(Container):
     MainLayoutTab {
         layout: grid;
         grid-size: 2 2;
-        grid-columns: 7fr 3fr;
+        grid-columns: 5fr 5fr;
         grid-rows: 9fr 11fr;
         grid-gutter: 1;
         height: 1fr;
@@ -1167,7 +1175,7 @@ class ResponsiveLayout(Container):
     
     /* 大屏幕布局 (默认) */
     ResponsiveLayout.-large MainLayoutTab {
-        grid-columns: 7fr 3fr;
+        grid-columns: 5fr 5fr;
     }
     """
     
