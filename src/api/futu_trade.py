@@ -562,15 +562,36 @@ class TradeManager:
             Dict: 修改结果
         """
         try:
+            # 参数验证
+            if price is None and qty is None:
+                raise FutuTradeException(-1, "修改订单至少需要指定价格或数量中的一个")
+
             trade_ctx = self._get_trade_context(market)
-            
+
             # 转换交易环境
             futu_env = ft.TrdEnv.REAL if trd_env.upper() == "REAL" else ft.TrdEnv.SIMULATE
-            
+
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
             self.logger.info(f"使用账户ID {acc_id} 在 {trd_env} 环境修改订单: {order_id}")
+
+            # 如果只指定了其中一个参数，需要先获取原订单信息
+            if price is None or qty is None:
+                # 获取原订单信息以补全缺失参数
+                order_list = trade_ctx.order_list_query(
+                    order_id=order_id,
+                    trd_env=futu_env,
+                    acc_id=acc_id,
+                    acc_index=0
+                )[1]
+
+                if order_list.empty:
+                    raise FutuTradeException(-1, f"找不到订单 {order_id}")
+
+                original_order = order_list.iloc[0]
+                price = price if price is not None else float(original_order['price'])
+                qty = qty if qty is not None else int(original_order['qty'])
 
             ret, data = trade_ctx.modify_order(
                 modify_order_op=ft.ModifyOrderOp.NORMAL,
@@ -621,6 +642,8 @@ class TradeManager:
             ret, data = trade_ctx.modify_order(
                 modify_order_op=ft.ModifyOrderOp.CANCEL,
                 order_id=order_id,
+                price=0,  # 撤销订单时价格和数量参数必需但不会被使用
+                qty=0,    # 撤销订单时价格和数量参数必需但不会被使用
                 trd_env=futu_env,
                 acc_id=acc_id,
                 acc_index=0

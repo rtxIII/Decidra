@@ -130,16 +130,25 @@ class FutuTrade(FutuModuleBase):
 
             result = self.client.trade.get_funds(trd_env, market, currency)
 
-            if isinstance(result, pd.DataFrame) and not result.empty:
-                return result.iloc[0].to_dict()
-            elif isinstance(result, dict) and result:
-                return result
+            if isinstance(result, (pd.DataFrame, dict)):
+                # 处理DataFrame返回
+                if isinstance(result, pd.DataFrame) and not result.empty:
+                    funds_info = result.iloc[0].to_dict()
+                # 处理dict返回
+                elif isinstance(result, dict):
+                    funds_info = result.copy()
+                else:
+                    return {"success": False, "message": "No funds data available"}
 
-            return {}
+                funds_info['success'] = True
+                funds_info['timestamp'] = datetime.now().isoformat()
+                return funds_info
+
+            return {"success": False, "message": "No funds data available"}
 
         except Exception as e:
             self.logger.error(f"Get funds info error: {e}")
-            return {}
+            return {"success": False, "message": str(e)}
     
     def get_cash_flow(self, trd_env: str = None, market: str = None, 
                      start: str = None, end: str = None, currency: str = None) -> List[Dict]:
@@ -285,14 +294,22 @@ class FutuTrade(FutuModuleBase):
             
             result = self.client.trade.cancel_order(order_id, trd_env, market)
             
-            if isinstance(result, pd.DataFrame) and not result.empty:
-                cancel_info = result.iloc[0].to_dict()
+            if isinstance(result, (pd.DataFrame, dict)):
+                # 处理DataFrame返回
+                if isinstance(result, pd.DataFrame) and not result.empty:
+                    cancel_info = result.iloc[0].to_dict()
+                # 处理dict返回
+                elif isinstance(result, dict):
+                    cancel_info = result.copy()
+                else:
+                    return {"success": False, "message": "Order cancellation failed"}
+
                 cancel_info['success'] = True
                 cancel_info['timestamp'] = datetime.now().isoformat()
-                
+
                 self.logger.info(f"Order cancelled successfully: {order_id}")
                 return cancel_info
-            
+
             return {"success": False, "message": "Order cancellation failed"}
             
         except Exception as e:
@@ -308,14 +325,22 @@ class FutuTrade(FutuModuleBase):
             
             result = self.client.trade.modify_order(order_id, price, qty, trd_env, market)
             
-            if isinstance(result, pd.DataFrame) and not result.empty:
-                modify_info = result.iloc[0].to_dict()
+            if isinstance(result, (pd.DataFrame, dict)):
+                # 处理DataFrame返回
+                if isinstance(result, pd.DataFrame) and not result.empty:
+                    modify_info = result.iloc[0].to_dict()
+                # 处理dict返回
+                elif isinstance(result, dict):
+                    modify_info = result.copy()
+                else:
+                    return {"success": False, "message": "Order modification failed"}
+
                 modify_info['success'] = True
                 modify_info['timestamp'] = datetime.now().isoformat()
-                
+
                 self.logger.info(f"Order modified successfully: {order_id}")
                 return modify_info
-            
+
             return {"success": False, "message": "Order modification failed"}
             
         except Exception as e:
