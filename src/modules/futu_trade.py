@@ -365,14 +365,13 @@ class FutuTrade(FutuModuleBase):
             self.logger.error(f"Get order list error: {e}")
             return []
     
-    def get_deal_list(self, trd_env: str = None, market: str = None, 
-                     start: str = None, end: str = None) -> List[Dict]:
+    def get_deal_list(self, trd_env: str = None, market: str = None) -> List[Dict]:
         """获取成交列表"""
         try:
             trd_env = trd_env or self.default_trd_env
             market = market or self.default_market
             
-            result = self.client.trade.get_deal_list(trd_env, market, start, end)
+            result = self.client.trade.get_deal_list(trd_env, market)
             
             if isinstance(result, pd.DataFrame):
                 self.deal_history = result.to_dict('records')

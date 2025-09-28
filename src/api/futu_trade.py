@@ -732,18 +732,14 @@ class TradeManager:
     
     def get_deal_list(self,
                      trd_env: str = "SIMULATE",
-                     market: str = "HK",
-                     start: Optional[str] = None,
-                     end: Optional[str] = None) -> Dict:
+                     market: str = "HK") -> Dict:
         """
         获取成交列表
-        
+
         Args:
             trd_env: 交易环境
             market: 市场代码
-            start: 开始日期 (YYYY-MM-DD)
-            end: 结束日期 (YYYY-MM-DD)
-        
+
         Returns:
             Dict: 成交列表
         """
@@ -760,8 +756,6 @@ class TradeManager:
 
             ret, data = trade_ctx.deal_list_query(
                 code="",
-                start=start,
-                end=end,
                 trd_env=futu_env,
                 acc_id=acc_id,
                 acc_index=0,
