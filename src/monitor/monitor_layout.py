@@ -131,6 +131,24 @@ class UserGroupPanel(Container):
         border-title-color: $text;
         border-title-background: $surface;
         padding: 1;
+        layout: horizontal;
+    }
+
+    UserGroupPanel .position-content-left {
+        width: 20%;
+        height: 1fr;
+        padding: 1;
+        margin-right: 1;
+    }
+
+    UserGroupPanel .orders-table-right {
+        width: 80%;
+        height: 1fr;
+        padding: 1;
+    }
+
+    UserGroupPanel .orders-table-right DataTable {
+        height: 1fr;
     }
     
     UserGroupPanel DataTable {
@@ -164,18 +182,36 @@ class UserGroupPanel(Container):
                 id="trading_mode_display"
             )
 
-        # 持仓信息区域（50%空间，位于上方）
+        # 持仓订单信息区域（70%空间）
         with Container(classes="position-info"):
-            yield Static("持仓订单信息", id="position_title")
-            yield Static(
-                "[bold white]持仓情况:[/bold white]\n" +
-                "数量: --\n" +
-                "成本价: --\n" +
-                "盈亏: --\n\n" +
-                "[bold white]挂单情况:[/bold white]\n" +
-                "无挂单",
-                id="position_content"
-            )
+            # 左侧：持仓信息显示（50%宽度）
+            with Container(classes="position-content-left"):
+                yield Static("[bold cyan]持仓信息[/bold cyan]", id="position_title")
+                yield Static(
+                    "[bold white]持仓情况:[/bold white]\n" +
+                    "数量: --\n" +
+                    "成本价: --\n" +
+                    "盈亏: --\n\n" +
+                    "[bold white]风险控制:[/bold white]\n" +
+                    "止损价: --\n" +
+                    "止盈价: --",
+                    id="position_content"
+                )
+
+            # 右侧：订单信息表格（50%宽度）
+            with Container(classes="orders-table-right"):
+                yield Static("[bold cyan]订单信息[/bold cyan]", id="orders_title")
+                # 创建订单信息表格
+                orders_table = DataTable(
+                    show_cursor=True,
+                    zebra_stripes=True,
+                    cursor_type="row",
+                    show_header=True,
+                    show_row_labels=False,
+                    id="orders_table"
+                )
+                orders_table.add_columns("订单号", "股票", "类型", "状态", "数量")
+                yield orders_table
 
 
 
