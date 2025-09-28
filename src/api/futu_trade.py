@@ -471,8 +471,7 @@ class TradeManager:
                    trd_side: str = "BUY",
                    aux_price: Optional[float] = None,
                    trd_env: str = "SIMULATE",
-                   market: str = "HK",
-                   currency: str = "HKD") -> Dict:
+                   market: str = "HK") -> Dict:
         """
         下单
 
@@ -485,7 +484,6 @@ class TradeManager:
             aux_price: 辅助价格，用于止损止盈订单的触发价格
             trd_env: 交易环境 (REAL/SIMULATE)
             market: 市场代码
-            currency: 货币类型
 
         Returns:
             Dict: 下单结果
@@ -517,14 +515,6 @@ class TradeManager:
             # 转换交易方向
             futu_trd_side = ft.TrdSide.BUY if trd_side.upper() == "BUY" else ft.TrdSide.SELL
             
-            # 转换货币类型
-            currency_map = {
-                "HKD": ft.Currency.HKD,
-                "USD": ft.Currency.USD
-                # CNY is not supported in this version of futu-api
-            }
-            futu_currency = currency_map.get(currency.upper(), ft.Currency.HKD)
-            
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
@@ -539,8 +529,7 @@ class TradeManager:
                 aux_price=aux_price,
                 trd_env=futu_env,
                 acc_id=acc_id,
-                acc_index=0,
-                currency=futu_currency
+                acc_index=0
             )
             
             result = self._handle_response(ret, data, f"下单 {code}")

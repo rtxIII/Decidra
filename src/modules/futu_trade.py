@@ -230,20 +230,18 @@ class FutuTrade(FutuModuleBase):
                    aux_price: Optional[float] = None,
                    trd_env: str = "SIMULATE",
                    market: str = None,
-                   currency: str = None,
                    enable_risk_check: bool = True) -> Dict:
         """下单"""
         try:
             trd_env = trd_env or self.default_trd_env
             market = market or self.default_market
-            currency = currency or self.default_currency
             
             # 风险检查
             if enable_risk_check and not self._risk_check_order(code, price, qty, trd_side, trd_env, market):
                 return {"success": False, "message": "Risk check failed"}
             
             # 检查交易解锁状态
-            if not self.is_trade_unlocked:
+            if not self.is_trade_unlocked and trd_env != "SIMULATE":
                 if not self.unlock_trading():
                     return {"success": False, "message": "Trading not unlocked"}
             
@@ -251,20 +249,28 @@ class FutuTrade(FutuModuleBase):
                 code=code, price=price, qty=qty,
                 order_type=order_type, trd_side=trd_side,
                 aux_price=aux_price,
-                trd_env=trd_env, market=market, currency=currency
+                trd_env=trd_env, market=market
             )
             
-            if isinstance(result, pd.DataFrame) and not result.empty:
-                order_info = result.iloc[0].to_dict()
+            if isinstance(result, (pd.DataFrame, dict)):
+                # 处理DataFrame返回
+                if isinstance(result, pd.DataFrame) and not result.empty:
+                    order_info = result.iloc[0].to_dict()
+                # 处理dict返回
+                elif isinstance(result, dict):
+                    order_info = result.copy()
+                else:
+                    return {"success": False, "message": "Order placement failed"}
+
                 order_info['success'] = True
                 order_info['timestamp'] = datetime.now().isoformat()
-                
+
                 # 记录订单历史
                 self.order_history.append(order_info)
-                
+
                 self.logger.info(f"Order placed successfully: {code} {trd_side} {qty}@{price}")
                 return order_info
-            
+
             return {"success": False, "message": "Order placement failed"}
             
         except Exception as e:
