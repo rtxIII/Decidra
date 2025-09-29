@@ -9,7 +9,7 @@ import json
 import os
 import time
 from datetime import datetime
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any
 
 from base.monitor import StockData, MarketStatus, ConnectionStatus
 from modules.futu_market import FutuMarket
@@ -19,6 +19,7 @@ from utils.global_vars import PATH_DATA
 
 SNAPSHOT_REFRESH_INTERVAL = 300
 REALTIME_REFRESH_INTERVAL = 1
+ORDER_REFRESH_INTERVAL = 5  # 订单数据刷新间隔（秒）
 CACHE_EXPIRY_HOURS = 8
 BASICINFO_CACHE_FILE = "stock_basicinfo_cache.json"
 
@@ -45,6 +46,7 @@ class DataManager:
         # 定时器
         self.refresh_timer: Optional[asyncio.Task] = None
         self.market_status_poller: Optional[asyncio.Task] = None
+        self.user_refresh_timer: Optional[asyncio.Task] = None
         
         # 全局市场状态缓存
         self._global_market_state_cache = None
@@ -428,6 +430,9 @@ class DataManager:
             
             # 更新状态显示
             await self.app_core.update_status_display()
+
+            # 启动用户数据刷新
+            await self.start_user_refresh()
             
         except Exception as e:
             self.logger.error(f"启动数据刷新失败: {e}")
@@ -751,7 +756,17 @@ class DataManager:
                     pass
                 self.market_status_poller = None
                 self.logger.info("市场状态轮询任务已停止")
-            
+
+            # 停止订单刷新定时器
+            if self.user_refresh_timer:
+                self.user_refresh_timer.cancel()
+                try:
+                    await self.user_refresh_timer
+                except asyncio.CancelledError:
+                    pass
+                self.user_refresh_timer = None
+                self.logger.info("订单数据定时刷新任务已停止")
+
             # 清理缓存
             self._global_market_state_cache = None
             self._market_status_cache_timestamp = 0.0
@@ -759,10 +774,178 @@ class DataManager:
 
                 
             self.logger.info("DataManager 清理完成")
-            
+
         except Exception as e:
             self.logger.error(f"DataManager 清理失败: {e}")
-    
+
+    async def refresh_order_data(self) -> None:
+        """刷新订单数据并更新UI"""
+        try:
+            self.logger.info("开始刷新订单数据")
+
+            # 先通过 GroupManager 加载订单数据到 app_core.order_data
+            group_manager = getattr(self.app_core.app, 'group_manager', None)
+            if group_manager:
+                await group_manager.load_user_orders()
+            else:
+                self.logger.warning("GroupManager 未初始化，无法刷新订单数据")
+                return
+
+            # 然后更新UI表格
+            await self.update_orders_table()
+
+            self.logger.info(f"订单数据刷新完成，共 {len(self.app_core.order_data)} 条订单")
+
+        except Exception as e:
+            self.logger.error(f"刷新订单数据失败: {e}")
+
+    async def update_orders_table(self) -> None:
+        """从 app_core.order_data 更新订单表格UI"""
+        try:
+            # 引用UI管理器
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if not ui_manager or not ui_manager.orders_table:
+                self.logger.warning("orders_table 未初始化，跳过更新订单表格")
+                return
+
+            # 清空现有表格数据
+            ui_manager.orders_table.clear()
+
+            # 从 app_core.order_data 更新表格
+            for order in self.app_core.order_data:
+                try:
+                    # 提取订单信息
+                    order_id = order.get('order_id', '')
+                    stock_code = order.get('code', '')
+                    trd_side = order.get('trd_side', '')
+                    order_status = order.get('order_status', '')
+                    qty = str(order.get('qty', '0'))
+
+                    # 转换交易方向并设置颜色
+                    if trd_side == 'BUY':
+                        order_type = "买入"
+                        type_display = f"[green]{order_type}[/green]"
+                    elif trd_side == 'SELL':
+                        order_type = "卖出"
+                        type_display = f"[red]{order_type}[/red]"
+                    else:
+                        order_type = trd_side
+                        type_display = order_type
+
+                    # 转换订单状态并设置颜色
+                    status_map = {
+                        'WAITING_SUBMIT': '待提交',
+                        'SUBMITTING': '提交中',
+                        'SUBMITTED': '已提交',
+                        'FILLED_PART': '部分成交',
+                        'FILLED_ALL': '全部成交',
+                        'CANCELLED_PART': '部分撤销',
+                        'CANCELLED_ALL': '全部撤销',
+                        'FAILED': '失败',
+                        'DISABLED': '已失效',
+                        'ERROR': '错误'
+                    }
+
+                    status_display_text = status_map.get(order_status, order_status)
+
+                    # 根据状态设置不同颜色
+                    if order_status in ['FILLED_ALL', 'FILLED_PART']:
+                        status_display = f"[green]{status_display_text}[/green]"
+                    elif order_status in ['SUBMITTED', 'WAITING_SUBMIT', 'SUBMITTING']:
+                        status_display = f"[yellow]{status_display_text}[/yellow]"
+                    elif order_status in ['CANCELLED_PART', 'CANCELLED_ALL', 'FAILED', 'DISABLED', 'ERROR']:
+                        status_display = f"[red]{status_display_text}[/red]"
+                    else:
+                        status_display = status_display_text
+
+                    # 添加到表格
+                    ui_manager.orders_table.add_row(
+                        order_id[-8:] if len(order_id) > 8 else order_id,  # 显示订单号后8位
+                        stock_code,
+                        type_display,
+                        status_display,
+                        qty,
+                        key=order_id
+                    )
+
+                except Exception as e:
+                    self.logger.error(f"处理订单UI显示失败: {e}, 订单数据: {order}")
+                    continue
+
+            self.logger.debug(f"订单表格UI更新完成，共显示 {len(self.app_core.order_data)} 条订单")
+
+        except Exception as e:
+            self.logger.error(f"更新订单表格UI失败: {e}")
+
+    async def start_user_refresh(self) -> None:
+        """启动订单数据定时刷新（不依赖市场状态）"""
+        try:
+            # 检查是否已有订单刷新任务在运行
+            if self.user_refresh_timer and not self.user_refresh_timer.done():
+                self.logger.info("订单数据刷新任务已在运行，跳过重复启动")
+                return
+
+            # 取消现有任务（如果存在）
+            if self.user_refresh_timer:
+                self.user_refresh_timer.cancel()
+                try:
+                    await self.user_refresh_timer
+                except asyncio.CancelledError:
+                    pass
+
+            # 创建定时刷新任务
+            self.user_refresh_timer = asyncio.create_task(self.order_refresh_loop())
+            self.logger.info(f"订单数据定时刷新启动，刷新间隔: {ORDER_REFRESH_INTERVAL}秒")
+
+            # 向信息面板显示订单刷新启动信息
+            if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
+                await self.app_core.app.ui_manager.info_panel.log_info("订单数据定时刷新已启动", "系统")
+
+        except Exception as e:
+            self.logger.error(f"启动订单数据定时刷新失败: {e}")
+
+    async def order_refresh_loop(self) -> None:
+        """订单数据定时刷新循环"""
+        try:
+            while True:
+                try:
+                    # 刷新订单数据
+                    await self.refresh_order_data()
+                    self.logger.debug(f"订单数据定时刷新完成，下次刷新: {ORDER_REFRESH_INTERVAL}秒后")
+
+                    # 等待下一次刷新
+                    await asyncio.sleep(ORDER_REFRESH_INTERVAL)
+
+                except asyncio.CancelledError:
+                    self.logger.info("订单数据定时刷新任务被取消")
+                    break
+                except Exception as e:
+                    self.logger.error(f"订单数据定时刷新错误: {e}")
+                    # 发生错误时等待一段时间再重试
+                    await asyncio.sleep(ORDER_REFRESH_INTERVAL)
+
+        except Exception as e:
+            self.logger.error(f"订单数据刷新循环异常退出: {e}")
+
+    async def stop_user_refresh(self) -> None:
+        """停止订单数据定时刷新"""
+        try:
+            if self.user_refresh_timer:
+                self.user_refresh_timer.cancel()
+                try:
+                    await self.user_refresh_timer
+                except asyncio.CancelledError:
+                    pass
+                self.user_refresh_timer = None
+                self.logger.info("订单数据定时刷新已停止")
+
+                # 向信息面板显示订单刷新停止信息
+                if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
+                    await self.app_core.app.ui_manager.info_panel.log_info("订单数据定时刷新已停止", "系统")
+
+        except Exception as e:
+            self.logger.error(f"停止订单数据定时刷新失败: {e}")
+
     def cleanup_futu_market(self) -> None:
         """清理富途市场连接"""
         try:

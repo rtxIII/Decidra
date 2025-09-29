@@ -446,7 +446,79 @@ class GroupManager:
                 'pl_ratio': 0,
                 'currency': 'HKD'
             })
-    
+
+    async def load_user_orders(self) -> None:
+        """加载用户订单数据到 app_core.order_data"""
+        self.logger.info("开始加载用户订单数据")
+
+        try:
+            # 引用app中的futu_trade实例
+            futu_trade = getattr(self.app_core.app, 'futu_trade', None)
+            if not futu_trade:
+                self.logger.error("FutuTrade实例未找到")
+                return
+
+            # 在线程池中执行同步的富途API调用
+            loop = asyncio.get_event_loop()
+            user_orders = await loop.run_in_executor(
+                None,
+                futu_trade.get_order_list
+            )
+
+            # 清空现有订单数据
+            self.app_core.order_data.clear()
+
+            # 处理订单数据并保存到 app_core.order_data
+            if user_orders:
+                for order in user_orders:
+                    try:
+                        if isinstance(order, dict):
+                            # 标准化订单数据结构
+                            order_data = {
+                                'order_id': str(order.get('order_id', '')),
+                                'code': order.get('code', ''),
+                                'name': order.get('name', ''),
+                                'trd_side': order.get('trd_side', ''),
+                                'order_status': order.get('order_status', ''),
+                                'qty': order.get('qty', 0),
+                                'price': order.get('price', 0),
+                                'dealt_qty': order.get('dealt_qty', 0),
+                                'dealt_avg_price': order.get('dealt_avg_price', 0),
+                                'create_time': order.get('create_time', ''),
+                                'updated_time': order.get('updated_time', ''),
+                                'currency': order.get('currency', ''),
+                                'order_type': order.get('order_type', '')
+                            }
+                            self.app_core.order_data.append(order_data)
+
+                    except Exception as e:
+                        self.logger.error(f"处理订单数据失败: {e}, 订单数据: {order}")
+                        continue
+
+                self.logger.info(f"加载用户订单完成，共 {len(user_orders)} 条订单保存到 app_core.order_data")
+            else:
+                self.logger.info("当前无订单数据")
+
+        except Exception as e:
+            self.logger.error(f"加载用户订单失败: {e}")
+            # 添加错误提示数据
+            self.app_core.order_data.clear()
+            self.app_core.order_data.append({
+                'order_id': 'error',
+                'code': '获取订单数据失败',
+                'name': '请检查富途连接',
+                'trd_side': 'ERROR',
+                'order_status': 'ERROR',
+                'qty': 0,
+                'price': 0,
+                'dealt_qty': 0,
+                'dealt_avg_price': 0,
+                'create_time': '',
+                'updated_time': '',
+                'currency': 'CNY',
+                'order_type': 'ERROR'
+            })
+
     async def refresh_user_positions(self) -> None:
         """刷新用户持仓数据"""
         try:

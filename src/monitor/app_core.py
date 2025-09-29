@@ -55,7 +55,11 @@ class AppCore:
         # 持仓表相关状态
         self.position_data: List[Dict[str, Any]] = []
         self.position_cursor_visible: bool = True
-        
+
+        # 订单表相关状态
+        self.order_data: List[Dict[str, Any]] = []
+        self.order_cursor_visible: bool = True
+
         # 工作任务管理
         self._current_workers: set = set()
         self._worker_lock = asyncio.Lock()

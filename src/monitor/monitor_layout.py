@@ -1074,7 +1074,7 @@ class MonitorLayout(Container):
         Binding("q", "quit", "退出", priority=True),
         Binding("r", "refresh", "刷新", priority=True),
         Binding("h", "help", "帮助"),
-        Binding("a", "add_stock", "添加股票"),
+        Binding("n", "add_stock", "添加股票"),
         Binding("m", "delete_stock", "删除股票"),
         Binding("escape", "go_back", "返回"),
         Binding("tab", "switch_tab", "切换标签"),

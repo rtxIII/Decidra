@@ -5,10 +5,10 @@ UIManager - UI组件和界面状态管理模块
 """
 
 import asyncio
-from typing import Optional
+from typing import Optional, Any
 
 from textual.widgets import DataTable, Static
-from base.monitor import StockData
+# StockData导入已移除，未在此文件中使用
 from utils.logger import get_logger
 
 
@@ -31,7 +31,7 @@ class UIManager:
         self.trading_mode_display: Optional[Static] = None
         self.chart_panel: Optional[Static] = None
         self.ai_analysis_panel: Optional[Static] = None
-        self.info_panel: Optional = None
+        self.info_panel: Optional[Any] = None
         
         # 缓存上次的单元格值，用于检测变化
         self.last_cell_values: dict = {}
@@ -363,52 +363,26 @@ class UIManager:
             self.logger.error(f"更新交易模式显示失败: {e}")
 
     async def update_orders_table(self) -> None:
-        """更新订单表格"""
-        if not self.orders_table:
-            self.logger.warning("订单表格引用为空，无法更新")
-            return
-
+        """更新订单表格 - 委托给 DataManager 处理"""
         try:
-            # 清空现有数据
-            self.orders_table.clear()
+            self.logger.info("开始更新订单表格")
 
-            # 获取订单数据（这里先使用模拟数据，实际应该从数据管理器获取）
-            # TODO: 从实际的数据管理器获取订单数据
-            sample_orders = [
-                ("001", "HK.00700", "买入", "已成交", "100"),
-                ("002", "US.AAPL", "卖出", "待成交", "50"),
-                ("003", "SH.600000", "买入", "已撤销", "200"),
-            ]
-
-            # 添加订单行
-            for order_id, stock_code, order_type, status, quantity in sample_orders:
-                # 根据状态设置不同颜色
-                if status == "已成交":
-                    status_display = f"[green]{status}[/green]"
-                elif status == "待成交":
-                    status_display = f"[yellow]{status}[/yellow]"
-                else:
-                    status_display = f"[red]{status}[/red]"
-
-                # 根据类型设置颜色
-                if order_type == "买入":
-                    type_display = f"[green]{order_type}[/green]"
-                else:
-                    type_display = f"[red]{order_type}[/red]"
-
-                self.orders_table.add_row(
-                    order_id,
-                    stock_code,
-                    type_display,
-                    status_display,
-                    quantity,
-                    key=order_id
-                )
-
-            self.logger.debug(f"订单表格更新完成，共 {len(sample_orders)} 条订单")
-
+            # 获取数据管理器
+            data_manager = getattr(self.app_core.app, 'data_manager', None)
+            if data_manager:
+                self.logger.debug("找到 DataManager，调用 refresh_order_data")
+                await data_manager.refresh_order_data()
+                self.logger.info("订单表格更新完成")
+            else:
+                self.logger.warning("DataManager 未初始化，无法更新订单表格")
+                # 添加调试信息
+                self.logger.debug(f"app_core: {self.app_core}")
+                self.logger.debug(f"app_core.app: {getattr(self.app_core, 'app', None)}")
+                self.logger.debug(f"可用属性: {dir(self.app_core.app) if hasattr(self.app_core, 'app') else 'No app'}")
         except Exception as e:
             self.logger.error(f"更新订单表格失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
 
     async def load_default_orders(self) -> None:
         """加载默认订单到表格"""

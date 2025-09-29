@@ -265,11 +265,27 @@ class LifecycleManager:
                         loop.run_in_executor(None, data_manager.futu_market.client.disconnect),
                         timeout=1.5
                     )
-                    self.logger.info("富途连接关闭完成")
+                    self.logger.info("富途市场连接关闭完成")
             except asyncio.TimeoutError:
-                self.logger.warning("富途连接关闭超时")
+                self.logger.warning("富途市场连接关闭超时")
             except Exception as e:
-                self.logger.warning(f"富途连接关闭失败: {e}")
+                self.logger.warning(f"富途市场连接关闭失败: {e}")
+
+            # 5. 关闭富途交易连接
+            try:
+                futu_trade = getattr(self.app_core.app, 'futu_trade', None)
+                if futu_trade and hasattr(futu_trade, 'client') and futu_trade.client:
+                    # 在线程池中执行同步的关闭操作
+                    loop = asyncio.get_event_loop()
+                    await asyncio.wait_for(
+                        loop.run_in_executor(None, futu_trade.client.disconnect),
+                        timeout=1.5
+                    )
+                    self.logger.info("富途交易连接关闭完成")
+            except asyncio.TimeoutError:
+                self.logger.warning("富途交易连接关闭超时")
+            except Exception as e:
+                self.logger.warning(f"富途交易连接关闭失败: {e}")
             
             # 5. 保存配置（最低优先级）
             try:

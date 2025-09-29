@@ -18,6 +18,7 @@ from textual.screen import Screen
 
 # 项目内部导入
 from modules.futu_market import FutuMarket
+from modules.futu_trade import FutuTrade
 from utils.logger import get_logger
 
 # 导入新的UI布局组件
@@ -108,6 +109,11 @@ class MonitorApp(App):
         self.futu_market = FutuMarket()
         # 标记为共享实例，防止其他组件重复关闭
         self.futu_market._is_shared_instance = True
+
+        # 创建共享的富途交易实例
+        self.futu_trade = FutuTrade()
+        # 标记为共享实例，防止其他组件重复关闭
+        self.futu_trade._is_shared_instance = True
         
         # 初始化应用核心
         self.app_core = AppCore(self)
