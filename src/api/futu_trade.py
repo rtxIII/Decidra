@@ -726,6 +726,7 @@ class TradeManager:
             return df
             
         except Exception as e:
+            self.logger.error(f"获取订单列表异常: {str(e)}")
             if isinstance(e, FutuException):
                 raise
             raise FutuTradeException(-1, f"获取订单列表异常: {str(e)}")
@@ -768,6 +769,7 @@ class TradeManager:
             return df
             
         except Exception as e:
+            self.logger.error(f"获取成交列表异常: {str(e)}")
             if isinstance(e, FutuException):
                 raise
             raise FutuTradeException(-1, f"获取成交列表异常: {str(e)}")
@@ -816,6 +818,7 @@ class TradeManager:
             return df
             
         except Exception as e:
+            self.logger.error(f"获取历史订单列表异常: {str(e)}")
             if isinstance(e, FutuException):
                 raise
             raise FutuTradeException(-1, f"获取历史订单列表异常: {str(e)}")
@@ -863,6 +866,7 @@ class TradeManager:
             return df
             
         except Exception as e:
+            self.logger.error(f"获取历史成交列表异常: {str(e)}")
             if isinstance(e, FutuException):
                 raise
             raise FutuTradeException(-1, f"获取历史成交列表异常: {str(e)}")
@@ -924,6 +928,7 @@ class TradeManager:
             return df
             
         except Exception as e:
+            self.logger.error(f"获取最大交易数量异常: {str(e)}")
             if isinstance(e, FutuException):
                 raise
             raise FutuTradeException(-1, f"获取最大交易数量异常: {str(e)}")
@@ -988,6 +993,7 @@ class TradeManager:
             return df
             
         except Exception as e:
+            self.logger.error(f"获取订单费用异常: {str(e)}")
             if isinstance(e, FutuException):
                 raise
             raise FutuTradeException(-1, f"获取订单费用异常: {str(e)}")
