@@ -783,12 +783,12 @@ class DataManager:
         try:
             self.logger.info("开始刷新订单数据")
 
-            # 先通过 GroupManager 加载订单数据到 app_core.order_data
+            # 先通过 UserDataManager 加载订单数据到 app_core.order_data
             group_manager = getattr(self.app_core.app, 'group_manager', None)
             if group_manager:
                 await group_manager.load_user_orders()
             else:
-                self.logger.warning("GroupManager 未初始化，无法刷新订单数据")
+                self.logger.warning("UserDataManager 未初始化，无法刷新订单数据")
                 return
 
             # 然后委托给 UIManager 更新表格UI

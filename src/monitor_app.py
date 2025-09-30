@@ -32,7 +32,7 @@ from monitor.main import (
     EventHandler
 )
 from monitor.manager import (
-    UIManager, GroupManager, LifecycleManager, TabStateManager
+    UIManager, UserDataManager, LifecycleManager, TabStateManager
 )
 
 # 导入分析页面组件
@@ -121,7 +121,7 @@ class MonitorApp(App):
         # 初始化各个管理器
         self.data_manager = DataManager(self.app_core, self.futu_market)
         self.ui_manager = UIManager(self.app_core, self)
-        self.group_manager = GroupManager(self.app_core, self.futu_market)
+        self.group_manager = UserDataManager(self.app_core, self.futu_market)
         self.event_handler = EventHandler(self.app_core, self)
         self.lifecycle_manager = LifecycleManager(self.app_core, self)
         

@@ -1,5 +1,5 @@
 """
-GroupManager - 用户分组管理模块
+UserDataManager - 用户数据管理模块
 
 负责用户分组数据加载、分组操作和分组与股票列表的关联管理
 """
@@ -11,7 +11,7 @@ from modules.futu_market import FutuMarket
 from utils.logger import get_logger
 
 
-class GroupManager:
+class UserDataManager:
     """
     分组管理器
     负责用户分组管理
@@ -23,7 +23,7 @@ class GroupManager:
         self.futu_market = futu_market
         self.logger = get_logger(__name__)
         
-        self.logger.info("GroupManager 初始化完成")
+        self.logger.info("UserDataManager 初始化完成")
     
     async def load_user_groups(self) -> None:
         """加载用户分组数据"""
