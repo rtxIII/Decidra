@@ -465,19 +465,20 @@ class GroupManager:
                 futu_trade.get_order_list
             )
 
-            # 清空现有订单数据
-            self.app_core.order_data.clear()
-
             # 处理订单数据并保存到 app_core.order_data
             if user_orders:
+                # 清空现有订单数据 - 只在确认有有效数据时才清空
+                self.app_core.order_data.clear()
+
                 for order in user_orders:
                     try:
                         if isinstance(order, dict):
                             # 标准化订单数据结构
+                            # 注意：富途API返回的字段是 stock_name，不是 name
                             order_data = {
                                 'order_id': str(order.get('order_id', '')),
                                 'code': order.get('code', ''),
-                                'name': order.get('name', ''),
+                                'name': order.get('stock_name', ''),  # 修正：使用 stock_name
                                 'trd_side': order.get('trd_side', ''),
                                 'order_status': order.get('order_status', ''),
                                 'qty': order.get('qty', 0),
@@ -490,6 +491,7 @@ class GroupManager:
                                 'order_type': order.get('order_type', '')
                             }
                             self.app_core.order_data.append(order_data)
+                            self.logger.debug(f"添加订单到order_data: {order_data['order_id']} {order_data['code']} {order_data['name']}")
 
                     except Exception as e:
                         self.logger.error(f"处理订单数据失败: {e}, 订单数据: {order}")
@@ -497,27 +499,14 @@ class GroupManager:
 
                 self.logger.info(f"加载用户订单完成，共 {len(user_orders)} 条订单保存到 app_core.order_data")
             else:
-                self.logger.info("当前无订单数据")
+                # API返回None或空列表时，保留现有数据不清空
+                self.logger.info(f"API返回空订单列表，保留现有数据({len(self.app_core.order_data)}条)")
 
         except Exception as e:
             self.logger.error(f"加载用户订单失败: {e}")
-            # 添加错误提示数据
-            self.app_core.order_data.clear()
-            self.app_core.order_data.append({
-                'order_id': 'error',
-                'code': '获取订单数据失败',
-                'name': '请检查富途连接',
-                'trd_side': 'ERROR',
-                'order_status': 'ERROR',
-                'qty': 0,
-                'price': 0,
-                'dealt_qty': 0,
-                'dealt_avg_price': 0,
-                'create_time': '',
-                'updated_time': '',
-                'currency': 'CNY',
-                'order_type': 'ERROR'
-            })
+            # API调用失败时保留现有数据，只在日志中记录错误
+            # 不再清空和添加错误提示数据，避免覆盖正常数据
+            self.logger.warning(f"订单数据刷新失败，保留现有数据({len(self.app_core.order_data)}条)")
 
     async def refresh_user_positions(self) -> None:
         """刷新用户持仓数据"""

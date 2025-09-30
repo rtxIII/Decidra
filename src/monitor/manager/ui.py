@@ -29,9 +29,13 @@ class UIManager:
         self.group_table: Optional[DataTable] = None
         self.orders_table: Optional[DataTable] = None
         self.trading_mode_display: Optional[Static] = None
+        self.position_content: Optional[Static] = None  # 持仓信息显示区域
         self.chart_panel: Optional[Static] = None
         self.ai_analysis_panel: Optional[Static] = None
         self.info_panel: Optional[Any] = None
+
+        # 保留兼容性：group_stocks_content 指向 position_content
+        self.group_stocks_content: Optional[Static] = None
         
         # 缓存上次的单元格值，用于检测变化
         self.last_cell_values: dict = {}
@@ -74,6 +78,15 @@ class UIManager:
             self.logger.debug("交易模式显示组件引用设置成功")
         except Exception as e:
             self.logger.error(f"获取交易模式显示组件引用失败: {e}")
+
+        # 获取持仓信息显示组件
+        try:
+            self.position_content = self.app.query_one("#position_content", Static)
+            # 兼容性：group_stocks_content 指向同一个组件
+            self.group_stocks_content = self.position_content
+            self.logger.debug("持仓信息显示组件引用设置成功")
+        except Exception as e:
+            self.logger.error(f"获取持仓信息显示组件引用失败: {e}")
 
         # 获取订单表格组件
         try:
@@ -148,7 +161,7 @@ class UIManager:
                 await self.info_panel.log_info("应用程序启动成功", "系统")
                 await self.info_panel.log_info(f"监控股票数量: {len(self.app_core.monitored_stocks)}", "系统")
                 await self.info_panel.log_info(f"连接状态: {self.app_core.connection_status.value}", "系统")
-                
+
                 # 添加操作提示
                 await self.info_panel.add_info(
                     "使用快捷键:  A-左 D-右 Q-退出",
@@ -156,15 +169,11 @@ class UIManager:
                     InfoLevel.INFO,
                     "系统提示"
                 )
-                
+
                 self.logger.info("InfoPanel 初始化完成")
 
             # 初始化交易模式显示
             await self.update_trading_mode_display()
-
-            # 初始化订单表格
-            await self.load_default_orders()
-            await self.update_orders_table()
 
         except Exception as e:
             self.logger.error(f"初始化InfoPanel失败: {e}")
@@ -281,48 +290,94 @@ class UIManager:
         """更新分组表格的光标显示 - 使用DataTable原生光标"""
         if not self.group_table or len(self.app_core.group_data) == 0:
             return
-            
+
         try:
             # 确保光标位置在有效范围内
             if self.app_core.current_group_cursor < 0:
                 self.app_core.current_group_cursor = 0
             elif self.app_core.current_group_cursor >= len(self.app_core.group_data):
                 self.app_core.current_group_cursor = len(self.app_core.group_data) - 1
-            
+
             # 使用DataTable的原生光标移动功能
             self.group_table.move_cursor(
-                row=self.app_core.current_group_cursor, 
+                row=self.app_core.current_group_cursor,
                 column=0,
                 animate=False,
                 scroll=True
             )
-            
+
             self.logger.debug(f"分组光标移动到行 {self.app_core.current_group_cursor}")
-            
+
         except Exception as e:
             self.logger.error(f"更新分组光标失败: {e}")
+
+    async def update_order_cursor(self) -> None:
+        """更新订单表格的光标显示 - 使用DataTable原生光标"""
+        if not self.orders_table or len(self.app_core.order_data) == 0:
+            return
+
+        try:
+            # 确保光标位置在有效范围内
+            if self.app_core.current_order_cursor < 0:
+                self.app_core.current_order_cursor = 0
+            elif self.app_core.current_order_cursor >= len(self.app_core.order_data):
+                self.app_core.current_order_cursor = len(self.app_core.order_data) - 1
+
+            # 使用DataTable的原生光标移动功能
+            self.orders_table.move_cursor(
+                row=self.app_core.current_order_cursor,
+                column=0,
+                animate=False,
+                scroll=True
+            )
+
+            self.logger.debug(f"订单光标移动到行 {self.app_core.current_order_cursor}")
+
+        except Exception as e:
+            self.logger.error(f"更新订单光标失败: {e}")
     
     async def update_table_focus(self) -> None:
         """更新表格焦点显示，确保同一时间只有一个表格显示光标"""
         try:
             if self.app_core.active_table == "stock":
-                # 激活股票表格光标，隐藏分组表格光标
+                # 激活股票表格光标，隐藏其他表格光标
                 if self.stock_table:
                     self.stock_table.show_cursor = True
                     await self.update_stock_cursor()
                 if self.group_table:
                     self.group_table.show_cursor = False
                     self.group_table.refresh()
+                if self.orders_table:
+                    self.orders_table.show_cursor = False
+                    self.orders_table.refresh()
                 self.logger.debug("激活股票表格焦点")
+
             elif self.app_core.active_table == "group":
-                # 激活分组表格光标，隐藏股票表格光标
+                # 激活分组表格光标，隐藏其他表格光标
                 if self.group_table:
                     self.group_table.show_cursor = True
                     await self.update_group_cursor()
                 if self.stock_table:
                     self.stock_table.show_cursor = False
                     self.stock_table.refresh()
+                if self.orders_table:
+                    self.orders_table.show_cursor = False
+                    self.orders_table.refresh()
                 self.logger.debug("激活分组表格焦点")
+
+            elif self.app_core.active_table == "orders":
+                # 激活订单表格光标，隐藏其他表格光标
+                if self.orders_table:
+                    self.orders_table.show_cursor = True
+                    await self.update_order_cursor()
+                if self.stock_table:
+                    self.stock_table.show_cursor = False
+                    self.stock_table.refresh()
+                if self.group_table:
+                    self.group_table.show_cursor = False
+                    self.group_table.refresh()
+                self.logger.debug("激活订单表格焦点")
+
         except Exception as e:
             self.logger.error(f"更新表格焦点失败: {e}")
     
@@ -363,33 +418,104 @@ class UIManager:
             self.logger.error(f"更新交易模式显示失败: {e}")
 
     async def update_orders_table(self) -> None:
-        """更新订单表格 - 委托给 DataManager 处理"""
+        """从 app_core.order_data 直接更新订单表格UI"""
         try:
-            self.logger.info("开始更新订单表格")
+            if not self.orders_table:
+                self.logger.warning("orders_table 未初始化，跳过更新")
+                return
 
-            # 获取数据管理器
-            data_manager = getattr(self.app_core.app, 'data_manager', None)
-            if data_manager:
-                self.logger.debug("找到 DataManager，调用 refresh_order_data")
-                await data_manager.refresh_order_data()
-                self.logger.info("订单表格更新完成")
-            else:
-                self.logger.warning("DataManager 未初始化，无法更新订单表格")
-                # 添加调试信息
-                self.logger.debug(f"app_core: {self.app_core}")
-                self.logger.debug(f"app_core.app: {getattr(self.app_core, 'app', None)}")
-                self.logger.debug(f"可用属性: {dir(self.app_core.app) if hasattr(self.app_core, 'app') else 'No app'}")
+            self.logger.info(f"开始更新订单表格，当前有 {len(self.app_core.order_data)} 条订单")
+
+            # 调试：打印order_data的前2条数据
+            if self.app_core.order_data:
+                for i, order in enumerate(self.app_core.order_data[:2]):
+                    self.logger.debug(f"订单数据[{i}]: {order}")
+
+            # 清空现有表格数据，但保留列定义
+            self.orders_table.clear(columns=False)
+            self.logger.debug("订单表格已清空(保留列定义)")
+
+            # 从 app_core.order_data 读取并更新表格
+            for order in self.app_core.order_data:
+                try:
+                    # 提取订单信息
+                    order_id = order.get('order_id', '')
+                    stock_code = order.get('code', '')
+                    trd_side = order.get('trd_side', '')
+                    order_status = order.get('order_status', '')
+                    qty = str(order.get('qty', '0'))
+
+                    # 转换交易方向并设置颜色
+                    if trd_side == 'BUY':
+                        order_type = "买入"
+                        type_display = f"[green]{order_type}[/green]"
+                    elif trd_side == 'SELL':
+                        order_type = "卖出"
+                        type_display = f"[red]{order_type}[/red]"
+                    else:
+                        order_type = trd_side
+                        type_display = order_type
+
+                    # 转换订单状态并设置颜色
+                    status_map = {
+                        'WAITING_SUBMIT': '待提交',
+                        'SUBMITTING': '提交中',
+                        'SUBMITTED': '已提交',
+                        'FILLED_PART': '部分成交',
+                        'FILLED_ALL': '全部成交',
+                        'CANCELLED_PART': '部分撤销',
+                        'CANCELLED_ALL': '全部撤销',
+                        'FAILED': '失败',
+                        'DISABLED': '已失效',
+                        'ERROR': '错误'
+                    }
+
+                    status_display_text = status_map.get(order_status, order_status)
+
+                    # 根据状态设置不同颜色
+                    if order_status in ['FILLED_ALL', 'FILLED_PART']:
+                        status_display = f"[green]{status_display_text}[/green]"
+                    elif order_status in ['SUBMITTED', 'WAITING_SUBMIT', 'SUBMITTING']:
+                        status_display = f"[yellow]{status_display_text}[/yellow]"
+                    elif order_status in ['CANCELLED_PART', 'CANCELLED_ALL', 'FAILED', 'DISABLED', 'ERROR']:
+                        status_display = f"[red]{status_display_text}[/red]"
+                    else:
+                        status_display = status_display_text
+
+                    # 添加到表格
+                    display_order_id = order_id[-8:] if len(order_id) > 8 else order_id
+                    self.logger.debug(f"添加订单行: {display_order_id} {stock_code} {order_type} {status_display_text} {qty}")
+
+                    self.orders_table.add_row(
+                        display_order_id,  # 显示订单号后8位
+                        stock_code,
+                        type_display,
+                        status_display,
+                        qty,
+                        key=order_id
+                    )
+
+                    self.logger.debug(f"订单行添加成功: {order_id}")
+
+                except Exception as e:
+                    self.logger.error(f"处理订单UI显示失败: {e}, 订单数据: {order}")
+                    import traceback
+                    self.logger.error(f"错误堆栈: {traceback.format_exc()}")
+                    continue
+
+            # 检查表格行数
+            table_row_count = self.orders_table.row_count
+            self.logger.info(f"订单表格UI更新完成，app_core有 {len(self.app_core.order_data)} 条订单，表格显示 {table_row_count} 行")
+
+            # 强制刷新表格显示
+            self.orders_table.refresh()
+            self.logger.debug("订单表格已强制刷新显示")
+
         except Exception as e:
             self.logger.error(f"更新订单表格失败: {e}")
             import traceback
             self.logger.error(f"详细错误: {traceback.format_exc()}")
 
-    async def load_default_orders(self) -> None:
-        """加载默认订单到表格"""
-        if self.orders_table:
-            # 初始化时加载空订单表格
-            self.orders_table.clear()
-            self.logger.info("订单表格初始化完成")
 
 
     async def add_stock_to_table(self, stock_code: str) -> None:

@@ -59,6 +59,7 @@ class AppCore:
         # 订单表相关状态
         self.order_data: List[Dict[str, Any]] = []
         self.order_cursor_visible: bool = True
+        self.current_order_cursor: int = 0
 
         # 工作任务管理
         self._current_workers: set = set()

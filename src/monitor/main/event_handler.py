@@ -49,7 +49,7 @@ class EventHandler:
                 row_index = event.cursor_row
                 if 0 <= row_index < len(self.app_core.monitored_stocks):
                     self.app_core.current_stock_code = self.app_core.monitored_stocks[row_index]
-                    
+
                     self.logger.info(f"选择股票: {self.app_core.current_stock_code}")
             elif event.data_table.id == "group_table":
                 # 分组表格选择 - 同步光标位置并更新预览
@@ -58,6 +58,14 @@ class EventHandler:
                 if ui_manager:
                     await ui_manager.update_group_preview()
                 self.logger.debug(f"用户点击选择分组行: {event.cursor_row}")
+            elif event.data_table.id == "orders_table":
+                # 订单表格选择 - 同步光标位置
+                self.app_core.current_order_cursor = event.cursor_row
+                self.logger.debug(f"用户点击选择订单行: {event.cursor_row}")
+                # 如果有需要，这里可以添加显示订单详情的逻辑
+                if 0 <= event.cursor_row < len(self.app_core.order_data):
+                    selected_order = self.app_core.order_data[event.cursor_row]
+                    self.logger.info(f"选择订单: {selected_order.get('order_id', 'N/A')}")
         except Exception as e:
             self.logger.error(f"处理行选择事件失败: {e}")
     
@@ -339,6 +347,12 @@ class EventHandler:
                 if ui_manager:
                     await ui_manager.update_group_cursor()
                 self.logger.debug(f"分组光标向上移动到: {self.app_core.current_group_cursor}")
+            elif self.app_core.active_table == "orders" and len(self.app_core.order_data) > 0:
+                # 移动订单表格光标
+                self.app_core.current_order_cursor = (self.app_core.current_order_cursor - 1) % len(self.app_core.order_data)
+                if ui_manager:
+                    await ui_manager.update_order_cursor()
+                self.logger.debug(f"订单光标向上移动到: {self.app_core.current_order_cursor}")
             else:
                 self.logger.debug(f"当前表格({self.app_core.active_table})无数据或非活跃状态，无法移动光标")
         except Exception as e:
@@ -360,6 +374,12 @@ class EventHandler:
                 if ui_manager:
                     await ui_manager.update_group_cursor()
                 self.logger.debug(f"分组光标向下移动到: {self.app_core.current_group_cursor}")
+            elif self.app_core.active_table == "orders" and len(self.app_core.order_data) > 0:
+                # 移动订单表格光标
+                self.app_core.current_order_cursor = (self.app_core.current_order_cursor + 1) % len(self.app_core.order_data)
+                if ui_manager:
+                    await ui_manager.update_order_cursor()
+                self.logger.debug(f"订单光标向下移动到: {self.app_core.current_order_cursor}")
             else:
                 self.logger.debug(f"当前表格({self.app_core.active_table})无数据或非活跃状态，无法移动光标")
         except Exception as e:
@@ -439,32 +459,62 @@ class EventHandler:
             if group_manager:
                 await group_manager.switch_to_group_stocks(group_data)
                 
-                # 同时更新分组股票显示
-                await group_manager.handle_group_selection(self.app_core.current_group_cursor)
+                # 不更新分组股票显示
+                #await group_manager.handle_group_selection(self.app_core.current_group_cursor)
             
             self.logger.info(f"选择分组: {group_data['name']}, 包含 {group_data['stock_count']} 只股票")
     
     async def action_focus_left_table(self) -> None:
-        """左移焦点到股票表格"""
+        """左移焦点：订单表 → 分组表 → 股票表 → 订单表"""
         try:
-            if self.app_core.active_table != "stock":
-                self.app_core.active_table = "stock"
-                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
-                if ui_manager:
-                    await ui_manager.update_table_focus()
-                self.logger.debug("焦点切换到股票表格")
-        except Exception as e:
-            self.logger.error(f"切换焦点到股票表格失败: {e}")
-    
-    async def action_focus_right_table(self) -> None:
-        """右移焦点到分组表格"""
-        try:
-            if self.app_core.active_table != "group":
+            # 循环切换：orders → group → stock → orders
+            if self.app_core.active_table == "orders":
                 self.app_core.active_table = "group"
+            elif self.app_core.active_table == "group":
+                self.app_core.active_table = "stock"
+            elif self.app_core.active_table == "stock":
+                self.app_core.active_table = "orders"
+            else:
+                # 默认回到股票表
+                self.app_core.active_table = "stock"
+
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if ui_manager:
+                await ui_manager.update_table_focus()
+            self.logger.debug(f"焦点左移切换到 {self.app_core.active_table} 表格")
+        except Exception as e:
+            self.logger.error(f"焦点左移切换失败: {e}")
+
+    async def action_focus_right_table(self) -> None:
+        """右移焦点：股票表 → 分组表 → 订单表 → 股票表"""
+        try:
+            # 循环切换：stock → group → orders → stock
+            if self.app_core.active_table == "stock":
+                self.app_core.active_table = "group"
+            elif self.app_core.active_table == "group":
+                self.app_core.active_table = "orders"
+            elif self.app_core.active_table == "orders":
+                self.app_core.active_table = "stock"
+            else:
+                # 默认回到股票表
+                self.app_core.active_table = "stock"
+
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if ui_manager:
+                await ui_manager.update_table_focus()
+            self.logger.debug(f"焦点右移切换到 {self.app_core.active_table} 表格")
+        except Exception as e:
+            self.logger.error(f"焦点右移切换失败: {e}")
+
+    async def action_focus_orders_table(self) -> None:
+        """切换焦点到订单表格"""
+        try:
+            if self.app_core.active_table != "orders":
+                self.app_core.active_table = "orders"
                 ui_manager = getattr(self.app_core.app, 'ui_manager', None)
                 if ui_manager:
                     await ui_manager.update_table_focus()
-                self.logger.debug("焦点切换到分组表格")
+                self.logger.debug("焦点切换到订单表格")
         except Exception as e:
-            self.logger.error(f"切换焦点到分组表格失败: {e}")
+            self.logger.error(f"切换焦点到订单表格失败: {e}")
     
