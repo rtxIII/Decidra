@@ -28,14 +28,15 @@ class UIManager:
         self.stock_table: Optional[DataTable] = None
         self.group_table: Optional[DataTable] = None
         self.orders_table: Optional[DataTable] = None
+        self.position_table: Optional[DataTable] = None  # 持仓信息表格
         self.trading_mode_display: Optional[Static] = None
-        self.position_content: Optional[Static] = None  # 持仓信息显示区域
         self.chart_panel: Optional[Static] = None
         self.ai_analysis_panel: Optional[Static] = None
         self.info_panel: Optional[Any] = None
 
-        # 保留兼容性：group_stocks_content 指向 position_content
-        self.group_stocks_content: Optional[Static] = None
+        # 保留兼容性：position_content 和 group_stocks_content 指向 position_table
+        self.position_content: Optional[DataTable] = None
+        self.group_stocks_content: Optional[DataTable] = None
         
         # 缓存上次的单元格值，用于检测变化
         self.last_cell_values: dict = {}
@@ -79,14 +80,20 @@ class UIManager:
         except Exception as e:
             self.logger.error(f"获取交易模式显示组件引用失败: {e}")
 
-        # 获取持仓信息显示组件
+        # 获取持仓信息表格组件
         try:
-            self.position_content = self.app.query_one("#position_content", Static)
-            # 兼容性：group_stocks_content 指向同一个组件
-            self.group_stocks_content = self.position_content
-            self.logger.debug("持仓信息显示组件引用设置成功")
+            self.position_table = self.app.query_one("#position_table", DataTable)
+            # 配置持仓表格的光标特性
+            if self.position_table:
+                self.position_table.cursor_type = "row"
+                # 默认不显示持仓表格光标
+                self.position_table.show_cursor = False
+            # 兼容性：position_content 和 group_stocks_content 指向同一个组件
+            self.position_content = self.position_table
+            self.group_stocks_content = self.position_table
+            self.logger.debug("持仓信息表格引用设置成功")
         except Exception as e:
-            self.logger.error(f"获取持仓信息显示组件引用失败: {e}")
+            self.logger.error(f"获取持仓信息表格引用失败: {e}")
 
         # 获取订单表格组件
         try:
@@ -516,7 +523,87 @@ class UIManager:
             import traceback
             self.logger.error(f"详细错误: {traceback.format_exc()}")
 
+    async def update_position_table(self) -> None:
+        """从 app_core.position_data 直接更新持仓表格UI"""
+        try:
+            if not self.position_table:
+                self.logger.warning("position_table 未初始化，跳过更新")
+                return
 
+            self.logger.info(f"开始更新持仓表格，当前有 {len(self.app_core.position_data)} 只持仓")
+
+            # 清空现有表格数据，但保留列定义
+            self.position_table.clear(columns=False)
+            self.logger.debug("持仓表格已清空(保留列定义)")
+
+            # 从 app_core.position_data 读取并更新表格
+            for position in self.app_core.position_data:
+                try:
+                    # 打印完整的持仓数据以便调试
+                    self.logger.debug(f"持仓原始数据: {position}")
+
+                    # 提取持仓信息
+                    stock_code = position.get('stock_code', '')
+                    stock_name = position.get('stock_name', '')
+                    qty = str(int(position.get('qty', 0)))
+                    can_sell_qty = str(int(position.get('can_sell_qty', 0)))
+                    cost_price = f"{position.get('cost_price', 0):.3f}"
+                    nominal_price = f"{position.get('nominal_price', 0):.3f}"
+                    pl_val = position.get('pl_val', 0)
+                    pl_ratio = position.get('pl_ratio', 0)
+
+                    self.logger.debug(f"提取的字段 - stock_code: '{stock_code}', stock_name: '{stock_name}', qty: {qty}")
+
+                    # 格式化盈亏显示并设置颜色
+                    pl_val_str = f"{pl_val:+,.2f}"
+                    pl_ratio_str = f"{pl_ratio:+.2f}%"
+
+                    if pl_val >= 0:
+                        pl_val_display = f"[green]{pl_val_str}[/green]"
+                        pl_ratio_display = f"[green]{pl_ratio_str}[/green]"
+                    else:
+                        pl_val_display = f"[red]{pl_val_str}[/red]"
+                        pl_ratio_display = f"[red]{pl_ratio_str}[/red]"
+
+                    # 添加到表格
+                    self.logger.debug(f"添加持仓行: {stock_code} {stock_name} {qty} {cost_price}")
+
+                    self.position_table.add_row(
+                        stock_code,
+                        stock_name,
+                        qty,
+                        can_sell_qty,
+                        cost_price,
+                        nominal_price,
+                        pl_val_display,
+                        pl_ratio_display,
+                        key=stock_code
+                    )
+
+                    self.logger.debug(f"持仓行添加成功: {stock_code}")
+
+                except Exception as e:
+                    self.logger.error(f"处理持仓UI显示失败: {e}, 持仓数据: {position}")
+                    import traceback
+                    self.logger.error(f"错误堆栈: {traceback.format_exc()}")
+                    continue
+
+            # 检查表格行数
+            table_row_count = self.position_table.row_count
+            self.logger.info(f"持仓表格UI更新完成，app_core有 {len(self.app_core.position_data)} 只持仓，表格显示 {table_row_count} 行")
+
+            # 强制刷新表格显示
+            self.position_table.refresh()
+            self.logger.debug("持仓表格已强制刷新显示")
+
+        except Exception as e:
+            self.logger.error(f"更新持仓表格失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
+
+    async def update_position_display(self) -> None:
+        """更新持仓信息显示（兼容性方法，指向update_position_table）"""
+        await self.update_position_table()
 
     async def add_stock_to_table(self, stock_code: str) -> None:
         """添加股票到表格"""

@@ -461,6 +461,8 @@ class EventHandler:
                 
                 # 不更新分组股票显示
                 #await group_manager.handle_group_selection(self.app_core.current_group_cursor)
+                # 刷新用户持仓
+                await group_manager.refresh_user_positions()
             
             self.logger.info(f"选择分组: {group_data['name']}, 包含 {group_data['stock_count']} 只股票")
     

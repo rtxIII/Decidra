@@ -131,26 +131,30 @@ class UserGroupPanel(Container):
         border-title-color: $text;
         border-title-background: $surface;
         padding: 1;
-        layout: horizontal;
+        layout: vertical;
     }
 
-    UserGroupPanel .position-content-left {
-        width: 20%;
-        height: 1fr;
+    UserGroupPanel .position-table-top {
+        width: 1fr;
+        height: 40%;
         padding: 1;
-        margin-right: 1;
+        margin-bottom: 1;
     }
 
-    UserGroupPanel .orders-table-right {
-        width: 80%;
+    UserGroupPanel .position-table-top DataTable {
         height: 1fr;
+    }
+
+    UserGroupPanel .orders-table-bottom {
+        width: 1fr;
+        height: 60%;
         padding: 1;
     }
 
-    UserGroupPanel .orders-table-right DataTable {
+    UserGroupPanel .orders-table-bottom DataTable {
         height: 1fr;
     }
-    
+
     UserGroupPanel DataTable {
         height: 1fr;
     }
@@ -184,22 +188,22 @@ class UserGroupPanel(Container):
 
         # 持仓订单信息区域（70%空间）
         with Container(classes="position-info"):
-            # 左侧：持仓信息显示（50%宽度）
-            with Container(classes="position-content-left"):
-                yield Static("[bold cyan]持仓信息[/bold cyan]", id="position_title")
-                yield Static(
-                    "[bold white]持仓情况:[/bold white]\n" +
-                    "数量: --\n" +
-                    "成本价: --\n" +
-                    "盈亏: --\n\n" +
-                    "[bold white]风险控制:[/bold white]\n" +
-                    "止损价: --\n" +
-                    "止盈价: --",
-                    id="position_content"
+            # 上部：持仓信息表格（40%高度）
+            with Container(classes="position-table-top"):
+                # 创建持仓信息表格
+                position_table = DataTable(
+                    show_cursor=True,
+                    zebra_stripes=True,
+                    cursor_type="row",
+                    show_header=True,
+                    show_row_labels=False,
+                    id="position_table"
                 )
+                position_table.add_columns("股票代码", "股票名称", "持仓数量", "可卖数量", "成本价", "当前价", "盈亏", "盈亏比例")
+                yield position_table
 
-            # 右侧：订单信息表格（50%宽度）
-            with Container(classes="orders-table-right"):
+            # 下部：订单信息表格（60%高度）
+            with Container(classes="orders-table-bottom"):
                 yield Static("[bold cyan]订单信息[/bold cyan]", id="orders_title")
                 # 创建订单信息表格
                 orders_table = DataTable(
@@ -279,7 +283,7 @@ class AnalysisPanel(Container):
                 await self._realtime_update_task
             except asyncio.CancelledError:
                 pass
-            self.logger.info("已停止分析面板实时数据更新")
+            self.logger.info("已停止分析面��实时数据更新")
     
     async def _realtime_update_loop(self):
         """实时数据更新循环"""
@@ -1062,7 +1066,7 @@ class StatusBar(Container):
 
 
 class MonitorLayout(Container):
-    """监控界面完整布局"""
+    """监控���面完整布局"""
     
     def __init__(self, **kwargs):
         """初始化监控界面布局"""

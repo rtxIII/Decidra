@@ -414,9 +414,14 @@ class UserDataManager:
             if user_positions:
                 for position in user_positions:
                     if isinstance(position, dict):
+                        # 添加调试日志查看原始数据的所有字段
+                        #self.logger.debug(f"原始持仓数据字段: {list(position.keys())}")
+                        self.logger.debug(f"原始持仓数据: code={position.get('code')}, name={position.get('name')}, stock_name={position.get('stock_name')}")
+
                         position_data = {
                             'stock_code': position.get('code', ''),
-                            'stock_name': position.get('name', ''),
+                            # 尝试多个字段名，因为富途API可能返回不同的字段名
+                            'stock_name': position.get('stock_name') or position.get('name', ''),
                             'qty': position.get('qty', 0),
                             'can_sell_qty': position.get('can_sell_qty', 0),
                             'market_val': position.get('market_val', 0),

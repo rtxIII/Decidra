@@ -757,7 +757,7 @@ class DataManager:
                 self.market_status_poller = None
                 self.logger.info("市场状态轮询任务已停止")
 
-            # 停止订单刷新定时器
+            # 停止用户数据刷新定时器（订单和持仓）
             if self.user_refresh_timer:
                 self.user_refresh_timer.cancel()
                 try:
@@ -765,7 +765,7 @@ class DataManager:
                 except asyncio.CancelledError:
                     pass
                 self.user_refresh_timer = None
-                self.logger.info("订单数据定时刷新任务已停止")
+                self.logger.info("用户数据定时刷新任务已停止")
 
             # 清理缓存
             self._global_market_state_cache = None
@@ -803,12 +803,37 @@ class DataManager:
         except Exception as e:
             self.logger.error(f"刷新订单数据失败: {e}")
 
-    async def start_user_refresh(self) -> None:
-        """启动订单数据定时刷新（不依赖市场状态）"""
+    async def refresh_position_data(self) -> None:
+        """刷新持仓数据并更新UI"""
         try:
-            # 检查是否已有订单刷新任务在运行
+            self.logger.info("开始刷新持仓数据")
+
+            # 先通过 UserDataManager 加载持仓数据到 app_core.position_data
+            group_manager = getattr(self.app_core.app, 'group_manager', None)
+            if group_manager:
+                await group_manager.load_user_positions()
+            else:
+                self.logger.warning("UserDataManager 未初始化，无法刷新持仓数据")
+                return
+
+            # 然后委托给 UIManager 更新持仓显示UI
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if ui_manager:
+                await ui_manager.update_position_display()
+            else:
+                self.logger.warning("UIManager 未初始化，跳过更新持仓显示UI")
+
+            self.logger.info(f"持仓数据刷新完成，共 {len(self.app_core.position_data)} 只持仓")
+
+        except Exception as e:
+            self.logger.error(f"刷新持仓数据失败: {e}")
+
+    async def start_user_refresh(self) -> None:
+        """启动用户数据定时刷新（订单和持仓，不依赖市场状态）"""
+        try:
+            # 检查是否已有用户数据刷新任务在运行
             if self.user_refresh_timer and not self.user_refresh_timer.done():
-                self.logger.info("订单数据刷新任务已在运行，跳过重复启动")
+                self.logger.info("用户数据刷新任务已在运行，跳过重复启动")
                 return
 
             # 取消现有任务（如果存在）
@@ -819,23 +844,28 @@ class DataManager:
                 except asyncio.CancelledError:
                     pass
 
-            # 立即执行一次订单数据刷新，避免等待第一个刷新周期
-            self.logger.info("启动时立即加载订单数据")
+            # 立即执行一次用户数据刷新，避免等待第一个刷新周期
+            self.logger.info("启动时立即加载订单和持仓数据")
+
+            # 加载订单数据
             await self.refresh_order_data()
 
-            # 创建定时刷新任务
-            self.user_refresh_timer = asyncio.create_task(self.order_refresh_loop())
-            self.logger.info(f"订单数据定时刷新启动，刷新间隔: {ORDER_REFRESH_INTERVAL}秒")
+            # 加载持仓数据
+            await self.refresh_position_data()
 
-            # 向信息面板显示订单刷新启动信息
+            # 创建定时刷新任务
+            self.user_refresh_timer = asyncio.create_task(self.user_data_refresh_loop())
+            self.logger.info(f"用户数据定时刷新启动，刷新间隔: {ORDER_REFRESH_INTERVAL}秒")
+
+            # 向信息面板显示用户数据刷新启动信息
             if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
-                await self.app_core.app.ui_manager.info_panel.log_info("订单数据定时刷新已启动", "系统")
+                await self.app_core.app.ui_manager.info_panel.log_info("用户数据定时刷新已启动", "系统")
 
         except Exception as e:
-            self.logger.error(f"启动订单数据定时刷新失败: {e}")
+            self.logger.error(f"启动用户数据定时刷新失败: {e}")
 
-    async def order_refresh_loop(self) -> None:
-        """订单数据定时刷新循环"""
+    async def user_data_refresh_loop(self) -> None:
+        """用户数据定时刷新循环（订单和持仓）"""
         try:
             while True:
                 try:
@@ -844,21 +874,25 @@ class DataManager:
 
                     # 刷新订单数据
                     await self.refresh_order_data()
-                    self.logger.debug(f"订单数据定时刷新完成，下次刷新: {ORDER_REFRESH_INTERVAL}秒后")
+
+                    # 刷新持仓数据
+                    await self.refresh_position_data()
+
+                    self.logger.debug(f"用户数据定时刷新完成，下次刷新: {ORDER_REFRESH_INTERVAL}秒后")
 
                 except asyncio.CancelledError:
-                    self.logger.info("订单数据定时刷新任务被取消")
+                    self.logger.info("用户数据定时刷新任务被取消")
                     break
                 except Exception as e:
-                    self.logger.error(f"订单数据定时刷新错误: {e}")
+                    self.logger.error(f"用户数据定时刷新错误: {e}")
                     # 发生错误时等待一段时间再重试
                     await asyncio.sleep(ORDER_REFRESH_INTERVAL)
 
         except Exception as e:
-            self.logger.error(f"订单数据刷新循环异常退出: {e}")
+            self.logger.error(f"用户数据刷新循环异常退出: {e}")
 
     async def stop_user_refresh(self) -> None:
-        """停止订单数据定时刷新"""
+        """停止用户数据定时刷新"""
         try:
             if self.user_refresh_timer:
                 self.user_refresh_timer.cancel()
@@ -867,14 +901,14 @@ class DataManager:
                 except asyncio.CancelledError:
                     pass
                 self.user_refresh_timer = None
-                self.logger.info("订单数据定时刷新已停止")
+                self.logger.info("用户数据定时刷新已停止")
 
-                # 向信息面板显示订单刷新停止信息
+                # 向信息面板显示用户数据刷新停止信息
                 if hasattr(self.app_core, 'app') and hasattr(self.app_core.app, 'ui_manager') and self.app_core.app.ui_manager.info_panel:
-                    await self.app_core.app.ui_manager.info_panel.log_info("订单数据定时刷新已停止", "系统")
+                    await self.app_core.app.ui_manager.info_panel.log_info("用户数据定时刷新已停止", "系统")
 
         except Exception as e:
-            self.logger.error(f"停止订单数据定时刷新失败: {e}")
+            self.logger.error(f"停止用户数据定时刷新失败: {e}")
 
     def cleanup_futu_market(self) -> None:
         """清理富途市场连接"""
