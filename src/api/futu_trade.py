@@ -452,7 +452,7 @@ class TradeManager:
                 pl_ratio_max=pl_ratio_max,
                 refresh_cache=False
             )
-            
+            #print(data)
             df = self._handle_response(ret, data, "获取持仓列表")
             
             self.logger.info(f"获取 {trd_env} 环境持仓列表成功")

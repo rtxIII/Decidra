@@ -187,12 +187,14 @@ class FutuTrade(FutuModuleBase):
             market = market or self.default_market
             currency = currency or self.default_currency
             
-            result = self.client.trade.get_position_list(trd_env, market, code, currency=currency)
+            result = self.client.trade.get_position_list(trd_env, market, code)
             
             if isinstance(result, pd.DataFrame):
                 self.position_list = result.to_dict('records')
                 return self.position_list
-            
+            if isinstance(result, dict):
+                return [result]
+            self.logger.warning(f"get_position_list return error: {result}")
             return []
             
         except Exception as e:
