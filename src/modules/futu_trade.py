@@ -60,11 +60,13 @@ class FutuTrade(FutuModuleBase):
         try:
             market = market or self.default_market
             result = self.client.trade.get_acc_list(market)
-            
+
             if isinstance(result, pd.DataFrame):
                 return result.to_dict('records')
+            if isinstance(result, dict):
+                return [result]
             return result if isinstance(result, list) else []
-            
+
         except Exception as e:
             self.logger.error(f"Get account list error: {e}")
             return []
@@ -150,21 +152,23 @@ class FutuTrade(FutuModuleBase):
             self.logger.error(f"Get funds info error: {e}")
             return {"success": False, "message": str(e)}
     
-    def get_cash_flow(self, trd_env: str = None, market: str = None, 
+    def get_cash_flow(self, trd_env: str = None, market: str = None,
                      start: str = None, end: str = None, currency: str = None) -> List[Dict]:
         """获取现金流水"""
         try:
             trd_env = trd_env or self.default_trd_env
             market = market or self.default_market
             currency = currency or self.default_currency
-            
+
             result = self.client.trade.get_cash_flow(trd_env, market, start, end, currency)
-            
+
             if isinstance(result, pd.DataFrame):
                 return result.to_dict('records')
-            
+            if isinstance(result, dict):
+                return [result]
+
             return []
-            
+
         except Exception as e:
             self.logger.error(f"Get cash flow error: {e}")
             return []
@@ -349,20 +353,22 @@ class FutuTrade(FutuModuleBase):
             self.logger.error(f"Modify order error: {e}")
             return {"success": False, "message": str(e)}
     
-    def get_order_list(self, order_status: str = None, trd_env: str = None, 
+    def get_order_list(self, order_status: str = None, trd_env: str = None,
                       market: str = None, start: str = None, end: str = None) -> List[Dict]:
         """获取订单列表"""
         try:
             trd_env = trd_env or self.default_trd_env
             market = market or self.default_market
-            
+
             result = self.client.trade.get_order_list(order_status, trd_env, market, start, end)
-            
+
             if isinstance(result, pd.DataFrame):
                 return result.to_dict('records')
-            
+            if isinstance(result, dict):
+                return [result]
+
             return []
-            
+
         except Exception as e:
             self.logger.error(f"Get order list error: {e}")
             return []
@@ -372,15 +378,18 @@ class FutuTrade(FutuModuleBase):
         try:
             trd_env = trd_env or self.default_trd_env
             market = market or self.default_market
-            
+
             result = self.client.trade.get_deal_list(trd_env, market)
-            
+
             if isinstance(result, pd.DataFrame):
                 self.deal_history = result.to_dict('records')
                 return self.deal_history
-            
+            if isinstance(result, dict):
+                self.deal_history = [result]
+                return self.deal_history
+
             return []
-            
+
         except Exception as e:
             self.logger.error(f"Get deal list error: {e}")
             return []
@@ -396,6 +405,8 @@ class FutuTrade(FutuModuleBase):
 
             if isinstance(result, pd.DataFrame):
                 return result.to_dict('records')
+            if isinstance(result, dict):
+                return [result]
 
             return []
 
@@ -414,6 +425,8 @@ class FutuTrade(FutuModuleBase):
 
             if isinstance(result, pd.DataFrame):
                 return result.to_dict('records')
+            if isinstance(result, dict):
+                return [result]
 
             return []
 
@@ -428,14 +441,16 @@ class FutuTrade(FutuModuleBase):
         try:
             trd_env = trd_env or self.default_trd_env
             market = market or self.default_market
-            
+
             result = self.client.trade.get_max_trd_qty("NORMAL", code, price, "BUY", trd_env, market)
-            
+
             if isinstance(result, pd.DataFrame) and not result.empty:
                 return int(result.iloc[0].get('max_qty', 0))
-            
+            if isinstance(result, dict):
+                return int(result.get('max_qty', 0))
+
             return 0
-            
+
         except Exception as e:
             self.logger.error(f"Get max buy qty error: {e}")
             return 0
@@ -445,35 +460,39 @@ class FutuTrade(FutuModuleBase):
         try:
             trd_env = trd_env or self.default_trd_env
             market = market or self.default_market
-            
+
             result = self.client.trade.get_max_trd_qty("NORMAL", code, price, "SELL", trd_env, market)
-            
+
             if isinstance(result, pd.DataFrame) and not result.empty:
                 return int(result.iloc[0].get('max_qty', 0))
-            
+            if isinstance(result, dict):
+                return int(result.get('max_qty', 0))
+
             return 0
-            
+
         except Exception as e:
             self.logger.error(f"Get max sell qty error: {e}")
             return 0
     
-    def get_order_fee(self, code: str, price: float, qty: int, 
+    def get_order_fee(self, code: str, price: float, qty: int,
                      order_type: str = "NORMAL", trd_side: str = "BUY",
                      trd_env: str = None, market: str = None) -> Dict:
         """获取订单费用预估"""
         try:
             trd_env = trd_env or self.default_trd_env
             market = market or self.default_market
-            
+
             result = self.client.trade.get_order_fee(
                 order_type, code, price, qty, trd_side, trd_env, market
             )
-            
+
             if isinstance(result, pd.DataFrame) and not result.empty:
                 return result.iloc[0].to_dict()
-            
+            if isinstance(result, dict):
+                return result
+
             return {}
-            
+
         except Exception as e:
             self.logger.error(f"Get order fee error: {e}")
             return {}
