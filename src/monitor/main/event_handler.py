@@ -777,7 +777,7 @@ class EventHandler:
                 error_msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
                 self.logger.error(f"改单失败: {error_msg}")
                 if ui_manager and ui_manager.info_panel:
-                    await ui_manager.info_panel.log_info(
+                    await ui_manager.info_panel.log_warning(
                         f"订单 {modify_data.order_id} 修改失败: {error_msg}",
                         "改单操作"
                     )
