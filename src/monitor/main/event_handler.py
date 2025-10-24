@@ -393,6 +393,9 @@ class EventHandler:
         elif self.app_core.active_table == "group":
             # 当前在分组表格：选择分组（原有逻辑）
             await self.select_current_group()
+        elif self.app_core.active_table == "orders":
+            # 当前在订单表格：修改订单
+            await self.action_modify_order()
     
     async def create_stock_analysis_tab(self) -> None:
         """为当前选中的股票创建分析tab"""
@@ -519,4 +522,271 @@ class EventHandler:
                 self.logger.debug("焦点切换到订单表格")
         except Exception as e:
             self.logger.error(f"切换焦点到订单表格失败: {e}")
-    
+
+    async def action_place_order(self) -> None:
+        """新订单动作 - 弹出下单对话框"""
+        self.app.run_worker(self._place_order_worker, exclusive=True)
+
+    async def _place_order_worker(self) -> None:
+        """新订单的工作线程"""
+        try:
+            # 获取当前选中的股票代码作为默认值
+            default_stock_code = None
+            if self.app_core.active_table == "stock" and 0 <= self.app_core.current_stock_cursor < len(self.app_core.monitored_stocks):
+                default_stock_code = self.app_core.monitored_stocks[self.app_core.current_stock_cursor]
+
+            self.logger.info(f"准备创建新订单，默认股票: {default_stock_code}")
+
+            # 构建默认值字典
+            default_values = {}
+            if default_stock_code:
+                default_values["code"] = default_stock_code
+
+            # 导入并显示下单对话框
+            from monitor.widgets.order_dialog import show_place_order_dialog
+
+            order_data = await show_place_order_dialog(
+                app=self.app,
+                title="新建订单",
+                default_values=default_values,
+                submit_callback=self._handle_place_submit,
+                cancel_callback=self._handle_place_cancel
+            )
+
+            if order_data:
+                self.logger.info(f"订单数据已收集: {order_data}")
+                # 提交订单请求
+                await self._submit_place_order(order_data)
+            else:
+                self.logger.info("用户取消了下单操作")
+
+        except Exception as e:
+            self.logger.error(f"创建订单失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if ui_manager and ui_manager.info_panel:
+                await ui_manager.info_panel.log_info(f"创建订单失败: {e}", "下单操作")
+
+    def _handle_place_submit(self, order_data) -> None:
+        """下单提交回调函数"""
+        self.logger.info(f"下单提交回调: {order_data}")
+
+    def _handle_place_cancel(self) -> None:
+        """下单取消回调函数"""
+        self.logger.info("用户取消下单操作")
+
+    async def _submit_place_order(self, order_data) -> None:
+        """提交下单请求到富途API"""
+        try:
+            from base.order import OrderData
+
+            # 确保order_data是OrderData对象
+            if not isinstance(order_data, OrderData):
+                self.logger.error(f"下单数据格式错误: {type(order_data)}")
+                return
+
+            # 获取futu_trade实例
+            data_manager = getattr(self.app_core.app, 'data_manager', None)
+            if not data_manager:
+                self.logger.error("DataManager未初始化")
+                return
+
+            futu_trade = getattr(data_manager, 'futu_trade', None)
+            if not futu_trade:
+                self.logger.error("FutuTrade未初始化")
+                return
+
+            # 调用下单API
+            self.logger.info(f"调用下单API: code={order_data.code}, "
+                           f"price={order_data.price}, qty={order_data.qty}, "
+                           f"trd_side={order_data.trd_side}, order_type={order_data.order_type}")
+
+            result = futu_trade.place_order(
+                code=order_data.code,
+                price=order_data.price,
+                qty=order_data.qty,
+                trd_side=order_data.trd_side,
+                order_type=order_data.order_type,
+                trd_env=order_data.trd_env,
+                market=order_data.market
+            )
+
+            # 处理结果
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if isinstance(result, dict) and result.get('success', False):
+                # 下单成功
+                order_id = result.get('order_id', 'N/A')
+                self.logger.info(f"下单成功: {result}")
+                if ui_manager and ui_manager.info_panel:
+                    await ui_manager.info_panel.log_info(
+                        f"订单 {order_id} 创建成功 - {order_data.code} {order_data.trd_side} {order_data.qty}股 @ {order_data.price}",
+                        "下单操作"
+                    )
+
+                # 刷新订单数据
+                group_manager = getattr(self.app_core.app, 'group_manager', None)
+                if group_manager:
+                    await group_manager.refresh_user_orders()
+                if ui_manager:
+                    await ui_manager.update_orders_table()
+            else:
+                # 下单失败
+                error_msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                self.logger.error(f"下单失败: {error_msg}")
+                if ui_manager and ui_manager.info_panel:
+                    await ui_manager.info_panel.log_info(
+                        f"订单创建失败: {error_msg}",
+                        "下单操作"
+                    )
+
+        except Exception as e:
+            self.logger.error(f"提交下单请求失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if ui_manager and ui_manager.info_panel:
+                await ui_manager.info_panel.log_info(f"提交下单请求失败: {e}", "下单操作")
+
+    async def action_modify_order(self) -> None:
+        """修改订单动作 - 弹出改单对话框"""
+        self.app.run_worker(self._modify_order_worker, exclusive=True)
+
+    async def _modify_order_worker(self) -> None:
+        """修改订单的工作线程"""
+        try:
+            # 检查订单表格是否为活跃表格
+            if self.app_core.active_table != "orders":
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+                if ui_manager and ui_manager.info_panel:
+                    await ui_manager.info_panel.log_info("请先切换到订单表格", "改单操作")
+                return
+
+            # 检查是否有订单数据
+            if not self.app_core.order_data or len(self.app_core.order_data) == 0:
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+                if ui_manager and ui_manager.info_panel:
+                    await ui_manager.info_panel.log_info("没有可修改的订单", "改单操作")
+                return
+
+            # 获取当前选中的订单
+            if not (0 <= self.app_core.current_order_cursor < len(self.app_core.order_data)):
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+                if ui_manager and ui_manager.info_panel:
+                    await ui_manager.info_panel.log_info("请选择要修改的订单", "改单操作")
+                return
+
+            selected_order = self.app_core.order_data[self.app_core.current_order_cursor]
+
+            # 提取订单关键信息
+            order_id = selected_order.get('order_id', '')
+            current_price = selected_order.get('price', None)
+            current_qty = selected_order.get('qty', None)
+            stock_code = selected_order.get('code', '')
+
+            self.logger.info(f"准备修改订单: {order_id}, 股票: {stock_code}, 价格: {current_price}, 数量: {current_qty}")
+
+            # 导入并显示改单对话框
+            from monitor.widgets.order_dialog import show_modify_order_dialog
+
+            modify_data = await show_modify_order_dialog(
+                app=self.app,
+                title=f"修改订单 - {stock_code}",
+                order_id=order_id,
+                current_price=current_price,
+                current_qty=current_qty,
+                submit_callback=self._handle_modify_submit,
+                cancel_callback=self._handle_modify_cancel
+            )
+
+            if modify_data:
+                self.logger.info(f"改单数据已收集: {modify_data}")
+                # 提交改单请求
+                await self._submit_modify_order(modify_data)
+            else:
+                self.logger.info("用户取消了改单操作")
+
+        except Exception as e:
+            self.logger.error(f"修改订单失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if ui_manager and ui_manager.info_panel:
+                await ui_manager.info_panel.log_info(f"修改订单失败: {e}", "改单操作")
+
+    def _handle_modify_submit(self, modify_data) -> None:
+        """改单提交回调函数"""
+        self.logger.info(f"改单提交回调: {modify_data}")
+
+    def _handle_modify_cancel(self) -> None:
+        """改单取消回调函数"""
+        self.logger.info("用户取消改单操作")
+
+    async def _submit_modify_order(self, modify_data) -> None:
+        """提交改单请求到富途API"""
+        try:
+            from base.order import ModifyOrderData
+
+            # 确保modify_data是ModifyOrderData对象
+            if not isinstance(modify_data, ModifyOrderData):
+                self.logger.error(f"改单数据格式错误: {type(modify_data)}")
+                return
+
+            # 获取futu_trade实例
+            data_manager = getattr(self.app_core.app, 'data_manager', None)
+            if not data_manager:
+                self.logger.error("DataManager未初始化")
+                return
+
+            futu_trade = getattr(data_manager, 'futu_trade', None)
+            if not futu_trade:
+                self.logger.error("FutuTrade未初始化")
+                return
+
+            # 调用改单API
+            self.logger.info(f"调用改单API: order_id={modify_data.order_id}, "
+                           f"price={modify_data.price}, qty={modify_data.qty}")
+
+            result = futu_trade.modify_order(
+                order_id=modify_data.order_id,
+                price=modify_data.price,
+                qty=modify_data.qty,
+                trd_env=None,
+                market=None
+            )
+
+            # 处理结果
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if isinstance(result, dict) and result.get('success', False):
+                # 改单成功
+                self.logger.info(f"改单成功: {result}")
+                if ui_manager and ui_manager.info_panel:
+                    await ui_manager.info_panel.log_info(
+                        f"订单 {modify_data.order_id} 修改成功",
+                        "改单操作"
+                    )
+
+                # 刷新订单数据
+                group_manager = getattr(self.app_core.app, 'group_manager', None)
+                if group_manager:
+                    await group_manager.refresh_user_orders()
+                if ui_manager:
+                    await ui_manager.update_orders_table()
+            else:
+                # 改单失败
+                error_msg = result.get('message', str(result)) if isinstance(result, dict) else str(result)
+                self.logger.error(f"改单失败: {error_msg}")
+                if ui_manager and ui_manager.info_panel:
+                    await ui_manager.info_panel.log_info(
+                        f"订单 {modify_data.order_id} 修改失败: {error_msg}",
+                        "改单操作"
+                    )
+
+        except Exception as e:
+            self.logger.error(f"提交改单请求失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if ui_manager and ui_manager.info_panel:
+                await ui_manager.info_panel.log_info(f"提交改单请求失败: {e}", "改单操作")
+

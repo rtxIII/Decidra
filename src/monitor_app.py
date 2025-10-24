@@ -69,6 +69,7 @@ class MonitorApp(App):
         Binding("h", "help", "帮助"),
         Binding("n", "add_stock", "添加股票"),
         Binding("k", "delete_stock", "删除股票"),
+        Binding("o", "place_order", "新订单"),
         Binding("r", "refresh", "刷新数据"),
         Binding("escape", "go_back", "返回"),
         Binding("tab", "switch_tab", "切换标签"),
@@ -117,9 +118,9 @@ class MonitorApp(App):
         
         # 初始化应用核心
         self.app_core = AppCore(self)
-        
+
         # 初始化各个管理器
-        self.data_manager = DataManager(self.app_core, self.futu_market)
+        self.data_manager = DataManager(self.app_core, self.futu_market, self.futu_trade)
         self.ui_manager = UIManager(self.app_core, self)
         self.group_manager = UserDataManager(self.app_core, self.futu_market)
         self.event_handler = EventHandler(self.app_core, self)
@@ -267,7 +268,12 @@ class MonitorApp(App):
         """选择当前光标所在的分组"""
         if not self.show_splash and self.managers_initialized:
             await self.event_handler.action_select_group()
-    
+
+    async def action_place_order(self) -> None:
+        """新订单动作"""
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_place_order()
+
     async def action_focus_left_table(self) -> None:
         """左移焦点到股票表格"""
         if not self.show_splash and self.managers_initialized:

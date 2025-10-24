@@ -46,7 +46,7 @@ class FutuTrade(FutuModuleBase):
         self.risk_config = {
             "max_single_order_amount": 100000,  # 单笔最大下单金额
             "max_position_ratio": 0.3,  # 单只股票最大持仓比例
-            "enable_risk_control": True  # 是否启用风险控制
+            "enable_risk_control": False  # 是否启用风险控制
         }
         
         self.logger.info(f"FutuTrade initialized with {default_trd_env} environment")

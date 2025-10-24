@@ -541,21 +541,44 @@ class UserDataManager:
         try:
             if row_index < 0 or row_index >= len(self.app_core.position_data):
                 return
-            
+
             selected_position = self.app_core.position_data[row_index]
             stock_code = selected_position.get('stock_code', '')
-            
+
             # 记录选择的持仓
             self.logger.info(f"选择持仓: {stock_code}")
-            
+
             # 更新持仓详情显示
             ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager and ui_manager.info_panel:
                 await ui_manager.info_panel.log_info(f"选择持仓: {stock_code}", "持仓选择")
-            
+
         except Exception as e:
             self.logger.error(f"处理持仓选择失败: {e}")
-    
+
+    async def refresh_user_orders(self) -> None:
+        """刷新用户订单数据"""
+        try:
+            self.logger.info("开始刷新用户订单数据...")
+
+            # 重新加载用户订单数据
+            await self.load_user_orders()
+
+            # 更新UI显示
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if ui_manager:
+                await ui_manager.update_orders_table()
+
+            self.logger.info("用户订单数据刷新完成")
+            if ui_manager and ui_manager.info_panel:
+                await ui_manager.info_panel.log_info("订单数据已刷新", "系统")
+
+        except Exception as e:
+            self.logger.error(f"刷新用户订单数据失败: {e}")
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if ui_manager and ui_manager.info_panel:
+                await ui_manager.info_panel.log_info(f"刷新订单数据失败: {e}", "系统")
+
     async def calculate_position_summary(self) -> Dict[str, Any]:
         """计算持仓汇总信息"""
         try:

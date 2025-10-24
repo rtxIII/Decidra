@@ -34,25 +34,28 @@ class DataManager:
     数据管理器
     负责股票数据获取、API调用管理和数据处理
     """
-    
-    def __init__(self, app_core, futu_market: FutuMarket):
+
+    def __init__(self, app_core, futu_market: FutuMarket, futu_trade=None):
         """初始化数据管理器"""
         self.app_core = app_core
         self.logger = get_logger(__name__)
-        
+
         # 富途市场实例
         self.futu_market = futu_market
-        
+
+        # 富途交易实例
+        self.futu_trade = futu_trade
+
         # 定时器
         self.refresh_timer: Optional[asyncio.Task] = None
         self.market_status_poller: Optional[asyncio.Task] = None
         self.user_refresh_timer: Optional[asyncio.Task] = None
-        
+
         # 全局市场状态缓存
         self._global_market_state_cache = None
         self._market_status_cache_timestamp = 0.0
         self._market_status_cache_ttl = 30.0  # 缓存有效期30秒
-        
+
         self.logger.info("DataManager 初始化完成")
 
     def get_trading_mode(self) -> str:

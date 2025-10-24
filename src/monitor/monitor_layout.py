@@ -214,7 +214,7 @@ class UserGroupPanel(Container):
                     show_row_labels=False,
                     id="orders_table"
                 )
-                orders_table.add_columns("订单号", "股票", "类型", "状态", "数量")
+                orders_table.add_columns("订单号", "股票", "类型", "状态", "价格", "数量")
                 yield orders_table
 
 

@@ -450,7 +450,17 @@ class UIManager:
                     stock_code = order.get('code', '')
                     trd_side = order.get('trd_side', '')
                     order_status = order.get('order_status', '')
-                    qty = str(order.get('qty', '0'))
+                    price = order.get('price', 0)
+                    qty = order.get('qty', 0)
+
+                    # 格式化价格显示
+                    if isinstance(price, (int, float)):
+                        price_display = f"{price:.2f}"
+                    else:
+                        price_display = str(price)
+
+                    # 格式化数量显示
+                    qty_display = str(int(float(qty))) if qty else "0"
 
                     # 转换交易方向并设置颜色
                     if trd_side == 'BUY':
@@ -491,14 +501,15 @@ class UIManager:
 
                     # 添加到表格
                     display_order_id = order_id[-8:] if len(order_id) > 8 else order_id
-                    self.logger.debug(f"添加订单行: {display_order_id} {stock_code} {order_type} {status_display_text} {qty}")
+                    self.logger.debug(f"添加订单行: {display_order_id} {stock_code} {order_type} {status_display_text} {price_display} {qty_display}")
 
                     self.orders_table.add_row(
                         display_order_id,  # 显示订单号后8位
                         stock_code,
                         type_display,
                         status_display,
-                        qty,
+                        price_display,  # 价格
+                        qty_display,    # 数量
                         key=order_id
                     )
 
