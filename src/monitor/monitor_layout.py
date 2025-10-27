@@ -92,7 +92,7 @@ class StockListPanel(Container):
         # 快捷键提示区域
         with Container(classes="button-bar"):
             yield Static(
-                "[bold green]N[/bold green] 添加股票  [bold red]M[/bold red] 删除股票  [bold blue]R[/bold blue] 刷新数据  [bold yellow]Space[/bold yellow] 选择分组",
+                "[bold green]N[/bold green] 添加股票  [bold red]K[/bold red] 删除股票  [bold blue]O[/bold blue] 添加订单  [bold yellow]Space[/bold yellow] 选择分组",
                 id="hotkey_hints"
             )
 
@@ -1066,7 +1066,7 @@ class StatusBar(Container):
 
 
 class MonitorLayout(Container):
-    """监控���面完整布局"""
+    """监控界面完整布局"""
     
     def __init__(self, **kwargs):
         """初始化监控界面布局"""

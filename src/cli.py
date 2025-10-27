@@ -1009,7 +1009,7 @@ def start_monitor(stocks: Optional[str], refresh: int, mode: str):
         
         print_success("监控界面已启动！")
         print_info("快捷键:")
-        click.echo("  Q: 退出程序 A: 添加股票 D: 删除股票 Z/X/C: 切换标签页")
+        click.echo("  Q: 退出程序 A: 添加股票 D: 删除股票 N: 添加订单 Z/X/C: 切换标签页")
         click.echo("  Ctrl+C: 强制退出")
         
         # 启动监控定时器
