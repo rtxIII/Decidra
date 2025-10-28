@@ -8,6 +8,8 @@ ORDER_TYPES = [
     ("MARKET", "市价单"),
     ("STOP", "止损单"),
     ("STOP_LIMIT", "止损限价单"),
+    ("TRAILING_STOP", "触及市价单(止盈)"),
+    ("TRAILING_STOP_LIMIT", "触及限价单(止盈)"),
     ("ABSOLUTE_LIMIT", "绝对限价单"),
     ("AUCTION", "竞价单"),
     ("AUCTION_LIMIT", "竞价限价单"),

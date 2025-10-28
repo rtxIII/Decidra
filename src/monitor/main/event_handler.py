@@ -542,6 +542,12 @@ class EventHandler:
             if default_stock_code:
                 default_values["code"] = default_stock_code
 
+                # 尝试获取股票的当前价格作为默认价格
+                if default_stock_code in self.app_core.stock_data:
+                    stock_info = self.app_core.stock_data[default_stock_code]
+                    if stock_info and hasattr(stock_info, 'current_price'):
+                        default_values["price"] = stock_info.current_price
+
             # 导入并显示下单对话框
             from monitor.widgets.order_dialog import show_place_order_dialog
 

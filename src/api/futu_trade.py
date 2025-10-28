@@ -479,7 +479,17 @@ class TradeManager:
             code: 股票代码 (如 "HK.00700")
             price: 下单价格
             qty: 下单数量
-            order_type: 订单类型 (NORMAL-限价单, MARKET-市价单, STOP-止损单, STOP_LIMIT-止盈限价单)
+            order_type: 订单类型
+                - NORMAL: 限价单
+                - MARKET: 市价单
+                - STOP: 止损单
+                - STOP_LIMIT: 止损限价单
+                - TRAILING_STOP: 触及市价单(止盈)
+                - TRAILING_STOP_LIMIT: 触及限价单(止盈)
+                - ABSOLUTE_LIMIT: 绝对限价单
+                - AUCTION: 竞价单
+                - AUCTION_LIMIT: 竞价限价单
+                - SPECIAL_LIMIT: 特别限价单
             trd_side: 交易方向 (BUY-买入, SELL-卖出)
             aux_price: 辅助价格，用于止损止盈订单的触发价格
             trd_env: 交易环境 (REAL/SIMULATE)
@@ -501,6 +511,10 @@ class TradeManager:
                 futu_order_type = ft.OrderType.STOP
             elif order_type.upper() == "STOP_LIMIT":
                 futu_order_type = ft.OrderType.STOP_LIMIT
+            elif order_type.upper() == "TRAILING_STOP":
+                futu_order_type = ft.OrderType.TRAILING_STOP
+            elif order_type.upper() == "TRAILING_STOP_LIMIT":
+                futu_order_type = ft.OrderType.TRAILING_STOP_LIMIT
             elif order_type.upper() == "ABSOLUTE_LIMIT":
                 futu_order_type = ft.OrderType.ABSOLUTE_LIMIT
             elif order_type.upper() == "AUCTION":

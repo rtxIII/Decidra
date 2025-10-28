@@ -332,8 +332,10 @@ class PlaceOrderDialog(ModalScreen):
 
                     with Horizontal(classes="order-field-row"):
                         yield Static("价格:", classes="order-field-label")
+                        # 价格默认值：优先使用传入的值，否则为空
+                        default_price = self.default_values.get("price", "")
                         self._price_input = Input(
-                            value=str(self.default_values.get("price", "")),
+                            value=str(default_price) if default_price else "",
                             placeholder="0.00",
                             validators=[PriceValidator()],
                             classes="order-field-input",
@@ -342,8 +344,10 @@ class PlaceOrderDialog(ModalScreen):
                         yield self._price_input
 
                         yield Static("数量:", classes="order-field-label")
+                        # 数量默认值：优先使用传入的值，否则默认为100
+                        default_qty = self.default_values.get("qty", 100)
                         self._qty_input = Input(
-                            value=str(self.default_values.get("qty", "")),
+                            value=str(default_qty) if default_qty is not None else "100",
                             placeholder="100",
                             validators=[QuantityValidator()],
                             classes="order-field-input",
