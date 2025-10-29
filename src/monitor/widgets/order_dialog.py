@@ -234,6 +234,36 @@ class PlaceOrderDialog(ModalScreen):
         display: block;
     }
 
+    .order-amount-display {
+        height: auto;
+        padding: 1 2;
+        margin: 1 0;
+        background: $panel;
+        border: solid $accent;
+        text-align: center;
+        display: none;
+    }
+
+    .order-amount-display.visible {
+        display: block;
+    }
+
+    .order-amount-display.amount-small {
+        color: $success;
+    }
+
+    .order-amount-display.amount-medium {
+        color: $warning;
+    }
+
+    .order-amount-display.amount-large {
+        color: rgb(255, 140, 0);  /* 橙色 */
+    }
+
+    .order-amount-display.amount-huge {
+        color: $error;
+    }
+
     .order-button-row {
         layout: horizontal;
         height: auto;
@@ -300,6 +330,7 @@ class PlaceOrderDialog(ModalScreen):
         self._market_select: Optional[Select] = None
         self._time_in_force_select: Optional[Select] = None
         self._error_widget: Optional[Static] = None
+        self._amount_display: Optional[Static] = None
 
     def compose(self) -> ComposeResult:
         """构建下单对话框UI"""
@@ -416,6 +447,9 @@ class PlaceOrderDialog(ModalScreen):
                 # 错误消息区域
                 yield Static("", classes="error-message", id="error-message")
 
+                # 订单总金额显示区域
+                yield Static("", classes="order-amount-display", id="order-amount-display")
+
             # 按钮行（移出order-dialog-content，直接在order-dialog-window下）
             with Center():
                 with Horizontal(classes="order-button-row"):
@@ -435,6 +469,7 @@ class PlaceOrderDialog(ModalScreen):
     def on_mount(self) -> None:
         """组件挂载时设置焦点和默认值"""
         self._error_widget = self.query_one("#error-message", Static)
+        self._amount_display = self.query_one("#order-amount-display", Static)
 
         # 设置Select组件的默认值
         # 在options格式为[(name, code)]的情况下，value应该是code
@@ -461,9 +496,15 @@ class PlaceOrderDialog(ModalScreen):
         if self._code_input:
             self._code_input.focus()
 
-    def on_input_changed(self, _event: Input.Changed) -> None:
-        """处理输入变化，清除错误消息"""
+        # 初始化订单金额显示
+        self._update_order_amount()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """处理输入变化，清除错误消息并更新订单金额"""
         self._clear_error()
+        # 只在价格或数量输入框变化时更新金额
+        if event.input.id in ("price-input", "qty-input"):
+            self._update_order_amount()
 
     @on(Button.Pressed, "#submit-btn")
     def on_submit_pressed(self, event: Button.Pressed) -> None:
@@ -587,6 +628,61 @@ class PlaceOrderDialog(ModalScreen):
             self._error_widget.remove_class("visible")
             self._error_widget.update("")
 
+    def _update_order_amount(self) -> None:
+        """更新订单总金额显示"""
+        if not self._amount_display:
+            return
+
+        # 尝试获取价格和数量
+        try:
+            price_str = self._price_input.value.strip() if self._price_input else ""
+            qty_str = self._qty_input.value.strip() if self._qty_input else ""
+
+            # 如果价格或数量为空，隐藏金额显示
+            if not price_str or not qty_str:
+                self._amount_display.remove_class("visible")
+                return
+
+            # 转换为数值
+            price = float(price_str)
+            qty = int(qty_str)
+
+            # 计算总金额
+            total_amount = price * qty
+
+            # 格式化显示金额（千分位分隔符）
+            amount_str = f"{total_amount:,.2f}"
+
+            # 根据金额大小选择颜色类
+            # 移除旧的颜色类
+            self._amount_display.remove_class("amount-small")
+            self._amount_display.remove_class("amount-medium")
+            self._amount_display.remove_class("amount-large")
+            self._amount_display.remove_class("amount-huge")
+
+            # 添加新的颜色类
+            if total_amount < 100000:  # < 10万
+                self._amount_display.add_class("amount-small")
+                level = "较小"
+            elif total_amount < 500000:  # 10万 - 50万
+                self._amount_display.add_class("amount-medium")
+                level = "中等"
+            elif total_amount < 1000000:  # 50万 - 100万
+                self._amount_display.add_class("amount-large")
+                level = "较大"
+            else:  # > 100万
+                self._amount_display.add_class("amount-huge")
+                level = "很大"
+
+            # 更新显示文本
+            display_text = f"订单总金额: ¥{amount_str} (价格 {price} × 数量 {qty}) [{level}]"
+            self._amount_display.update(display_text)
+            self._amount_display.add_class("visible")
+
+        except (ValueError, TypeError):
+            # 输入不是有效数字时隐藏显示
+            self._amount_display.remove_class("visible")
+
     def action_submit_order(self) -> None:
         """提交订单操作"""
         # 添加调试信息
@@ -694,6 +790,36 @@ class ModifyOrderDialog(ModalScreen):
         display: block;
     }
 
+    .order-amount-display {
+        height: auto;
+        padding: 1 2;
+        margin: 1 0;
+        background: $panel;
+        border: solid $accent;
+        text-align: center;
+        display: none;
+    }
+
+    .order-amount-display.visible {
+        display: block;
+    }
+
+    .order-amount-display.amount-small {
+        color: $success;
+    }
+
+    .order-amount-display.amount-medium {
+        color: $warning;
+    }
+
+    .order-amount-display.amount-large {
+        color: rgb(255, 140, 0);  /* 橙色 */
+    }
+
+    .order-amount-display.amount-huge {
+        color: $error;
+    }
+
     .modify-button-row {
         layout: horizontal;
         height: auto;
@@ -760,6 +886,7 @@ class ModifyOrderDialog(ModalScreen):
         self._new_qty_input: Optional[Input] = None
         self._aux_price_input: Optional[Input] = None
         self._error_widget: Optional[Static] = None
+        self._amount_display: Optional[Static] = None
 
     def compose(self) -> ComposeResult:
         """构建改单对话框UI"""
@@ -825,6 +952,9 @@ class ModifyOrderDialog(ModalScreen):
                 # 错误消息区域
                 yield Static("", classes="error-message", id="error-message")
 
+                # 订单总金额显示区域
+                yield Static("", classes="order-amount-display", id="order-amount-display")
+
             # 按钮行（移出modify-order-content，直接在modify-order-window下）
             with Center():
                 with Horizontal(classes="modify-button-row"):
@@ -844,13 +974,20 @@ class ModifyOrderDialog(ModalScreen):
     def on_mount(self) -> None:
         """组件挂载时设置焦点"""
         self._error_widget = self.query_one("#error-message", Static)
+        self._amount_display = self.query_one("#order-amount-display", Static)
 
         if self._order_id_input:
             self._order_id_input.focus()
 
-    def on_input_changed(self, _event: Input.Changed) -> None:
-        """处理输入变化，清除错误消息"""
+        # 初始化订单金额显示
+        self._update_order_amount()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """处理输入变化，清除错误消息并更新订单金额"""
         self._clear_error()
+        # 只在价格或数量输入框变化时更新金额
+        if event.input.id in ("new-price-input", "new-qty-input"):
+            self._update_order_amount()
 
     @on(Button.Pressed, "#submit-btn")
     def on_submit_pressed(self, event: Button.Pressed) -> None:
@@ -983,6 +1120,84 @@ class ModifyOrderDialog(ModalScreen):
         if self._error_widget:
             self._error_widget.remove_class("visible")
             self._error_widget.update("")
+
+    def _update_order_amount(self) -> None:
+        """更新订单总金额显示（改单对话框）"""
+        if not self._amount_display:
+            return
+
+        # 尝试获取新价格和新数量
+        try:
+            new_price_str = self._new_price_input.value.strip() if self._new_price_input else ""
+            new_qty_str = self._new_qty_input.value.strip() if self._new_qty_input else ""
+
+            # 使用当前值或新值
+            price = None
+            qty = None
+
+            if new_price_str:
+                price = float(new_price_str)
+            elif self.current_price is not None:
+                price = self.current_price
+
+            if new_qty_str:
+                qty = int(float(new_qty_str))  # 处理'1100.0'这种情况
+            elif self.current_qty is not None:
+                qty = int(self.current_qty)
+
+            # 如果价格或数量仍然为空，隐藏金额显示
+            if price is None or qty is None:
+                self._amount_display.remove_class("visible")
+                return
+
+            # 计算当前总金额和新总金额
+            current_amount = None
+            if self.current_price is not None and self.current_qty is not None:
+                current_amount = self.current_price * self.current_qty
+
+            new_amount = price * qty
+
+            # 格式化显示金额（千分位分隔符）
+            new_amount_str = f"{new_amount:,.2f}"
+
+            # 根据金额大小选择颜色类
+            # 移除旧的颜色类
+            self._amount_display.remove_class("amount-small")
+            self._amount_display.remove_class("amount-medium")
+            self._amount_display.remove_class("amount-large")
+            self._amount_display.remove_class("amount-huge")
+
+            # 添加新的颜色类
+            if new_amount < 100000:  # < 10万
+                self._amount_display.add_class("amount-small")
+                level = "较小"
+            elif new_amount < 500000:  # 10万 - 50万
+                self._amount_display.add_class("amount-medium")
+                level = "中等"
+            elif new_amount < 1000000:  # 50万 - 100万
+                self._amount_display.add_class("amount-large")
+                level = "较大"
+            else:  # > 100万
+                self._amount_display.add_class("amount-huge")
+                level = "很大"
+
+            # 更新显示文本
+            if current_amount is not None and abs(new_amount - current_amount) > 0.01:
+                # 显示对比信息
+                current_amount_str = f"{current_amount:,.2f}"
+                diff = new_amount - current_amount
+                diff_str = f"{diff:+,.2f}"
+                display_text = f"¥{new_amount_str} (原: ¥{current_amount_str}, 差额: {diff_str})"
+            else:
+                # 只显示新金额
+                display_text = f"¥{new_amount_str} (价格 {price} × 数量 {qty})"
+
+            self._amount_display.update(display_text)
+            self._amount_display.add_class("visible")
+
+        except (ValueError, TypeError):
+            # 输入不是有效数字时隐藏显示
+            self._amount_display.remove_class("visible")
 
     def action_submit_modify(self) -> None:
         """提交修改操作"""
