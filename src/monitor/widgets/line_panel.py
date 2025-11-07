@@ -32,14 +32,19 @@ from utils import logger
 
 # 导入AI相关模块
 try:
-    from modules.ai.claude_ai_client import create_claude_client
+    from modules.ai.claude_ai_client import create_claude_client, TradingAdvice, TradingOrder
     from monitor.widgets.window_dialog import WindowInputDialog
     from monitor.widgets.thinking_animation import ThinkingAnimation
+    from monitor.widgets.order_dialog import PlaceOrderDialog, OrderData
     AI_MODULES_AVAILABLE = True
 except ImportError:
     create_claude_client = None
+    TradingAdvice = None
+    TradingOrder = None
     WindowInputDialog = None
     ThinkingAnimation = None
+    PlaceOrderDialog = None
+    OrderData = None
     AI_MODULES_AVAILABLE = False
 
 
@@ -48,6 +53,7 @@ class InfoType(Enum):
     LOG = "log"                    # 系统日志
     STOCK_DATA = "stock_data"      # 股票数据
     TRADE_INFO = "trade_info"      # 交易信息
+    TRADE_ADVICE = "trade_advice"  # AI交易建议
     PERFORMANCE = "performance"    # 性能指标
     API_STATUS = "api_status"      # API状态
     USER_ACTION = "user_action"    # 用户操作
@@ -187,7 +193,30 @@ class InfoBuffer:
         """清空缓冲区"""
         self.messages.clear()
         self.logger.info("Info buffer cleared")
-    
+
+    def remove_message_by_advice_id(self, advice_id: str) -> bool:
+        """根据建议ID删除消息
+
+        Args:
+            advice_id: 交易建议ID
+
+        Returns:
+            bool: 是否成功删除消息
+        """
+        messages_to_remove = []
+        for msg in self.messages:
+            if msg.data and msg.data.get('advice_id') == advice_id:
+                messages_to_remove.append(msg)
+
+        if messages_to_remove:
+            for msg in messages_to_remove:
+                self.messages.remove(msg)
+            self.logger.info(f"Removed {len(messages_to_remove)} message(s) with advice_id: {advice_id[:8]}")
+            return True
+
+        self.logger.warning(f"No message found with advice_id: {advice_id[:8]}")
+        return False
+
     def get_stats(self) -> Dict[str, int]:
         """获取缓冲区统计信息"""
         stats = {
@@ -344,6 +373,7 @@ class InfoFilterBar(Horizontal):
             "log": "系统日志",
             "stock_data": "股票数据",
             "trade_info": "交易信息",
+            "trade_advice": "AI交易建议",
             "performance": "性能指标",
             "api_status": "API状态",
             "user_action": "用户操作",
@@ -475,7 +505,12 @@ class InfoPanel(Widget):
         self.ai_display_widget = None
         self.ai_suggestions = []  # AI建议缓存
         self.thinking_animation = None  # 思考动画组件
-        
+
+        # 交易建议管理
+        self.pending_trading_advice = {}  # 待确认的交易建议 {advice_id: TradingAdvice}
+        self.trade_manager = None  # 交易管理器，将由应用程序设置
+        self._pending_order_advice = None  # 临时保存待处理的订单建议（用于回调）
+
         # 与项目logger系统集成
         self._setup_logger_handler()
     
@@ -488,6 +523,11 @@ class InfoPanel(Widget):
         """设置logger处理器，自动捕获项目日志"""
         # 这里可以添加自定义的logging handler来捕获系统日志
         pass
+
+    def set_trade_manager(self, trade_manager) -> None:
+        """设置交易管理器"""
+        self.trade_manager = trade_manager
+        self.logger.info("交易管理器已设置")
     
     async def on_mount(self) -> None:
         """组件挂载时初始化"""
@@ -629,6 +669,25 @@ class InfoPanel(Widget):
         stats_bar = self.query_one("#stats_bar")
         stats_bar.update(stats_text)
     
+    async def remove_info_by_advice_id(self, advice_id: str) -> bool:
+        """根据建议ID删除消息
+
+        Args:
+            advice_id: 交易建议ID
+
+        Returns:
+            bool: 是否成功删除
+        """
+        try:
+            removed = self.buffer.remove_message_by_advice_id(advice_id)
+            if removed:
+                await self.refresh_display()
+                self.logger.info(f"已删除建议消息: {advice_id[:8]}")
+            return removed
+        except Exception as e:
+            self.logger.error(f"删除建议消息失败: {e}")
+            return False
+
     async def clear_all(self) -> None:
         """清空所有信息"""
         try:
@@ -658,6 +717,42 @@ class InfoPanel(Widget):
             self.logger.info(f"选择消息并更新详情: {event.message.content[:50]}...")
         except Exception as e:
             self.logger.error(f"处理消息选择事件失败: {e}")
+
+    async def on_info_detail_view_trading_action_requested(self, event: InfoDetailView.TradingActionRequested) -> None:
+        """处理详情视图的交易操作请求"""
+        try:
+            action = event.action
+            advice_id = event.advice_id
+
+            self.logger.info(f"收到交易操作请求: {action} for {advice_id[:8]}")
+
+            # 直接构造命令字典并调用处理方法，避免通过文本解析
+            command = {
+                'action': action,
+                'advice_id': advice_id
+            }
+
+            # 验证操作类型
+            valid_actions = ['confirm', 'reject']
+            if action in valid_actions:
+                # 直接调用建议命令处理方法，传递完整的上下文
+                await self._handle_advice_command(command)
+            else:
+                await self.add_info(
+                    content=f"❌ 不支持的操作类型: {action}",
+                    info_type=InfoType.ERROR,
+                    level=InfoLevel.ERROR,
+                    source="操作处理"
+                )
+
+        except Exception as e:
+            self.logger.error(f"处理交易操作请求失败: {e}")
+            await self.add_info(
+                content=f"❌ 处理操作请求时出现错误: {str(e)}",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="操作处理"
+            )
     
     # 便捷方法
     async def log_debug(self, content: str, source: str = "") -> None:
@@ -750,11 +845,11 @@ class InfoPanel(Widget):
     async def _process_ai_request(self, user_input: str) -> None:
         """处理AI请求并显示响应"""
         self.logger.info(f"开始处理AI请求: {user_input}")
-        
+
         if not user_input.strip():
             self.logger.debug(f"[DEBUG] 用户输入为空，返回")
             return
-        
+
         try:
             # 显示用户问题
             await self.add_info(
@@ -763,10 +858,10 @@ class InfoPanel(Widget):
                 level=InfoLevel.INFO,
                 source="用户"
             )
-            
+
             # 显示思考动画
             await self._start_thinking_animation()
-            
+
             # 创建AI客户端并获取响应
             ai_client = await create_claude_client()
             if not ai_client.is_available():
@@ -777,26 +872,33 @@ class InfoPanel(Widget):
                     source="AI助手"
                 )
                 return
-            
-            # 调用AI进行对话
-            ai_response = await ai_client.chat_with_ai(user_input)
-            
-            # 停止思考动画
-            await self._stop_thinking_animation()
-            
-            # 显示AI回复
-            await self.add_info(
-                content=f"🤖 AI回复:\n{ai_response}",
-                info_type=InfoType.LOG,
-                level=InfoLevel.INFO,
-                source="AI助手"
-            )
-            
-            
+
+            # 检测是否为建议确认命令
+            advice_command = self._parse_advice_command(user_input)
+            if advice_command:
+                await self._handle_advice_command(advice_command)
+            # 检测是否为交易相关请求
+            elif self._is_trading_request(user_input):
+                await self._handle_trading_request(ai_client, user_input)
+            else:
+                # 普通AI对话
+                ai_response = await ai_client.chat_with_ai(user_input)
+
+                # 停止思考动画
+                await self._stop_thinking_animation()
+
+                # 显示AI回复
+                await self.add_info(
+                    content=f"🤖 AI回复:\n{ai_response}",
+                    info_type=InfoType.LOG,
+                    level=InfoLevel.INFO,
+                    source="AI助手"
+                )
+
         except Exception as e:
             # 确保停止动画
             await self._stop_thinking_animation()
-            
+
             self.logger.error(f"处理AI请求失败: {e}")
             await self.add_info(
                 content=f"AI处理失败: {str(e)}",
@@ -824,6 +926,525 @@ class InfoPanel(Widget):
                 return match.group(1)
         
         return ""
+
+    def _is_trading_request(self, user_input: str) -> bool:
+        """检测是否为交易相关请求"""
+        trading_keywords = [
+            '买入', '卖出', '交易', '投资', '建议', '策略',
+            '止损', '止盈', '市价', '限价', '下单',
+            '持仓', '买', '卖', '仓位', '资金',
+            '股票', '股价', '收益', '分析'
+        ]
+
+        user_lower = user_input.lower()
+        return any(keyword in user_lower for keyword in trading_keywords)
+
+    async def _handle_trading_request(self, ai_client, user_input: str) -> None:
+        """处理交易相关请求"""
+        try:
+            # 获取当前股票上下文（从应用中获取）
+            context = self._get_current_trading_context()
+
+            # 生成AI交易建议
+            advice = await ai_client.generate_trading_advice(user_input, context)
+
+            # 停止思考动画
+            await self._stop_thinking_animation()
+
+            # 显示交易建议
+            await self._display_trading_advice(advice)
+
+        except Exception as e:
+            # 停止思考动画
+            await self._stop_thinking_animation()
+
+            self.logger.error(f"处理交易请求失败: {e}")
+            await self.add_info(
+                content=f"交易建议生成失败: {str(e)}",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="AI交易助手"
+            )
+
+    def _get_current_trading_context(self) -> dict:
+        """获取当前交易上下文"""
+        try:
+            # 尝试从应用中获取当前股票信息
+            app = self._app_instance
+            context = {}
+
+            if hasattr(app, 'current_stock_code'):
+                context['current_stock'] = app.current_stock_code
+            if hasattr(app, 'current_stock_name'):
+                context['stock_name'] = app.current_stock_name
+            if hasattr(app, 'current_stock_data'):
+                stock_data = app.current_stock_data
+                if stock_data:
+                    context['current_price'] = getattr(stock_data, 'current_price', None)
+                    context['change_rate'] = getattr(stock_data, 'change_rate', None)
+                    context['volume'] = getattr(stock_data, 'volume', None)
+
+            # 添加默认值
+            context.setdefault('current_stock', 'HK.00700')
+            context.setdefault('stock_name', '腾讯控股')
+            context.setdefault('available_funds', 50000.0)
+            context.setdefault('current_position', '无持仓')
+
+            return context
+
+        except Exception as e:
+            self.logger.warning(f"获取交易上下文失败: {e}，使用默认值")
+            return {
+                'current_stock': 'HK.00700',
+                'stock_name': '腾讯控股',
+                'current_price': 425.0,
+                'change_rate': '+2.35%',
+                'available_funds': 50000.0,
+                'current_position': '无持仓'
+            }
+
+    async def _display_trading_advice(self, advice: TradingAdvice) -> None:
+        """显示交易建议"""
+        try:
+            # 缓存建议以供用户确认
+            self.pending_trading_advice[advice.advice_id] = advice
+
+            # 构建建议显示内容
+            advice_content = self._format_trading_advice(advice)
+
+            # 显示建议
+            await self.add_info(
+                content=advice_content,
+                info_type=InfoType.TRADE_ADVICE,
+                level=InfoLevel.INFO,
+                source="AI交易助手",
+                data={
+                    'advice_id': advice.advice_id,
+                    'recommended_action': advice.recommended_action,
+                    'confidence_score': advice.confidence_score,
+                    'risk_assessment': advice.risk_assessment,
+                    'suggested_orders': len(advice.suggested_orders)
+                }
+            )
+
+            # 如果有具体订单建议，显示操作选项
+            if advice.suggested_orders:
+                await self._show_advice_confirmation_options(advice)
+
+        except Exception as e:
+            self.logger.error(f"显示交易建议失败: {e}")
+            await self.add_info(
+                content=f"建议显示失败: {str(e)}",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="AI交易助手"
+            )
+
+    def _format_trading_advice(self, advice: TradingAdvice) -> str:
+        """格式化交易建议显示"""
+        content = [
+            f"📊 AI交易建议 (ID: {advice.advice_id[:8]})",
+            f"🎯 建议摘要: {advice.advice_summary}",
+            f"📈 推荐操作: {advice.recommended_action}",
+            f"⚖️ 风险评估: {advice.risk_assessment}",
+            f"🎯 置信度: {advice.confidence_score:.2f}",
+            ""
+        ]
+
+        if advice.key_points:
+            content.append("🔑 关键要点:")
+            for point in advice.key_points:
+                content.append(f"  • {point}")
+            content.append("")
+
+        if advice.suggested_orders:
+            content.append("📋 建议订单:")
+            for i, order in enumerate(advice.suggested_orders, 1):
+                price_text = f"{order.price}元" if order.price else "市价"
+                content.append(f"  {i}. {order.stock_code} {order.action} {order.quantity}股 @ {price_text}")
+                if order.trigger_price:
+                    content.append(f"     触发价: {order.trigger_price}元")
+            content.append("")
+
+        if advice.risk_factors:
+            content.append("⚠️ 风险因素:")
+            for risk in advice.risk_factors:
+                content.append(f"  • {risk}")
+
+        return "\n".join(content)
+
+    async def _show_advice_confirmation_options(self, advice: TradingAdvice) -> None:
+        """显示建议确认选项"""
+        confirmation_content = [
+            f"🤖 针对建议 {advice.advice_id[:8]}，您希望:",
+            "",
+            f"1️⃣ 确认执行 - 回复: 确认 {advice.advice_id[:8]}",
+            f"2️⃣ 拒绝建议 - 回复: 拒绝 {advice.advice_id[:8]}",
+            "",
+            "💡 提示: 直接在AI对话框中输入上述命令即可"
+        ]
+
+        await self.add_info(
+            content="\n".join(confirmation_content),
+            info_type=InfoType.USER_ACTION,
+            level=InfoLevel.INFO,
+            source="交易确认系统"
+        )
+
+    def _parse_advice_command(self, user_input: str) -> dict:
+        """解析建议确认命令"""
+        import re
+
+        user_input = user_input.strip()
+
+        # 匹配确认命令
+        confirm_pattern = r'确认\s+([a-f0-9]{8})'
+        reject_pattern = r'拒绝\s+([a-f0-9]{8})'
+        detail_pattern = r'详情\s+([a-f0-9]{8})'
+
+        for pattern, action in [
+            (confirm_pattern, 'confirm'),
+            (reject_pattern, 'reject'),
+            (detail_pattern, 'detail')
+        ]:
+            match = re.search(pattern, user_input, re.IGNORECASE)
+            if match:
+                advice_id_prefix = match.group(1)
+                # 查找匹配的完整建议ID
+                for full_id in self.pending_trading_advice.keys():
+                    if full_id.startswith(advice_id_prefix):
+                        return {
+                            'action': action,
+                            'advice_id': full_id
+                        }
+
+        return None
+
+    async def _handle_advice_command(self, command: dict) -> None:
+        """处理建议确认命令"""
+        try:
+            # 停止思考动画
+            await self._stop_thinking_animation()
+
+            action = command['action']
+            advice_id = command['advice_id']
+
+            if advice_id not in self.pending_trading_advice:
+                await self.add_info(
+                    content=f"❌ 未找到建议 {advice_id[:8]}，可能已过期或不存在",
+                    info_type=InfoType.ERROR,
+                    level=InfoLevel.WARNING,
+                    source="交易确认系统"
+                )
+                return
+
+            advice = self.pending_trading_advice[advice_id]
+
+            if action == 'confirm':
+                await self._execute_trading_advice(advice)
+            elif action == 'reject':
+                await self._reject_trading_advice(advice)
+
+        except Exception as e:
+            await self._stop_thinking_animation()
+            self.logger.error(f"处理建议命令失败: {e}")
+            await self.add_info(
+                content=f"命令处理失败: {str(e)}",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="交易确认系统"
+            )
+
+    def _convert_trading_order_to_order_data(self, trading_order, stock_name: str = ""):
+        """将AI建议的TradingOrder转换为订单对话框的OrderData"""
+        from base.order import OrderData
+
+        # 转换买卖方向
+        trd_side = "BUY" if trading_order.action.lower() == 'buy' else "SELL"
+
+        # 转换订单类型
+        order_type_map = {
+            'MARKET': 'MARKET',
+            'NORMAL': 'NORMAL',
+            'STOP': 'STOP',
+            'STOP_LIMIT': 'STOP_LIMIT'
+        }
+        order_type = order_type_map.get(trading_order.order_type, 'MARKET')
+
+        # 从股票代码推断市场
+        market = "HK"
+        if trading_order.stock_code.startswith("US."):
+            market = "US"
+        elif trading_order.stock_code.startswith("SH.") or trading_order.stock_code.startswith("SZ."):
+            market = "CN"
+
+        # 创建OrderData对象
+        order_data = OrderData(
+            code=trading_order.stock_code,
+            price=trading_order.price if trading_order.price else 0.0,
+            qty=trading_order.quantity,
+            order_type=order_type,
+            trd_side=trd_side,
+            trd_env="SIMULATE",
+            market=market,
+            aux_price=trading_order.trigger_price,
+            time_in_force="DAY",
+            remark=f"AI建议: {stock_name}"
+        )
+
+        return order_data
+
+    async def _execute_trading_advice(self, advice: TradingAdvice) -> None:
+        """执行交易建议 - 弹出订单对话框让用户确认"""
+        try:
+            await self.add_info(
+                content=f"🔄 准备执行建议 {advice.advice_id[:8]}...",
+                info_type=InfoType.TRADE_INFO,
+                level=InfoLevel.INFO,
+                source="交易执行系统"
+            )
+
+            if not self.trade_manager:
+                await self.add_info(
+                    content="❌ 交易管理器未初始化，无法执行交易",
+                    info_type=InfoType.ERROR,
+                    level=InfoLevel.ERROR,
+                    source="交易执行系统"
+                )
+                return
+
+            # 检查是否有建议的订单
+            if not advice.suggested_orders:
+                await self.add_info(
+                    content="❌ 建议中没有具体订单信息",
+                    info_type=InfoType.ERROR,
+                    level=InfoLevel.ERROR,
+                    source="交易执行系统"
+                )
+                return
+
+            # 取第一个建议订单作为默认值
+            suggested_order = advice.suggested_orders[0]
+
+            # 转换为OrderData格式
+            default_order_data = self._convert_trading_order_to_order_data(
+                suggested_order,
+                advice.stock_name
+            )
+
+            # 准备默认值字典
+            default_values = {
+                "code": default_order_data.code,
+                "trd_side": default_order_data.trd_side,
+                "order_type": default_order_data.order_type,
+                "qty": str(default_order_data.qty),
+                "price": str(default_order_data.price) if default_order_data.price else "",
+                "aux_price": str(default_order_data.aux_price) if default_order_data.aux_price else "",
+                "trd_env": default_order_data.trd_env,
+                "market": default_order_data.market,
+                "time_in_force": default_order_data.time_in_force,
+                "remark": default_order_data.remark
+            }
+
+            # 弹出订单对话框
+            dialog = PlaceOrderDialog(
+                title=f"确认AI交易建议 - {advice.stock_name}",
+                default_values=default_values,
+                dialog_id=f"ai_advice_{advice.advice_id}"
+            )
+
+            # 保存advice引用，供回调使用
+            self._pending_order_advice = advice
+
+            # 使用 push_screen 并提供回调函数
+            self.app.push_screen(dialog, self._on_order_dialog_result)
+
+        except Exception as e:
+            self.logger.error(f"执行交易建议失败: {e}")
+            await self.add_info(
+                content=f"❌ 执行过程异常: {str(e)}",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="交易执行系统"
+            )
+
+    async def _on_order_dialog_result(self, order_data) -> None:
+        """处理订单对话框的结果回调
+
+        Args:
+            order_data: OrderData对象（用户确认）或 None（用户取消）
+        """
+        try:
+            # 获取之前保存的advice
+            advice = getattr(self, '_pending_order_advice', None)
+            if not advice:
+                self.logger.error("未找到待处理的建议")
+                return
+
+            if order_data:
+                # 用户确认了订单（dismiss返回OrderData对象）
+                await self.add_info(
+                    content=f"✅ 用户确认订单: {order_data.code} {order_data.trd_side} {order_data.qty}股 @ {order_data.price}",
+                    info_type=InfoType.USER_ACTION,
+                    level=InfoLevel.INFO,
+                    source="用户操作"
+                )
+
+                # 执行订单 - FutuTrade.place_order是同步方法，需要在executor中运行
+                import asyncio
+                loop = asyncio.get_event_loop()
+                exec_result = await loop.run_in_executor(
+                    None,
+                    lambda: self.trade_manager.place_order(
+                        code=order_data.code,
+                        price=order_data.price,
+                        qty=order_data.qty,
+                        order_type=order_data.order_type,
+                        trd_side=order_data.trd_side,
+                        aux_price=order_data.aux_price,
+                        trd_env=order_data.trd_env,
+                        market=order_data.market
+                    )
+                )
+
+                if exec_result.get("success"):
+                    # 删除原始AI建议消息
+                    await self.remove_info_by_advice_id(advice.advice_id)
+
+                    await self.add_info(
+                        content=f"✅ 订单执行成功: {order_data.code} {order_data.trd_side} {order_data.qty}股",
+                        info_type=InfoType.TRADE_INFO,
+                        level=InfoLevel.INFO,
+                        source="订单执行",
+                        data=exec_result
+                    )
+
+                    # 更新建议状态
+                    advice.status = "executed"
+                else:
+                    # 获取详细错误信息
+                    error_msg = exec_result.get('error') or exec_result.get('message') or exec_result.get('msg') or '未知错误'
+                    await self.add_info(
+                        content=f"❌ 订单执行失败: {error_msg}",
+                        info_type=InfoType.ERROR,
+                        level=InfoLevel.ERROR,
+                        source="订单执行",
+                        data=exec_result
+                    )
+            else:
+                # 用户取消了订单（dismiss返回None）
+                await self.add_info(
+                    content=f"ℹ️ 用户取消执行建议 {advice.advice_id[:8]}",
+                    info_type=InfoType.USER_ACTION,
+                    level=InfoLevel.INFO,
+                    source="用户操作"
+                )
+                advice.status = "rejected"
+
+            # 移除已处理的建议
+            if advice.advice_id in self.pending_trading_advice:
+                del self.pending_trading_advice[advice.advice_id]
+
+            # 清理临时引用
+            self._pending_order_advice = None
+
+        except Exception as e:
+            self.logger.error(f"处理订单对话框结果失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            await self.add_info(
+                content=f"❌ 订单处理异常: {str(e)}",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="订单处理"
+            )
+
+    async def _reject_trading_advice(self, advice: TradingAdvice) -> None:
+        """拒绝交易建议"""
+        try:
+            advice.status = "rejected"
+
+            # 删除对应的消息
+            removed = await self.remove_info_by_advice_id(advice.advice_id)
+
+            if removed:
+                await self.add_info(
+                    content=f"❌ 已拒绝并删除建议 {advice.advice_id[:8]}",
+                    info_type=InfoType.USER_ACTION,
+                    level=InfoLevel.INFO,
+                    source="用户操作"
+                )
+            else:
+                await self.add_info(
+                    content=f"❌ 已拒绝建议 {advice.advice_id[:8]} (消息未找到)",
+                    info_type=InfoType.USER_ACTION,
+                    level=InfoLevel.WARNING,
+                    source="用户操作"
+                )
+
+            # 移除已处理的建议
+            del self.pending_trading_advice[advice.advice_id]
+
+        except Exception as e:
+            self.logger.error(f"拒绝建议失败: {e}")
+
+    async def _show_advice_detail(self, advice: TradingAdvice) -> None:
+        """显示建议详情"""
+        try:
+            detail_content = [
+                f"📊 建议详情 (ID: {advice.advice_id})",
+                f"🎯 用户原始需求: {advice.user_prompt}",
+                f"📈 目标股票: {advice.stock_code} ({advice.stock_name})",
+                f"🎭 推荐操作: {advice.recommended_action}",
+                f"⚖️ 风险评估: {advice.risk_assessment}",
+                f"🎯 置信度: {advice.confidence_score:.2f}",
+                "",
+                f"📝 详细分析:",
+                advice.detailed_analysis,
+                ""
+            ]
+
+            if advice.expected_return:
+                detail_content.extend([
+                    f"💰 预期收益: {advice.expected_return}",
+                    ""
+                ])
+
+            if advice.suggested_orders:
+                detail_content.append("📋 具体订单建议:")
+                for i, order in enumerate(advice.suggested_orders, 1):
+                    detail_content.append(f"  订单 {i}:")
+                    detail_content.append(f"    股票: {order.stock_code}")
+                    detail_content.append(f"    操作: {order.action}")
+                    detail_content.append(f"    数量: {order.quantity}股")
+                    detail_content.append(f"    类型: {order.order_type}")
+                    if order.price:
+                        detail_content.append(f"    价格: {order.price}元")
+                    if order.trigger_price:
+                        detail_content.append(f"    触发价: {order.trigger_price}元")
+                    if order.reasoning:
+                        detail_content.append(f"    原因: {order.reasoning}")
+                    detail_content.append("")
+
+            await self.add_info(
+                content="\n".join(detail_content),
+                info_type=InfoType.TRADE_ADVICE,
+                level=InfoLevel.INFO,
+                source="建议详情",
+                data={
+                    'advice_id': advice.advice_id,
+                    'full_detail': True
+                }
+            )
+
+        except Exception as e:
+            self.logger.error(f"显示建议详情失败: {e}")
+            await self.add_info(
+                content=f"详情显示失败: {str(e)}",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="建议详情"
+            )
     
     # AI建议事件处理方法 - 为兼容性保留
     async def on_ai_display_widget_suggestion_accepted(self, event) -> None:
@@ -978,9 +1599,6 @@ class InfoMessageList(ScrollableContainer):
         padding: 1;
     }
 
-    InfoMessageList:focus {
-        border: solid $accent;
-    }
 
     InfoMessageList .message-item {
         height: auto;
@@ -1130,9 +1748,6 @@ class InfoDetailView(ScrollableContainer):
         padding: 1;
     }
 
-    InfoDetailView:focus {
-        border: solid $accent;
-    }
 
     InfoDetailView .detail-header {
         height: auto;
@@ -1163,7 +1778,37 @@ class InfoDetailView(ScrollableContainer):
         padding: 1 0 0 0;
         margin-top: 1;
     }
+
+    InfoDetailView .trading-actions {
+        height: auto;
+        padding: 1;
+        margin: 1 0;
+        border: solid $primary;
+        background: rgba(0, 100, 200, 0.1);
+    }
+
+    InfoDetailView .action-button {
+        margin: 0 1 1 0;
+        min-width: 12;
+    }
+
+    InfoDetailView .confirm-button {
+        background: $success;
+        color: $text;
+    }
+
+    InfoDetailView .reject-button {
+        background: $error;
+        color: $text;
+    }
     """
+
+    class TradingActionRequested(Message):
+        """交易操作请求消息"""
+        def __init__(self, action: str, advice_id: str):
+            super().__init__()
+            self.action = action  # 'confirm', 'reject'
+            self.advice_id = advice_id
 
     def __init__(self, **kwargs):
         """初始化详情视图"""
@@ -1195,6 +1840,10 @@ class InfoDetailView(ScrollableContainer):
                 await self.mount(Static("消息内容:", classes="detail-section"))
                 await self.mount(Static(message.content, classes="detail-content"))
 
+                # 如果是AI交易建议消息，添加操作按钮
+                if message.info_type == InfoType.TRADE_ADVICE and message.data:
+                    await self._add_trading_action_buttons(message)
+
                 # 如果有附加数据，显示为JSON
                 if message.data:
                     try:
@@ -1212,6 +1861,68 @@ class InfoDetailView(ScrollableContainer):
 
         except Exception as e:
             self.logger.error(f"更新详情显示失败: {e}")
+
+    async def _add_trading_action_buttons(self, message: InfoMessage) -> None:
+        """为AI交易建议添加操作按钮"""
+        try:
+            advice_id = message.data.get('advice_id')
+            if not advice_id:
+                return
+
+            # 添加操作区域标题
+            await self.mount(Static("🎛️ 快捷操作:", classes="detail-section"))
+
+            # 创建按钮容器
+            button_container = Horizontal(classes="trading-actions")
+            await self.mount(button_container)
+
+            # 在容器中添加按钮
+            confirm_btn = Button(
+                "✅ 确认执行",
+                id=f"confirm_{advice_id}",
+                classes="action-button confirm-button"
+            )
+            await button_container.mount(confirm_btn)
+
+            reject_btn = Button(
+                "❌ 拒绝建议",
+                id=f"reject_{advice_id}",
+                classes="action-button reject-button"
+            )
+            await button_container.mount(reject_btn)
+
+            # 添加操作说明
+            help_text = [
+                "💡 操作说明:",
+                "• 确认执行：弹出订单对话框确认执行",
+                "• 拒绝建议：拒绝此建议并删除消息"
+            ]
+            await self.mount(Static("\n".join(help_text), classes="detail-content"))
+
+            self.logger.info(f"为建议 {advice_id[:8]} 添加操作按钮")
+
+        except Exception as e:
+            self.logger.error(f"添加交易操作按钮失败: {e}")
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        """处理按钮点击事件"""
+        try:
+            button_id = event.button.id
+            if not button_id:
+                return
+
+            # 解析按钮ID获取操作类型和建议ID
+            if button_id.startswith(('confirm_', 'reject_')):
+                action = button_id.split('_')[0]
+                advice_id = button_id[len(action) + 1:]
+
+                self.logger.info(f"用户点击 {action} 操作，建议ID: {advice_id[:8]}")
+
+                # 发送操作请求消息
+                self.post_message(self.TradingActionRequested(action, advice_id))
+
+        except Exception as e:
+            self.logger.error(f"处理按钮点击事件失败: {e}")
 
     def _get_level_icon(self, level: InfoLevel) -> str:
         """获取级别图标"""
