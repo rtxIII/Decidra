@@ -6,10 +6,13 @@ Claude AI Client - 基于claude-code-sdk的AI分析客户端
 """
 
 import asyncio
+import json
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-from dataclasses import dataclass
-
+from dataclasses import dataclass, field
+from base.order import OrderType
+from base.trading import TradingAdvice, TradingOrder
+from base.ai      import AIAnalysisRequest, AIAnalysisResponse
 from utils.logger import get_logger
 
 try:
@@ -25,28 +28,6 @@ except ImportError:
     ResultMessage = None
 
 
-@dataclass
-class AIAnalysisRequest:
-    """AI分析请求"""
-    stock_code: str
-    analysis_type: str  # 'technical', 'fundamental', 'comprehensive'
-    data_context: Dict[str, Any]
-    user_question: Optional[str] = None
-    language: str = 'zh-CN'
-
-
-@dataclass
-class AIAnalysisResponse:
-    """AI分析响应"""
-    request_id: str
-    stock_code: str
-    analysis_type: str
-    content: str
-    key_points: List[str]
-    recommendation: str
-    confidence_score: float
-    risk_level: str
-    timestamp: datetime
 
 
 class ClaudeAIClient:
@@ -219,6 +200,149 @@ class ClaudeAIClient:
         except Exception as e:
             self.logger.error(f"AI对话失败: {e}")
             return f"对话过程中出现错误: {str(e)}"
+
+    async def generate_trading_advice(self, user_prompt: str, context: Dict[str, Any] = None) -> TradingAdvice:
+        """根据用户输入生成交易建议"""
+        try:
+            if not self.is_available():
+                return self._create_error_advice(user_prompt, "AI服务不可用")
+
+            # 构建建议生成提示词
+            advice_prompt = self._build_advice_prompt(user_prompt, context or {})
+
+            # 调用AI生成建议
+            ai_response = await self.chat_with_ai(advice_prompt)
+
+            # 解析AI响应为交易建议
+            trading_advice = self._parse_advice_response(user_prompt, ai_response, context)
+
+            self.logger.info(f"交易建议生成完成: {user_prompt} -> {trading_advice.advice_id}")
+            return trading_advice
+
+        except Exception as e:
+            self.logger.error(f"生成交易建议失败: {e}")
+            return self._create_error_advice(user_prompt, f"建议生成失败: {str(e)}")
+
+    async def confirm_and_execute_advice(self, advice: TradingAdvice, trade_manager=None, trd_env="SIMULATE") -> Dict[str, Any]:
+        """确认并执行交易建议"""
+        try:
+            if advice.status != "pending":
+                return {
+                    "success": False,
+                    "error": f"建议状态无效: {advice.status}，只能执行待确认的建议"
+                }
+
+            if not advice.suggested_orders:
+                return {
+                    "success": False,
+                    "error": "建议中没有具体的交易订单"
+                }
+
+            # 标记为已确认
+            advice.status = "confirmed"
+
+            execution_results = []
+
+            # 执行所有建议的订单
+            for order in advice.suggested_orders:
+                if trade_manager:
+                    try:
+                        self.logger.info(f"准备执行订单: {order.stock_code} {order.action} {order.quantity}")
+                        # 调用交易管理器执行订单
+                        result = trade_manager.place_order(
+                            code=order.stock_code,
+                            price=order.price or 0.0,
+                            qty=order.quantity,
+                            order_type=order.order_type,
+                            trd_side=order.action.upper(),
+                            aux_price=order.trigger_price,
+                            trd_env=trd_env,  # 使用传入的交易环境参数
+                            market=self._extract_market_from_code(order.stock_code)
+                        )
+
+                        execution_results.append({
+                            "order": order,
+                            "success": True,
+                            "result": result
+                        })
+
+                        self.logger.info(f"订单执行成功: {order.stock_code} {order.action} {order.quantity}")
+
+                    except Exception as order_error:
+                        execution_results.append({
+                            "order": order,
+                            "success": False,
+                            "error": str(order_error)
+                        })
+
+                        self.logger.error(f"订单执行失败: {order_error}")
+                else:
+                    # 没有交易管理器，无法执行订单
+                    execution_results.append({
+                        "order": order,
+                        "success": False,
+                        "error": f"交易管理器未提供，无法执行 {trd_env} 环境的交易"
+                    })
+
+            # 检查是否所有订单都成功
+            all_success = all(result["success"] for result in execution_results)
+
+            if all_success:
+                advice.status = "executed"
+            else:
+                advice.status = "partial_executed"
+
+            return {
+                "success": all_success,
+                "advice_id": advice.advice_id,
+                "execution_results": execution_results,
+                "status": advice.status
+            }
+
+        except Exception as e:
+            self.logger.error(f"执行交易建议失败: {e}")
+            advice.status = "error"
+            return {
+                "success": False,
+                "error": f"执行过程异常: {str(e)}"
+            }
+
+    async def parse_trading_command(self, user_input: str, context: Dict[str, Any] = None) -> TradingOrder:
+        """解析用户交易指令并转换为交易订单"""
+        try:
+            if not self.is_available():
+                return TradingOrder(
+                    stock_code="",
+                    action="",
+                    quantity=0,
+                    confidence=0.0,
+                    warnings=["AI服务不可用"]
+                )
+
+            # 构建解析提示词
+            prompt = self._build_parsing_prompt(user_input, context or {})
+
+            # 调用AI进行解析
+            ai_response = await self.chat_with_ai(prompt)
+
+            # 解析AI响应
+            trading_order = self._parse_ai_response(ai_response)
+
+            # 基础验证
+            self._validate_order(trading_order)
+
+            self.logger.info(f"交易指令解析完成: {user_input} -> {trading_order}")
+            return trading_order
+
+        except Exception as e:
+            self.logger.error(f"交易指令解析失败: {e}")
+            return TradingOrder(
+                stock_code="",
+                action="",
+                quantity=0,
+                confidence=0.0,
+                warnings=[f"解析失败: {str(e)}"]
+            )
     
     def _build_analysis_prompt(self, request: AIAnalysisRequest) -> str:
         """构建分析提示词"""
@@ -358,6 +482,339 @@ class ClaudeAIClient:
         except Exception as e:
             self.logger.error(f"提取投资建议失败: {e}")
             return "投资建议提取失败"
+
+    def _build_parsing_prompt(self, user_input: str, context: Dict[str, Any]) -> str:
+        """构建AI解析提示词"""
+        return f"""
+你是一个专业的股票交易指令解析器。请将用户的自然语言指令转换为结构化的交易订单。
+
+用户指令: {user_input}
+
+当前上下文:
+- 当前选择股票: {context.get('current_stock', '无')}
+- 当前股价: {context.get('current_price', '未知')}
+- 可用资金: {context.get('available_funds', '未知')}
+
+请按以下JSON格式返回解析结果:
+{{
+    "stock_code": "股票代码 (如HK.00700)",
+    "action": "buy或sell",
+    "quantity": 数量(整数),
+    "price": 价格(数字,null表示市价),
+    "order_type": "MARKET, NORMAL, STOP, STOP_LIMIT其中之一",
+    "trigger_price": 触发价格(数字,仅止盈止损订单需要),
+    "confidence": 0.0到1.0的置信度,
+    "reasoning": "解析推理过程",
+    "warnings": ["警告信息列表"]
+}}
+
+订单类型解析规则:
+1. 现价订单 (MARKET): "市价买入"、"立即买入"、"现价卖出"等
+2. 限价订单 (NORMAL): "420元买入"、"限价卖出450元"等
+3. 止损订单 (STOP): "跌破400元止损"、"止损价设在380"等
+4. 止盈限价订单 (STOP_LIMIT): "涨到500元止盈"、"止盈价设在480"等
+
+通用解析规则:
+1. 如果未明确指定股票，使用当前选择的股票
+2. 如果未指定价格，默认为现价订单
+3. 如果指令不明确，降低置信度并在warnings中说明
+4. 仅支持买入(buy)和卖出(sell)操作
+"""
+
+    def _parse_ai_response(self, ai_response: str) -> TradingOrder:
+        """解析AI响应并提取交易参数"""
+        try:
+            # 尝试从响应中提取JSON
+            json_str = self._extract_json_from_response(ai_response)
+            if json_str:
+                order_data = json.loads(json_str)
+
+                return TradingOrder(
+                    stock_code=order_data.get('stock_code', ''),
+                    action=order_data.get('action', ''),
+                    quantity=int(order_data.get('quantity', 0)),
+                    price=order_data.get('price'),
+                    order_type=order_data.get('order_type', 'MARKET'),
+                    trigger_price=order_data.get('trigger_price'),
+                    confidence=float(order_data.get('confidence', 0.0)),
+                    reasoning=order_data.get('reasoning', ''),
+                    warnings=order_data.get('warnings', [])
+                )
+            else:
+                # 如果无法提取JSON，返回错误订单
+                return TradingOrder(
+                    stock_code="",
+                    action="",
+                    quantity=0,
+                    confidence=0.0,
+                    warnings=["AI响应格式无效，无法解析为交易订单"]
+                )
+
+        except json.JSONDecodeError as e:
+            self.logger.error(f"JSON解析失败: {e}")
+            return TradingOrder(
+                stock_code="",
+                action="",
+                quantity=0,
+                confidence=0.0,
+                warnings=[f"JSON格式错误: {str(e)}"]
+            )
+        except Exception as e:
+            self.logger.error(f"AI响应解析失败: {e}")
+            return TradingOrder(
+                stock_code="",
+                action="",
+                quantity=0,
+                confidence=0.0,
+                warnings=[f"响应解析异常: {str(e)}"]
+            )
+
+    def _extract_json_from_response(self, response: str) -> Optional[str]:
+        """从AI响应中提取JSON字符串"""
+        try:
+            # 查找JSON块
+            start_markers = ['```json', '```', '{']
+
+            # 查找JSON开始位置
+            start_pos = -1
+            for marker in start_markers:
+                pos = response.find(marker)
+                if pos != -1:
+                    start_pos = pos + len(marker) if marker != '{' else pos
+                    break
+
+            if start_pos == -1:
+                # 尝试查找第一个{
+                start_pos = response.find('{')
+
+            if start_pos == -1:
+                return None
+
+            # 查找JSON结束位置
+            end_pos = -1
+            if start_pos >= 0:
+                # 从开始位置查找最后一个}
+                remaining = response[start_pos:]
+                last_brace = remaining.rfind('}')
+                if last_brace != -1:
+                    end_pos = start_pos + last_brace + 1
+
+            if end_pos == -1:
+                return None
+
+            # 提取JSON字符串
+            json_str = response[start_pos:end_pos].strip()
+
+            # 清理可能的markdown标记
+            if json_str.startswith('```json'):
+                json_str = json_str[7:]
+            if json_str.startswith('```'):
+                json_str = json_str[3:]
+            if json_str.endswith('```'):
+                json_str = json_str[:-3]
+
+            return json_str.strip()
+
+        except Exception as e:
+            self.logger.error(f"提取JSON失败: {e}")
+            return None
+
+    def _validate_order(self, order: TradingOrder) -> None:
+        """验证交易订单的基本有效性"""
+        try:
+            warnings = list(order.warnings) if order.warnings else []
+
+            # 验证股票代码
+            if not order.stock_code:
+                warnings.append("缺少股票代码")
+
+            # 验证买卖方向
+            if order.action not in ['buy', 'sell']:
+                warnings.append(f"无效的交易方向: {order.action}")
+
+            # 验证数量
+            if order.quantity <= 0:
+                warnings.append(f"无效的交易数量: {order.quantity}")
+
+            # 验证订单类型
+            valid_types = [OrderType.MARKET, OrderType.NORMAL, OrderType.STOP, OrderType.STOP_LIMIT]
+            if order.order_type not in valid_types:
+                warnings.append(f"无效的订单类型: {order.order_type}")
+
+            # 验证价格
+            if order.order_type == OrderType.NORMAL and (order.price is None or order.price <= 0):
+                warnings.append("限价订单必须指定有效价格")
+
+            # 验证触发价格
+            if order.order_type in [OrderType.STOP, OrderType.STOP_LIMIT]:
+                if order.trigger_price is None or order.trigger_price <= 0:
+                    warnings.append("止损止盈订单必须指定有效触发价格")
+
+            # 更新警告列表
+            order.warnings = warnings
+
+        except Exception as e:
+            self.logger.error(f"订单验证失败: {e}")
+            if not order.warnings:
+                order.warnings = []
+            order.warnings.append(f"验证过程异常: {str(e)}")
+
+    def _build_advice_prompt(self, user_prompt: str, context: Dict[str, Any]) -> str:
+        """构建AI建议生成提示词"""
+        return f"""
+你是一位专业的股票投资顾问AI助手。用户向你咨询投资建议，请根据用户的需求和当前市场情况，生成专业的交易建议。
+
+用户需求: {user_prompt}
+
+当前市场上下文:
+- 当前关注股票: {context.get('current_stock', '无')}
+- 股票名称: {context.get('stock_name', '未知')}
+- 当前股价: {context.get('current_price', '未知')}
+- 今日涨跌幅: {context.get('change_rate', '未知')}
+- 成交量: {context.get('volume', '未知')}
+- 可用资金: {context.get('available_funds', '未知')}
+- 当前持仓: {context.get('current_position', '无')}
+
+请按以下JSON格式返回投资建议:
+{{
+    "advice_summary": "简短的建议摘要（1-2句话）",
+    "detailed_analysis": "详细的市场和技术分析（包含基本面、技术面、资金面等）",
+    "recommended_action": "buy, sell, hold, wait 其中之一",
+    "suggested_orders": [
+        {{
+            "stock_code": "股票代码",
+            "action": "buy或sell",
+            "quantity": 建议数量,
+            "price": 建议价格(null表示市价),
+            "order_type": "MARKET, NORMAL, STOP, STOP_LIMIT其中之一",
+            "trigger_price": 触发价格(可选),
+            "reasoning": "这个订单的具体原因"
+        }}
+    ],
+    "risk_assessment": "低, 中, 高 其中之一",
+    "confidence_score": 0.0到1.0的置信度,
+    "expected_return": "预期收益描述",
+    "risk_factors": ["风险因素1", "风险因素2"],
+    "key_points": ["关键要点1", "关键要点2", "关键要点3"]
+}}
+
+分析要求:
+1. 结合当前股价和市场情况进行分析
+2. 考虑用户的资金状况和风险承受能力
+3. 提供具体可执行的交易策略
+4. 明确指出风险因素和注意事项
+5. 如果市场条件不适合交易，建议等待
+6. 所有建议必须基于风险控制原则
+
+回答请用中文，格式严格按照上述JSON结构。
+"""
+
+    def _parse_advice_response(self, user_prompt: str, ai_response: str, context: Dict[str, Any]) -> TradingAdvice:
+        """解析AI响应为交易建议"""
+        try:
+            # 提取JSON数据
+            json_str = self._extract_json_from_response(ai_response)
+            if json_str:
+                advice_data = json.loads(json_str)
+
+                # 解析建议的订单
+                suggested_orders = []
+                for order_data in advice_data.get('suggested_orders', []):
+                    order = TradingOrder(
+                        stock_code=order_data.get('stock_code', context.get('current_stock', '')),
+                        action=order_data.get('action', ''),
+                        quantity=int(order_data.get('quantity', 0)),
+                        price=order_data.get('price'),
+                        order_type=order_data.get('order_type', 'MARKET'),
+                        trigger_price=order_data.get('trigger_price'),
+                        reasoning=order_data.get('reasoning', '')
+                    )
+                    # 验证订单
+                    self._validate_order(order)
+                    suggested_orders.append(order)
+
+                # 生成建议ID
+                advice_id = f"advice_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{hash(user_prompt) % 10000}"
+
+                return TradingAdvice(
+                    advice_id=advice_id,
+                    user_prompt=user_prompt,
+                    stock_code=context.get('current_stock', ''),
+                    stock_name=context.get('stock_name', '未知'),
+                    advice_summary=advice_data.get('advice_summary', ''),
+                    detailed_analysis=advice_data.get('detailed_analysis', ''),
+                    recommended_action=advice_data.get('recommended_action', 'wait'),
+                    suggested_orders=suggested_orders,
+                    risk_assessment=advice_data.get('risk_assessment', '中'),
+                    confidence_score=float(advice_data.get('confidence_score', 0.0)),
+                    expected_return=advice_data.get('expected_return'),
+                    risk_factors=advice_data.get('risk_factors', []),
+                    key_points=advice_data.get('key_points', []),
+                    status="pending"
+                )
+            else:
+                # 无法解析JSON，创建基于文本的建议
+                return self._create_text_based_advice(user_prompt, ai_response, context)
+
+        except json.JSONDecodeError as e:
+            self.logger.error(f"建议JSON解析失败: {e}")
+            return self._create_error_advice(user_prompt, f"AI响应格式错误: {str(e)}")
+        except Exception as e:
+            self.logger.error(f"解析交易建议失败: {e}")
+            return self._create_error_advice(user_prompt, f"建议解析异常: {str(e)}")
+
+    def _create_text_based_advice(self, user_prompt: str, ai_response: str, context: Dict[str, Any]) -> TradingAdvice:
+        """基于纯文本响应创建建议"""
+        advice_id = f"text_advice_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{hash(user_prompt) % 10000}"
+
+        return TradingAdvice(
+            advice_id=advice_id,
+            user_prompt=user_prompt,
+            stock_code=context.get('current_stock', ''),
+            stock_name=context.get('stock_name', '未知'),
+            advice_summary="AI提供了文本建议，请查看详细分析",
+            detailed_analysis=ai_response,
+            recommended_action="wait",
+            suggested_orders=[],
+            risk_assessment="中",
+            confidence_score=0.5,
+            expected_return="请参考详细分析",
+            risk_factors=["AI响应格式不标准，请谨慎参考"],
+            key_points=["请仔细阅读详细分析内容"],
+            status="pending"
+        )
+
+    def _create_error_advice(self, user_prompt: str, error_message: str) -> TradingAdvice:
+        """创建错误建议"""
+        advice_id = f"error_advice_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        return TradingAdvice(
+            advice_id=advice_id,
+            user_prompt=user_prompt,
+            stock_code="",
+            stock_name="",
+            advice_summary=f"建议生成失败: {error_message}",
+            detailed_analysis=f"由于技术问题无法生成投资建议: {error_message}",
+            recommended_action="wait",
+            suggested_orders=[],
+            risk_assessment="高",
+            confidence_score=0.0,
+            expected_return="无法评估",
+            risk_factors=["AI服务异常", "建议不可用"],
+            key_points=["请稍后重试", "如有需要请咨询专业投资顾问"],
+            status="error"
+        )
+
+    def _extract_market_from_code(self, stock_code: str) -> str:
+        """从股票代码提取市场信息"""
+        if stock_code.startswith('HK.'):
+            return 'HK'
+        elif stock_code.startswith('US.'):
+            return 'US'
+        elif stock_code.startswith(('SH.', 'SZ.')):
+            return 'CN'
+        else:
+            return 'HK'  # 默认港股
     
     def _estimate_confidence(self, response: str) -> float:
         """估算分析置信度"""
