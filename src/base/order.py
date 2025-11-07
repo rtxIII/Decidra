@@ -1,6 +1,6 @@
-
-from dataclasses import dataclass
-from typing import Optional, Callable, Dict, Any
+from datetime import datetime
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Any
 
 # 订单相关常量定义
 ORDER_TYPES = [
@@ -64,3 +64,9 @@ class ModifyOrderData:
     qty: Optional[int] = None          # 新数量
     aux_price: Optional[float] = None  # 新辅助价格
 
+class OrderType:
+    """订单类型枚举 - 与富途API保持一致"""
+    MARKET = 'MARKET'           # 现价订单 - 立即以市价成交
+    NORMAL = 'NORMAL'           # 限价订单 - 指定价格成交
+    STOP = 'STOP'               # 止损订单 - 跌破价格时触发
+    STOP_LIMIT = 'STOP_LIMIT'   # 止盈限价订单 - 涨到价格时按限价成交
