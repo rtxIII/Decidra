@@ -484,12 +484,6 @@ class InfoPanel(Widget):
             super().__init__()
             self.message = message
     
-    class AIRequestMessage(Message):
-        """AI请求消息"""
-        def __init__(self, user_input: str):
-            super().__init__()
-            self.user_input = user_input
-    
     def __init__(self, title: str = "信息输出", **kwargs):
         """初始化信息面板"""
         super().__init__(**kwargs)
@@ -570,7 +564,8 @@ class InfoPanel(Widget):
         
         # 处理显示AI对话框请求
         if "show_ai_dialog" in event.filters:
-            await self._show_ai_dialog()
+            # 使用 run_worker 在独立的 worker 中运行对话框，避免阻塞事件循环
+            self.run_worker(self._show_ai_dialog(), exclusive=True, group="ai_dialog")
             return
         
         await self.refresh_display()
@@ -784,7 +779,7 @@ class InfoPanel(Widget):
         await self.add_info(content, InfoType.PERFORMANCE, InfoLevel.INFO, source, data)
     
     async def _show_ai_dialog(self) -> None:
-        """显示AI对话框并处理用户交互"""
+        """显示AI对话框并处理用户交互 - 优化版：快捷问题 + 自定义输入"""
         if not AI_MODULES_AVAILABLE:
             await self.add_info(
                 content="AI功能不可用，请检查相关模块安装。",
@@ -793,26 +788,51 @@ class InfoPanel(Widget):
                 source="AI助手"
             )
             return
-        
-        def handle_submit(value: str):
-            """处理提交回调"""
-            # 添加调试日志
-            self.logger.info(f"AI对话框提交回调被触发，用户输入: {value}")
-            
-            if value and value.strip():
-                # 直接调用处理方法而不是发送消息
-                self.logger.debug(f"[DEBUG] 直接调用_process_ai_request: {value.strip()}")
-                import asyncio
-                # 创建异步任务来处理AI请求
-                asyncio.create_task(self._process_ai_request(value.strip()))
-        
-        def handle_cancel():
-            """处理取消回调"""
-            # 记录取消操作，使用简单的同步方式
-            pass
-        
+
         try:
-            # 创建AI输入对话框，使用回调方式
+            # 导入快捷AI对话框组件
+            from monitor.widgets.ai_quick_dialog import AIQuickDialog
+
+            # 获取当前股票上下文
+            context = self._get_current_trading_context()
+            stock_code = context.get('current_stock', '')
+            stock_name = context.get('stock_name', '')
+
+            # 创建快捷AI对话框
+            ai_dialog = AIQuickDialog(
+                stock_code=stock_code,
+                stock_name=stock_name,
+                dialog_id="ai_quick_dialog"
+            )
+
+            # 使用 await 直接等待对话框结果
+            user_input = await self.app.push_screen_wait(ai_dialog)
+
+            # 用户取消或未输入
+            if not user_input or not user_input.strip():
+                self.logger.debug("用户取消AI对话或未输入内容")
+                return
+
+            # 直接处理用户输入 - 一步到位
+            self.logger.info(f"收到用户AI请求: {user_input.strip()}")
+            await self._process_ai_request(user_input.strip())
+
+        except ImportError:
+            # 如果快捷对话框不可用，回退到标准输入对话框
+            self.logger.warning("AIQuickDialog不可用，使用标准输入对话框")
+            await self._show_standard_ai_dialog()
+        except Exception as e:
+            self.logger.error(f"AI对话框交互失败: {e}")
+            await self.add_info(
+                content=f"AI对话框交互失败: {str(e)}",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="AI助手"
+            )
+
+    async def _show_standard_ai_dialog(self) -> None:
+        """显示标准AI输入对话框（回退方案）"""
+        try:
             ai_dialog = WindowInputDialog(
                 message="请输入您想要咨询的问题:",
                 title="💻 AI 智能助手",
@@ -820,27 +840,25 @@ class InfoPanel(Widget):
                 submit_text="提交",
                 cancel_text="取消",
                 dialog_id="ai_input_dialog",
-                submit_callback=handle_submit,
-                cancel_callback=handle_cancel
+                required=True
             )
-            
-            # 使用push_screen而不是push_screen_wait
-            self.app.push_screen(ai_dialog)
-            
+
+            user_input = await self.app.push_screen_wait(ai_dialog)
+
+            if not user_input or not user_input.strip():
+                return
+
+            await self._process_ai_request(user_input.strip())
+
         except Exception as e:
-            self.logger.error(f"显示AI对话框失败: {e}")
+            self.logger.error(f"标准AI对话框失败: {e}")
             await self.add_info(
-                content=f"AI对话框显示失败: {str(e)}",
+                content=f"AI对话框失败: {str(e)}",
                 info_type=InfoType.ERROR,
                 level=InfoLevel.ERROR,
                 source="AI助手"
             )
     
-    async def on_ai_request_message(self, message: AIRequestMessage) -> None:
-        """处理AI请求消息"""
-        self.logger.info(f"收到AI请求消息: {message.user_input}")
-        # 直接调用处理方法
-        await self._process_ai_request(message.user_input)
     
     async def _process_ai_request(self, user_input: str) -> None:
         """处理AI请求并显示响应"""
