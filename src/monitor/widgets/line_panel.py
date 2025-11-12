@@ -798,12 +798,28 @@ class InfoPanel(Widget):
             stock_code = context.get('current_stock', '')
             stock_name = context.get('stock_name', '')
 
+            # 详细日志
+            self.logger.info(f"[AI-DIALOG] 准备创建AI对话框")
+            self.logger.info(f"[AI-DIALOG] 从context获取: stock_code={stock_code}, stock_name={stock_name}")
+
+            # 验证app_core中的实际值
+            if hasattr(self._app_instance, 'app_core'):
+                app_core = self._app_instance.app_core
+                actual_code = getattr(app_core, 'current_stock_code', None)
+                self.logger.info(f"[AI-DIALOG] app_core.current_stock_code={actual_code}")
+
+                if actual_code and hasattr(app_core, 'stock_basicinfo_cache'):
+                    if actual_code in app_core.stock_basicinfo_cache:
+                        actual_name = app_core.stock_basicinfo_cache[actual_code].get('name', '')
+                        self.logger.info(f"[AI-DIALOG] 从basicinfo_cache获取名称: {actual_name}")
+
             # 创建快捷AI对话框
             ai_dialog = AIQuickDialog(
                 stock_code=stock_code,
                 stock_name=stock_name,
                 dialog_id="ai_quick_dialog"
             )
+            self.logger.info(f"[AI-DIALOG] AI对话框已创建: stock_code={stock_code}, stock_name={stock_name}")
 
             # 使用 await 直接等待对话框结果
             user_input = await self.app.push_screen_wait(ai_dialog)
@@ -987,22 +1003,32 @@ class InfoPanel(Widget):
     def _get_current_trading_context(self) -> dict:
         """获取当前交易上下文"""
         try:
-            # 尝试从应用中获取当前股票信息
+            # 尝试从app_core中获取当前股票信息
             app = self._app_instance
             context = {}
 
-            if hasattr(app, 'current_stock_code'):
-                context['current_stock'] = app.current_stock_code
-            if hasattr(app, 'current_stock_name'):
-                context['stock_name'] = app.current_stock_name
-            if hasattr(app, 'current_stock_data'):
-                stock_data = app.current_stock_data
-                if stock_data:
-                    context['current_price'] = getattr(stock_data, 'current_price', None)
-                    context['change_rate'] = getattr(stock_data, 'change_rate', None)
-                    context['volume'] = getattr(stock_data, 'volume', None)
+            # 从app_core获取股票代码
+            if hasattr(app, 'app_core'):
+                app_core = app.app_core
 
-            # 添加默认值
+                # 获取当前股票代码
+                if hasattr(app_core, 'current_stock_code') and app_core.current_stock_code:
+                    stock_code = app_core.current_stock_code
+                    context['current_stock'] = stock_code
+
+                    # 从缓存获取股票名称
+                    if hasattr(app_core, 'stock_basicinfo_cache') and stock_code in app_core.stock_basicinfo_cache:
+                        stock_info = app_core.stock_basicinfo_cache[stock_code]
+                        context['stock_name'] = stock_info.get('name', '')
+
+                    # 从stock_data获取价格信息
+                    if hasattr(app_core, 'stock_data') and stock_code in app_core.stock_data:
+                        stock_data = app_core.stock_data[stock_code]
+                        context['current_price'] = getattr(stock_data, 'current_price', None)
+                        context['change_rate'] = getattr(stock_data, 'change_rate', None)
+                        context['volume'] = getattr(stock_data, 'volume', None)
+
+            # 如果没有获取到股票信息,使用默认值
             context.setdefault('current_stock', 'HK.00700')
             context.setdefault('stock_name', '腾讯控股')
             context.setdefault('available_funds', 50000.0)
