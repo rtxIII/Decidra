@@ -795,4 +795,3 @@ class EventHandler:
             ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager and ui_manager.info_panel:
                 await ui_manager.info_panel.log_info(f"提交改单请求失败: {e}", "改单操作")
-

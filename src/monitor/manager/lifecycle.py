@@ -162,10 +162,10 @@ class LifecycleManager:
                     task_info.append(f"{task_name}({task_status})")
             
             # 记录详细的任务信息
-            self.logger.info(f"任务队列状态:")
-            self.logger.info(f"  总任务数: {len(all_tasks)}")
-            self.logger.info(f"  待处理任务: {len(pending_tasks)} (UI任务: {ui_tasks_count}, 应用任务: {app_tasks_count})")
-            self.logger.info(f"  运行中任务: {len(running_tasks)}")
+            #self.logger.info(f"任务队列状态:")
+            #self.logger.info(f"  总任务数: {len(all_tasks)}")
+            #self.logger.info(f"  待处理任务: {len(pending_tasks)} (UI任务: {ui_tasks_count}, 应用任务: {app_tasks_count})")
+            #self.logger.info(f"  运行中任务: {len(running_tasks)}")
             
             # 只显示应用相关任务
             if app_tasks_count > 0:
