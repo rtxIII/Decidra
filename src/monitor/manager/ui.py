@@ -284,9 +284,9 @@ class UIManager:
             # 更新当前选中的股票代码
             if 0 <= self.app_core.current_stock_cursor < len(self.app_core.monitored_stocks):
                 self.app_core.current_stock_code = self.app_core.monitored_stocks[self.app_core.current_stock_cursor]
-                
-                self.logger.debug(f"股票光标移动到行 {self.app_core.current_stock_cursor}, 股票: {self.app_core.current_stock_code}")
-            
+
+                #self.logger.debug(f"股票光标移动到行 {self.app_core.current_stock_cursor}, 股票: {self.app_core.current_stock_code}")
+
         except Exception as e:
             self.logger.error(f"更新股票光标失败: {e}")
             # 降级处理：仅更新当前股票代码

@@ -90,7 +90,7 @@ class UserDataManager:
                                         stock_list = [group_stocks_result]
                                 
                                 stock_count = len(stock_list)
-                                self.logger.debug(f"获取分组 '{group_name}' 的股票: {stock_count} 只")
+                                #self.logger.debug(f"获取分组 '{group_name}' 的股票: {stock_count} 只")
                             except Exception as e:
                                 self.logger.warning(f"获取分组 '{group_name}' 股票失败: {e}")
                                 stock_list = []
