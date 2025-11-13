@@ -370,13 +370,18 @@ class MonitorApp(App):
             except Exception as e:
                 self.logger.error(f"关闭当前标签页失败: {e}")
     
+    async def action_open_ai_dialog(self) -> None:
+        """打开AI快捷问答对话框"""
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_open_ai_dialog()
+
     async def action_quit(self) -> None:
         """退出应用动作"""
         if self.managers_initialized:
             await self.lifecycle_manager.action_quit()
         else:
             await super().action_quit()
-    
+
     # 便捷访问属性，保持向后兼容性
     @property
     def current_stock_code(self) -> Optional[str]:

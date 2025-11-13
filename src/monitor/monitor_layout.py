@@ -1084,6 +1084,7 @@ class MonitorLayout(Container):
         Binding("tab", "switch_tab", "切换标签"),
         Binding("enter", "enter_analysis", "进入分析"),
         Binding("ctrl+c", "quit", "强制退出", priority=True),
+        Binding("i", "open_ai_dialog", "AI问答"),
     ]
     
     DEFAULT_CSS = """
@@ -1164,6 +1165,11 @@ class MonitorLayout(Container):
         """进入分析动作 - 委托给主应用处理"""
         if hasattr(self.app, 'action_enter_analysis'):
             await self.app.action_enter_analysis()
+
+    async def action_open_ai_dialog(self) -> None:
+        """打开AI问答对话框 - 委托给主应用处理"""
+        if hasattr(self.app, 'action_open_ai_dialog'):
+            await self.app.action_open_ai_dialog()
 
     def compose(self) -> ComposeResult:
         """组合完整监控界面"""

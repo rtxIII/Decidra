@@ -12,6 +12,7 @@ from textual.validation import Function
 
 from monitor.widgets.window_dialog import show_confirm_dialog
 from monitor.widgets.auto_dialog import show_auto_input_dialog
+from monitor.widgets.ai_quick_dialog import AIQuickDialog
 from utils.logger import get_logger
 
 
@@ -795,3 +796,59 @@ class EventHandler:
             ui_manager = getattr(self.app_core.app, 'ui_manager', None)
             if ui_manager and ui_manager.info_panel:
                 await ui_manager.info_panel.log_info(f"提交改单请求失败: {e}", "改单操作")
+
+    async def action_open_ai_dialog(self) -> None:
+        """打开AI快捷问答对话框"""
+        self.app.run_worker(self._open_ai_dialog_worker, exclusive=True)
+
+    async def _open_ai_dialog_worker(self) -> None:
+        """打开AI对话框的工作线程"""
+        try:
+            # 获取当前选中的股票信息
+            stock_code = self.app_core.current_stock_code or ""
+            stock_name = ""
+
+            # 尝试从缓存中获取股票名称
+            data_manager = getattr(self.app_core.app, 'data_manager', None)
+            if data_manager and stock_code:
+                basic_info = data_manager.get_stock_basicinfo_from_cache(stock_code)
+                if basic_info and 'name' in basic_info:
+                    stock_name = basic_info['name']
+
+            # 创建并显示AI对话框
+            dialog = AIQuickDialog(
+                stock_code=stock_code,
+                stock_name=stock_name
+            )
+
+            # 等待用户输入
+            question = await self.app.push_screen_wait(dialog)
+
+            if question:
+                # 用户提交了问题
+                self.logger.info(f"用户提交AI问题: {question}")
+
+                # 获取UI管理器
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+
+                # 在info_panel中显示问题
+                if ui_manager and ui_manager.info_panel:
+                    await ui_manager.info_panel.log_info(
+                        f"AI问题: {question}",
+                        "AI助手"
+                    )
+
+                # TODO: 调用AI分析管理器处理问题
+                # ai_manager = getattr(self.app_core.app, 'ai_analysis_manager', None)
+                # if ai_manager:
+                #     response = await ai_manager.ask_question(question, stock_code)
+                #     if ui_manager and ui_manager.info_panel:
+                #         await ui_manager.info_panel.log_info(
+                #             f"AI回答: {response}",
+                #             "AI助手"
+                #         )
+
+        except Exception as e:
+            self.logger.error(f"打开AI对话框失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
