@@ -7,7 +7,7 @@ import pandas as pd
 
 from utils import logger
 from modules.futu_market import FutuMarket
-
+from utils.global_vars import get_logger
 
 class Strategies(ABC):
     """
@@ -54,7 +54,7 @@ class Strategies(ABC):
         super().__init__()
 
         # 日志
-        self.logger = logger.get_logger(self.__class__.__name__)
+        self.logger = get_logger(self.__class__.__name__)
 
         # 判断初始化方式
         if input_data is not None:

@@ -14,7 +14,7 @@ from typing import Dict, Optional, Any
 from base.monitor import StockData, MarketStatus, ConnectionStatus
 from modules.futu_market import FutuMarket
 from base.futu_class import MarketSnapshot
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 from utils.global_vars import PATH_DATA
 
 SNAPSHOT_REFRESH_INTERVAL = 300

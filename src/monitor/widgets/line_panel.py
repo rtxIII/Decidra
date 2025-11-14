@@ -28,7 +28,7 @@ from textual.widgets import Label, Static, Input, Button, Select
 from textual.reactive import reactive
 from textual.message import Message
 
-from utils import logger
+from utils.global_vars import get_logger
 
 # 导入AI相关模块
 try:
@@ -144,7 +144,7 @@ class InfoBuffer:
         self.max_size = max_size
         self.messages: deque[InfoMessage] = deque(maxlen=max_size)
         self.filters: Dict[str, Callable[[InfoMessage], bool]] = {}
-        self.logger = logger.get_logger("info_buffer")
+        self.logger = get_logger(__name__)
     
     def add_message(self, message: InfoMessage) -> None:
         """添加新消息"""
@@ -491,7 +491,7 @@ class InfoPanel(Widget):
         
         # 初始化组件
         self.buffer = InfoBuffer()
-        self.logger = logger.get_logger("info_panel")
+        self.logger = get_logger("info_panel")
         self.current_filters = {}
         self.display_widgets: List[InfoDisplay] = []
         
@@ -1704,7 +1704,7 @@ class InfoMessageList(ScrollableContainer):
         self.buffer = buffer
         self.selected_message: Optional[InfoMessage] = None
         self.message_widgets: Dict[str, Widget] = {}
-        self.logger = logger.get_logger("info_message_list")
+        self.logger = get_logger("info_message_list")
 
     def compose(self) -> ComposeResult:
         """组合消息列表"""
@@ -1858,7 +1858,7 @@ class InfoDetailView(ScrollableContainer):
         """初始化详情视图"""
         super().__init__(**kwargs)
         self.current_message: Optional[InfoMessage] = None
-        self.logger = logger.get_logger("info_detail_view")
+        self.logger = get_logger("info_detail_view")
 
     def compose(self) -> ComposeResult:
         """组合详情视图"""

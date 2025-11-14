@@ -22,7 +22,7 @@ from utils.global_vars import *
 
 
 class DataProcessingInterface:
-    default_logger = logger.get_logger("data_processing")
+    default_logger = get_logger("data_processing")
 
     @staticmethod
     def validate_dir(dir_path: Path):
@@ -280,7 +280,7 @@ class DataProcessingInterface:
 class TuShareInterface:
     output_df = pd.DataFrame()
     pro = ts.pro_api(config.get('TuShare.Credential', 'token'))
-    default_logger = logger.get_logger("tushare_interface")
+    default_logger = get_logger("tushare_interface")
 
     @staticmethod
     def __validate_stock_code(stock_list: list) -> list:
@@ -358,7 +358,7 @@ class TuShareInterface:
 
 
 class YahooFinanceInterface:
-    default_logger = logger.get_logger("yahoo_finance_interface")
+    default_logger = get_logger("yahoo_finance_interface")
 
     @staticmethod
     def __validate_stock_code(stock_list: list) -> list:

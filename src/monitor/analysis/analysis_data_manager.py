@@ -14,7 +14,7 @@ from textual import work
 from base.monitor import StockData, MarketStatus, ConnectionStatus
 from base.futu_class import KLineData, OrderBookData, BrokerQueueData
 from modules.futu_market import FutuMarket
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 from utils.global_vars import PATH_DATA
 
 # 时间周期常量

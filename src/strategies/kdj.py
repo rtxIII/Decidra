@@ -4,7 +4,7 @@ import pandas as pd
 
 from strategies import Strategies
 from utils import logger
-
+from utils.global_vars import get_logger
 pd.options.mode.chained_assignment = None  # default='warn'
 
 
@@ -26,7 +26,7 @@ class KDJCross(Strategies):
         self.OVER_BUY = over_buy
         self.OVER_SELL = over_sell
         self.OBSERVATION = observation
-        self.default_logger = logger.get_logger("kdj_cross")
+        self.default_logger = get_logger("kdj_cross")
 
         super().__init__(input_data)
         self.parse_data()

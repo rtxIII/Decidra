@@ -16,7 +16,7 @@ try:
 except ImportError:
     raise ImportError("请先安装supabase包: pip install supabase")
 
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 
 class SupabaseManager:

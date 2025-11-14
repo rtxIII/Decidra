@@ -12,7 +12,7 @@ from utils.global_vars import *
 
 class StockFilter:
     def __init__(self, stock_filters: list, full_equity_list: list):
-        self.default_logger = logger.get_logger("stock_filter")
+        self.default_logger = get_logger("stock_filter")
         self.config = config
         self.full_equity_list = full_equity_list
         self.stock_filters = stock_filters

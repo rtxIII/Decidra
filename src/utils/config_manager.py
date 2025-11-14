@@ -9,19 +9,11 @@ import sys
 import json
 import hashlib
 import configparser
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 from dataclasses import dataclass
 from datetime import datetime
-
-import yaml
-
-# Import logger with fallback to avoid circular imports
-try:
-    from utils import logger
-except ImportError:
-    import logging
-    logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -45,12 +37,9 @@ class ConfigManager:
     
     def __init__(self, config_dir: Optional[Path] = None):
         """初始化配置管理器"""
-        # Initialize logger with fallback
-        if hasattr(logger, 'get_logger'):
-            self.logger = logger.get_logger("config_manager")
-        else:
-            self.logger = logger
-            self.logger.setLevel(logging.INFO)
+        # Initialize logger
+        self.logger = logging.getLogger("config_manager")
+        self.logger.setLevel(logging.INFO)
         
         # 设置配置目录
         if config_dir is None:
@@ -75,6 +64,17 @@ class ConfigManager:
     def _get_default_config(self) -> Dict[str, Any]:
         """获取默认配置"""
         return {
+            'Application': {
+                'LogLevel': 'INFO',
+                'LogToFile': 'true',
+                'LogToConsole': 'false',
+                'LogFileMaxSize': '10',
+                'LogFileBackupCount': '5',
+                'DebugMode': 'false',
+                'PerformanceMonitoring': 'false',
+                'DataCacheTTL': '300',
+                'MaxConcurrentRequests': '10'
+            },
             'FutuOpenD.Config': {
                 'Host': '127.0.0.1',
                 'Port': '11111',
@@ -166,6 +166,14 @@ class ConfigManager:
     def _load_env_overrides(self):
         """加载环境变量覆盖"""
         env_mapping = {
+            # Application configuration
+            'APP_LOG_LEVEL': ('Application', 'LogLevel'),
+            'APP_LOG_TO_FILE': ('Application', 'LogToFile'),
+            'APP_LOG_TO_CONSOLE': ('Application', 'LogToConsole'),
+            'APP_DEBUG_MODE': ('Application', 'DebugMode'),
+            'APP_PERFORMANCE_MONITORING': ('Application', 'PerformanceMonitoring'),
+            'APP_DATA_CACHE_TTL': ('Application', 'DataCacheTTL'),
+            # Futu configuration
             'FUTU_HOST': ('FutuOpenD.Config', 'Host'),
             'FUTU_PORT': ('FutuOpenD.Config', 'Port'),
             'FUTU_TRADE_PWD': ('FutuOpenD.Credential', 'Password'),
@@ -175,6 +183,7 @@ class ConfigManager:
             'FUTU_ENCRYPT': ('FutuOpenD.Config', 'EnableProtoEncrypt'),
             'FUTU_LOG_LEVEL': ('FutuOpenD.Config', 'LogLevel'),
             'FUTU_WEBSOCKET_PORT': ('FutuOpenD.Config', 'WebSocketPort'),
+            # External services
             'TUSHARE_TOKEN': ('TuShare.Credential', 'Token'),
             'EMAIL_SMTP_SERVER': ('Email', 'SmtpServer'),
             'EMAIL_SMTP_PORT': ('Email', 'SmtpPort'),
@@ -361,7 +370,7 @@ class ConfigManager:
     def get_trade_preference(self) -> Dict[str, Any]:
         """获取交易偏好配置"""
         config = self.get_config('TradePreference', default={})
-        
+
         return {
             'lot_size_multiplier': int(config.get('LotSizeMultiplier', '1')),
             'max_perc_per_asset': float(config.get('MaxPercPerAsset', '10')),
@@ -370,6 +379,22 @@ class ConfigManager:
             'order_type': config.get('OrderType', 'NORMAL'),
             'auto_normalize': config.get('AutoNormalize', 'true').lower() == 'true',
             'max_positions': int(config.get('MaxPositions', '10'))
+        }
+
+    def get_application_config(self) -> Dict[str, Any]:
+        """获取应用配置"""
+        config = self.get_config('Application', default={})
+
+        return {
+            'log_level': config.get('LogLevel', 'INFO').upper(),
+            'log_to_file': config.get('LogToFile', 'true').lower() == 'true',
+            'log_to_console': config.get('LogToConsole', 'false').lower() == 'true',
+            'log_file_max_size': int(config.get('LogFileMaxSize', '10')),
+            'log_file_backup_count': int(config.get('LogFileBackupCount', '5')),
+            'debug_mode': config.get('DebugMode', 'false').lower() == 'true',
+            'performance_monitoring': config.get('PerformanceMonitoring', 'false').lower() == 'true',
+            'data_cache_ttl': int(config.get('DataCacheTTL', '300')),
+            'max_concurrent_requests': int(config.get('MaxConcurrentRequests', '10'))
         }
     
     def _parse_json_list(self, json_str: str) -> List[str]:
@@ -391,31 +416,4 @@ class ConfigManager:
             'validation': self.validate_config(),
             'last_loaded': datetime.now().isoformat()
         }
-
-
-# 全局配置管理器实例
-_global_config_manager = None
-
-
-def get_config_manager() -> ConfigManager:
-    """获取全局配置管理器实例"""
-    global _global_config_manager
-    if _global_config_manager is None:
-        _global_config_manager = ConfigManager()
-    return _global_config_manager
-
-
-def reload_global_config():
-    """重新加载全局配置"""
-    global _global_config_manager
-    if _global_config_manager is not None:
-        _global_config_manager.reload_config()
-    else:
-        _global_config_manager = ConfigManager()
-
-
-# 兼容性函数，保持向后兼容
-def get_config(section: str, key: Optional[str] = None, default: Any = None) -> Any:
-    """获取配置值（兼容性函数）"""
-    return get_config_manager().get_config(section, key, default)
 

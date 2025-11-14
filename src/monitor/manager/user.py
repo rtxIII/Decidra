@@ -8,7 +8,7 @@ import asyncio
 from typing import List, Dict, Optional, Any
 
 from modules.futu_market import FutuMarket
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 
 class UserDataManager:

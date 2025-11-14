@@ -14,7 +14,7 @@ from textual.binding import Binding
 from textual_plotext import PlotextPlot
 
 from base.futu_class import KLineData
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 @dataclass
 class ChartConfig:

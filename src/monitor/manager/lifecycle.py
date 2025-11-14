@@ -10,7 +10,7 @@ import sys
 import os
 from typing import Optional, Dict, Any
 
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 
 class LifecycleManager:

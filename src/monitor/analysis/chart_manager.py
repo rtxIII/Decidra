@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 
 from base.futu_class import KLineData
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 # 图表显示配置
 CHART_DISPLAY_CONFIG = {

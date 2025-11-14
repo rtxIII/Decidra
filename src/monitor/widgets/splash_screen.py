@@ -14,7 +14,7 @@ from textual.widgets import Static, ProgressBar, Button
 from textual.reactive import reactive
 from textual.message import Message
 
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 
 class SplashScreen(Container):
@@ -379,14 +379,14 @@ class SplashScreen(Container):
     async def _check_config_status(self) -> str:
         """检查配置文件状态"""
         try:
-            from utils.config_manager import get_config_manager
-            
+            from utils.global_vars import get_config_manager
+
             if get_config_manager is None:
                 return "⚠️ CONFIG: MANAGER OFFLINE"
-            
+
             config_manager = get_config_manager()
             validation = config_manager.validate_config()
-            
+
             if validation.is_valid:
                 return "✅ CONFIG: NEURAL LINK ONLINE"
             else:

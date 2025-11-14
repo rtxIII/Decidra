@@ -19,7 +19,7 @@ from textual.screen import Screen
 # 项目内部导入
 from modules.futu_market import FutuMarket
 from modules.futu_trade import FutuTrade
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 # 导入新的UI布局组件
 from monitor.monitor_layout import MonitorLayout

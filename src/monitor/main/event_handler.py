@@ -13,7 +13,7 @@ from textual.validation import Function
 from monitor.widgets.window_dialog import show_confirm_dialog
 from monitor.widgets.auto_dialog import show_auto_input_dialog
 from monitor.widgets.ai_quick_dialog import AIQuickDialog
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 
 class EventHandler:

@@ -7,7 +7,7 @@
 
 import logging
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 import pandas as pd
 if TYPE_CHECKING:
     from .futu_client import FutuClient

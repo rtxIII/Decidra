@@ -10,7 +10,7 @@ import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 from modules.jsonlite_data import JsonLiteManager
 
 

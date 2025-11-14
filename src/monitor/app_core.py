@@ -9,8 +9,8 @@ from typing import List, Dict, Optional, Any
 
 
 from base.monitor import ConnectionStatus, MarketStatus
-from utils.config_manager import ConfigManager
-from utils.logger import get_logger
+from utils.global_vars import get_config_manager
+from utils.global_vars import get_logger
 
 
 class AppCore:
@@ -24,8 +24,8 @@ class AppCore:
         self.app = app_instance
         self.logger = get_logger(__name__)
         
-        # 配置管理器
-        self.config_manager = ConfigManager()
+        # 配置管理器 - 使用全局单例
+        self.config_manager = get_config_manager()
         
         # 核心状态 - 普通属性（AppCore不是Textual组件，不能使用reactive）
         self.current_stock_code: Optional[str] = None

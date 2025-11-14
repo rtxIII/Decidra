@@ -26,8 +26,7 @@ from textual.widgets import Static, Button, Select
 from textual.reactive import reactive
 from textual.message import Message
 from textual.binding import Binding
-
-from utils import logger
+from utils.global_vars import get_logger
 
 
 class SuggestionType(Enum):
@@ -358,7 +357,7 @@ class AIDisplayWidget(ScrollableContainer):
     def __init__(self, config: AIDisplayConfig = None, **kwargs):
         super().__init__(**kwargs)
         self.config = config or AIDisplayConfig()
-        self.logger = logger.get_logger("ai_display_widget")
+        self.logger = get_logger("ai_display_widget")
         self.suggestion_cards: Dict[str, SuggestionCard] = {}
         self._mounted = False
         

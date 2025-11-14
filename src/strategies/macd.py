@@ -5,6 +5,7 @@ import pandas as pd
 
 from strategies import Strategies
 from utils import logger
+from utils.global_vars import get_logger
 
 pd.options.mode.chained_assignment = None  # default='warn'
 
@@ -15,7 +16,7 @@ class MACDCross(Strategies):
         self.MACD_SLOW = slow_period
         self.MACD_SIGNAL = signal_period
         self.OBSERVATION = observation
-        self.default_logger = logger.get_logger("macd_cross")
+        self.default_logger = get_logger("macd_cross")
 
         super().__init__(input_data)
         self.parse_data()
@@ -61,7 +62,6 @@ class MACDCross(Strategies):
 
             self.input_data[stock_code].reset_index(drop=True, inplace=True)
 
-    # @timeit
     def buy(self, stock_code) -> bool:
         # Crossover between MACD and Signal (Single Point Determined)
         current_record, previous_record = self.get_current_and_previous_record(stock_code)
@@ -73,7 +73,6 @@ class MACDCross(Strategies):
 
         return buy_decision
 
-    # @timeit
     def sell(self, stock_code) -> bool:
         # Crossover between Signal and MACD (Single Point Determined)
         current_record, previous_record = self.get_current_and_previous_record(stock_code)

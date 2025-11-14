@@ -18,7 +18,7 @@ from textual.widgets import Static, Button, Input, Select
 from textual.containers import Horizontal, Vertical, Center
 from textual.validation import Validator, ValidationResult, Failure
 
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 
 # 自定义验证器
@@ -116,7 +116,7 @@ class OptionalQuantityValidator(Validator):
 
     def validate(self, value: str) -> ValidationResult:
         """验证数量格式，允许空值"""
-        from utils.logger import get_logger
+        from utils.global_vars import get_logger
         logger = get_logger(__name__)
 
         logger.info(f"OptionalQuantityValidator - 输入值: '{value}', 类型: {type(value)}, 长度: {len(value) if value else 0}")

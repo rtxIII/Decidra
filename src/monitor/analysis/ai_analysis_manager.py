@@ -14,7 +14,7 @@ from pathlib import Path
 
 from base.monitor import StockData, MarketStatus
 from base.futu_class import KLineData
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 from utils.global_vars import PATH_DATA
 
 # AI分析配置

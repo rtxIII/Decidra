@@ -6,7 +6,7 @@
 
 import logging
 from typing import Optional
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 from base.futu_class import FutuException, FutuConnectException, FutuTradeException, FutuConfig
 
 try:

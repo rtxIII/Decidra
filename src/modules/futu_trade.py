@@ -24,7 +24,7 @@ class FutuTrade(FutuModuleBase):
     def __init__(self, default_trd_env: str = "SIMULATE", default_market: str = "HK", default_currency: str = "HKD"):
         """初始化富途交易管理器"""
         super().__init__()
-        self.logger = logger.get_logger("futu_trade")
+        self.logger = get_logger("futu_trade")
         
         # 默认交易配置
         self.default_trd_env = default_trd_env

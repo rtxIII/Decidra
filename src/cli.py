@@ -26,8 +26,7 @@ sys.path.append(str(Path(__file__).parent))
 
 try:
     from api.futu import FutuConfig, FutuClient, create_client
-    from utils.global_vars import config, PATH_CONFIG
-    from utils.config_manager import get_config_manager
+    from utils.global_vars import config, PATH_CONFIG, get_config_manager
 except ImportError as e:
     print(f"Import error: {e}")
     FutuConfig = None
@@ -538,6 +537,89 @@ def futu_info(config: Optional[str]):
 def config_cmd():
     """配置管理命令"""
     pass
+
+
+@config_cmd.command('app')
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']),
+              help='设置日志等级')
+@click.option('--log-to-file/--no-log-to-file', default=None, help='是否输出日志到文件')
+@click.option('--log-to-console/--no-log-to-console', default=None, help='是否输出日志到控制台')
+@click.option('--debug-mode/--no-debug-mode', default=None, help='是否启用调试模式')
+@click.option('--performance-monitoring/--no-performance-monitoring', default=None,
+              help='是否启用性能监控')
+@click.option('--show-only', is_flag=True, help='仅显示当前应用配置')
+def app_config(log_level: Optional[str], log_to_file: Optional[bool], log_to_console: Optional[bool],
+               debug_mode: Optional[bool], performance_monitoring: Optional[bool], show_only: bool):
+    """管理应用配置（日志等级、调试模式等）"""
+    try:
+        if get_config_manager is None:
+            print_error("配置管理器不可用")
+            sys.exit(1)
+
+        config_manager = get_config_manager()
+        app_config = config_manager.get_application_config()
+
+        # 如果只是显示配置
+        if show_only:
+            click.echo(f"{Fore.CYAN}当前应用配置:{Style.RESET_ALL}")
+            click.echo("="*50)
+            click.echo(f"  日志等级: {app_config['log_level']}")
+            click.echo(f"  日志输出到文件: {'是' if app_config['log_to_file'] else '否'}")
+            click.echo(f"  日志输出到控制台: {'是' if app_config['log_to_console'] else '否'}")
+            click.echo(f"  日志文件最大大小: {app_config['log_file_max_size']} MB")
+            click.echo(f"  日志文件备份数量: {app_config['log_file_backup_count']}")
+            click.echo(f"  调试模式: {'启用' if app_config['debug_mode'] else '禁用'}")
+            click.echo(f"  性能监控: {'启用' if app_config['performance_monitoring'] else '禁用'}")
+            click.echo(f"  数据缓存TTL: {app_config['data_cache_ttl']} 秒")
+            click.echo(f"  最大并发请求: {app_config['max_concurrent_requests']}")
+            return
+
+        # 检查是否有任何配置需要更新
+        has_changes = any([
+            log_level is not None,
+            log_to_file is not None,
+            log_to_console is not None,
+            debug_mode is not None,
+            performance_monitoring is not None
+        ])
+
+        if not has_changes:
+            print_error("请指定要修改的配置项，或使用 --show-only 查看当前配置")
+            return
+
+        # 更新配置
+        if log_level is not None:
+            config_manager.set_config('Application', 'LogLevel', log_level)
+            print_success(f"日志等级已设置为: {log_level}")
+
+        if log_to_file is not None:
+            config_manager.set_config('Application', 'LogToFile', 'true' if log_to_file else 'false')
+            print_success(f"日志输出到文件: {'启用' if log_to_file else '禁用'}")
+
+        if log_to_console is not None:
+            config_manager.set_config('Application', 'LogToConsole', 'true' if log_to_console else 'false')
+            print_success(f"日志输出到控制台: {'启用' if log_to_console else '禁用'}")
+
+        if debug_mode is not None:
+            config_manager.set_config('Application', 'DebugMode', 'true' if debug_mode else 'false')
+            print_success(f"调试模式: {'启用' if debug_mode else '禁用'}")
+
+        if performance_monitoring is not None:
+            config_manager.set_config('Application', 'PerformanceMonitoring',
+                                     'true' if performance_monitoring else 'false')
+            print_success(f"性能监控: {'启用' if performance_monitoring else '禁用'}")
+
+        # 保存配置
+        if config_manager.save_config():
+            print_success("配置已保存")
+            print_warning("注意: 部分配置需要重启应用后生效")
+        else:
+            print_error("保存配置失败")
+            sys.exit(1)
+
+    except Exception as e:
+        print_error(f"管理应用配置失败: {e}")
+        sys.exit(1)
 
 
 @config_cmd.command('validate')

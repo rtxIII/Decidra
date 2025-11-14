@@ -14,7 +14,7 @@ from textual.reactive import reactive
 from textual.binding import Binding
 from typing import List, Dict, Optional
 import asyncio
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 STOCK_COLUMNS = {
             "code": {"label": "代码", "width": 10},

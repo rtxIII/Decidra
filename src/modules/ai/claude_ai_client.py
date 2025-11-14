@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from base.order import OrderType
 from base.trading import TradingAdvice, TradingOrder
 from base.ai      import AIAnalysisRequest, AIAnalysisResponse
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 try:
     from claude_code_sdk import query, ClaudeCodeOptions

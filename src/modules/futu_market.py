@@ -42,7 +42,7 @@ class FutuMarket(FutuModuleBase):
     def __init__(self):
         """初始化富途行情管理器"""
         super().__init__()
-        self.logger = logger.get_logger("futu_market")
+        self.logger = get_logger("futu_market")
         
         # 业务数据缓存
         self.stock_list = None  

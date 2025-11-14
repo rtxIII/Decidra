@@ -14,7 +14,7 @@ try:
 except ImportError:
     raise ImportError("请先安装jsonlite包: pip install jsonlite")
 
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 from utils.global_vars import PATH_DATA
 
 

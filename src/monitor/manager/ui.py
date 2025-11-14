@@ -9,7 +9,7 @@ from typing import Optional, Any
 
 from textual.widgets import DataTable, Static
 # StockData导入已移除，未在此文件中使用
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 
 class UIManager:

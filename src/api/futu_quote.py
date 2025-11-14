@@ -9,7 +9,7 @@ import logging
 import threading
 from typing import Optional, Dict, Any, List, Callable, TYPE_CHECKING
 from collections import defaultdict
-from utils.logger import get_logger
+from utils.global_vars import get_logger
 
 if TYPE_CHECKING:
     from .futu_client import FutuClient

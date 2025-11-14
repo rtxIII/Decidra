@@ -26,7 +26,7 @@ class FutuModuleBase:
     def __init__(self):
         """初始化富途基础管理器"""
         self.config = config
-        self.logger = logger.get_logger("futu_base")
+        self.logger = get_logger("futu_base")
 
         # 获取配置信息 - 修正配置节名称
         credential_config = self.config['FutuOpenD.Credential']

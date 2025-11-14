@@ -5,7 +5,7 @@ import pandas as pd
 
 from strategies import Strategies
 from utils import logger
-
+from utils.global_vars import get_logger
 pd.options.mode.chained_assignment = None  # default='warn'
 
 
@@ -27,7 +27,7 @@ class RSIThreshold(Strategies):
         self.LOWER_RSI = lower_rsi
         self.UPPER_RSI = upper_rsi
         self.OBSERVATION = observation
-        self.default_logger = logger.get_logger("rsi_threshold")
+        self.default_logger = get_logger("rsi_threshold")
 
         super().__init__(input_data)
         self.parse_data()
