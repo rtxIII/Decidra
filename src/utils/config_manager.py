@@ -65,52 +65,52 @@ class ConfigManager:
         """获取默认配置"""
         return {
             'Application': {
-                'LogLevel': 'INFO',
-                'LogToFile': 'true',
-                'LogToConsole': 'false',
-                'LogFileMaxSize': '10',
-                'LogFileBackupCount': '5',
-                'DebugMode': 'false',
-                'PerformanceMonitoring': 'false',
-                'DataCacheTTL': '300',
-                'MaxConcurrentRequests': '10'
+                'loglevel': 'INFO',
+                'logtofile': 'true',
+                'logtoconsole': 'false',
+                'logfilemaxsize': '10',
+                'logfilebackupcount': '5',
+                'debugmode': 'false',
+                'performancemonitoring': 'false',
+                'datacachettl': '300',
+                'maxconcurrentrequests': '10'
             },
             'FutuOpenD.Config': {
-                'Host': '127.0.0.1',
-                'Port': '11111',
-                'WebSocketPort': '33333',
-                'TrdEnv': 'SIMULATE',
-                'Timeout': '10',
-                'EnableProtoEncrypt': 'false',
-                'LogLevel': 'INFO'
+                'host': '127.0.0.1',
+                'port': '11111',
+                'websocketport': '33333',
+                'trdenv': 'SIMULATE',
+                'timeout': '10',
+                'enableprotoencrypt': 'false',
+                'loglevel': 'INFO'
             },
             'FutuOpenD.Credential': {
-                'Username': '',
-                'Password_md5': ''
+                'username': '',
+                'password_md5': ''
             },
             'FutuOpenD.DataFormat': {
-                'HistoryDataFormat': '["code","time_key","open","close","high","low","volume","turnover"]',
-                'SubscribedDataFormat': 'None'
+                'historydataformat': '["code","time_key","open","close","high","low","volume","turnover"]',
+                'subscribeddataformat': 'None'
             },
             'TradePreference': {
-                'LotSizeMultiplier': '1',
-                'MaxPercPerAsset': '10',
-                'StockList': '[]',
-                'OrderSize': '100',
-                'OrderType': 'NORMAL',
-                'AutoNormalize': 'true',
-                'MaxPositions': '10'
+                'lotsizemultiplier': '1',
+                'maxpercperasset': '10',
+                'stocklist': '[]',
+                'ordersize': '100',
+                'ordertype': 'NORMAL',
+                'autonormalize': 'true',
+                'maxpositions': '10'
             },
             'Email': {
-                'SmtpServer': '',
-                'SmtpPort': '587',
-                'EmailUser': '',
-                'EmailPass': '',
-                'EmailTo': '',
-                'SubscriptionList': '[]'
+                'smtpserver': '',
+                'smtpport': '587',
+                'emailuser': '',
+                'emailpass': '',
+                'emailto': '',
+                'subscriptionlist': '[]'
             },
             'TuShare.Credential': {
-                'Token': ''
+                'token': ''
             }
         }
     
@@ -167,29 +167,29 @@ class ConfigManager:
         """加载环境变量覆盖"""
         env_mapping = {
             # Application configuration
-            'APP_LOG_LEVEL': ('Application', 'LogLevel'),
-            'APP_LOG_TO_FILE': ('Application', 'LogToFile'),
-            'APP_LOG_TO_CONSOLE': ('Application', 'LogToConsole'),
-            'APP_DEBUG_MODE': ('Application', 'DebugMode'),
-            'APP_PERFORMANCE_MONITORING': ('Application', 'PerformanceMonitoring'),
-            'APP_DATA_CACHE_TTL': ('Application', 'DataCacheTTL'),
+            'APP_LOG_LEVEL': ('Application', 'loglevel'),
+            'APP_LOG_TO_FILE': ('Application', 'logtofile'),
+            'APP_LOG_TO_CONSOLE': ('Application', 'logtoconsole'),
+            'APP_DEBUG_MODE': ('Application', 'debugmode'),
+            'APP_PERFORMANCE_MONITORING': ('Application', 'performancemonitoring'),
+            'APP_DATA_CACHE_TTL': ('Application', 'datacachettl'),
             # Futu configuration
-            'FUTU_HOST': ('FutuOpenD.Config', 'Host'),
-            'FUTU_PORT': ('FutuOpenD.Config', 'Port'),
-            'FUTU_TRADE_PWD': ('FutuOpenD.Credential', 'Password'),
-            'FUTU_TRADE_PWD_MD5': ('FutuOpenD.Credential', 'Password_md5'),
-            'FUTU_TRD_ENV': ('FutuOpenD.Config', 'TrdEnv'),
-            'FUTU_TIMEOUT': ('FutuOpenD.Config', 'Timeout'),
-            'FUTU_ENCRYPT': ('FutuOpenD.Config', 'EnableProtoEncrypt'),
-            'FUTU_LOG_LEVEL': ('FutuOpenD.Config', 'LogLevel'),
-            'FUTU_WEBSOCKET_PORT': ('FutuOpenD.Config', 'WebSocketPort'),
+            'FUTU_HOST': ('FutuOpenD.Config', 'host'),
+            'FUTU_PORT': ('FutuOpenD.Config', 'port'),
+            'FUTU_TRADE_PWD': ('FutuOpenD.Credential', 'password'),
+            'FUTU_TRADE_PWD_MD5': ('FutuOpenD.Credential', 'password_md5'),
+            'FUTU_TRD_ENV': ('FutuOpenD.Config', 'trdenv'),
+            'FUTU_TIMEOUT': ('FutuOpenD.Config', 'timeout'),
+            'FUTU_ENCRYPT': ('FutuOpenD.Config', 'enableprotoencrypt'),
+            'FUTU_LOG_LEVEL': ('FutuOpenD.Config', 'loglevel'),
+            'FUTU_WEBSOCKET_PORT': ('FutuOpenD.Config', 'websocketport'),
             # External services
-            'TUSHARE_TOKEN': ('TuShare.Credential', 'Token'),
-            'EMAIL_SMTP_SERVER': ('Email', 'SmtpServer'),
-            'EMAIL_SMTP_PORT': ('Email', 'SmtpPort'),
-            'EMAIL_USER': ('Email', 'EmailUser'),
-            'EMAIL_PASS': ('Email', 'EmailPass'),
-            'EMAIL_TO': ('Email', 'EmailTo')
+            'TUSHARE_TOKEN': ('TuShare.Credential', 'token'),
+            'EMAIL_SMTP_SERVER': ('Email', 'smtpserver'),
+            'EMAIL_SMTP_PORT': ('Email', 'smtpport'),
+            'EMAIL_USER': ('Email', 'emailuser'),
+            'EMAIL_PASS': ('Email', 'emailpass'),
+            'EMAIL_TO': ('Email', 'emailto')
         }
         
         self._env_overrides = {}
@@ -243,38 +243,38 @@ class ConfigManager:
         """验证配置完整性"""
         errors = []
         warnings = []
-        
+
         try:
             # 验证富途配置
             futu_config = self.get_config('FutuOpenD.Config', default={})
-            
+
             # 检查必需的配置项
-            required_keys = ['Host', 'Port', 'TrdEnv']
+            required_keys = ['host', 'port', 'trdenv']
             for key in required_keys:
                 if not futu_config.get(key):
                     errors.append(f"Missing required config: [FutuOpenD.Config].{key}")
-            
+
             # 验证端口号
             try:
-                port = int(futu_config.get('Port', '11111'))
+                port = int(futu_config.get('port', '11111'))
                 if port < 1 or port > 65535:
                     errors.append(f"Invalid port number: {port}")
             except ValueError:
-                errors.append(f"Invalid port format: {futu_config.get('Port')}")
-            
+                errors.append(f"Invalid port format: {futu_config.get('port')}")
+
             # 验证交易环境
-            trd_env = futu_config.get('TrdEnv', '').upper()
+            trd_env = futu_config.get('trdenv', '').upper()
             if trd_env not in ['SIMULATE', 'REAL']:
                 errors.append(f"Invalid trading environment: {trd_env}")
-            
+
             # 验证凭证配置
             cred_config = self.get_config('FutuOpenD.Credential', default={})
-            if not cred_config.get('Password_md5'):
+            if not cred_config.get('password_md5'):
                 warnings.append("No trading password configured")
-            
+
             # 验证邮件配置
             email_config = self.get_config('Email', default={})
-            if email_config.get('SmtpServer') and not email_config.get('EmailUser'):
+            if email_config.get('smtpserver') and not email_config.get('emailuser'):
                 warnings.append("Email server configured but no user specified")
             
             
@@ -341,30 +341,30 @@ class ConfigManager:
         """获取富途API配置"""
         config = self.get_config('FutuOpenD.Config', default={})
         cred = self.get_config('FutuOpenD.Credential', default={})
-        
+
         return {
-            'host': config.get('Host', '127.0.0.1'),
-            'port': int(config.get('Port', '11111')),
-            'websocket_port': int(config.get('WebSocketPort', '33333')),
-            'trd_env': config.get('TrdEnv', 'SIMULATE'),
-            'timeout': int(config.get('Timeout', '10')),
-            'enable_proto_encrypt': config.get('EnableProtoEncrypt', 'false').lower() == 'true',
-            'log_level': config.get('LogLevel', 'INFO'),
-            'trade_pwd_md5': cred.get('Password_md5', ''),
-            'username': cred.get('Username', '')
+            'host': config.get('host', '127.0.0.1'),
+            'port': int(config.get('port', '11111')),
+            'websocket_port': int(config.get('websocketport', '33333')),
+            'trd_env': config.get('trdenv', 'SIMULATE'),
+            'timeout': int(config.get('timeout', '10')),
+            'enable_proto_encrypt': config.get('enableprotoencrypt', 'false').lower() == 'true',
+            'log_level': config.get('loglevel', 'INFO'),
+            'trade_pwd_md5': cred.get('password_md5', ''),
+            'username': cred.get('username', '')
         }
     
     def get_email_config(self) -> Dict[str, Any]:
         """获取邮件配置"""
         config = self.get_config('Email', default={})
-        
+
         return {
-            'smtp_server': config.get('SmtpServer', ''),
-            'smtp_port': int(config.get('SmtpPort', '587')),
-            'email_user': config.get('EmailUser', ''),
-            'email_pass': config.get('EmailPass', ''),
-            'email_to': config.get('EmailTo', ''),
-            'subscription_list': self._parse_json_list(config.get('SubscriptionList', '[]'))
+            'smtp_server': config.get('smtpserver', ''),
+            'smtp_port': int(config.get('smtpport', '587')),
+            'email_user': config.get('emailuser', ''),
+            'email_pass': config.get('emailpass', ''),
+            'email_to': config.get('emailto', ''),
+            'subscription_list': self._parse_json_list(config.get('subscriptionlist', '[]'))
         }
     
     def get_trade_preference(self) -> Dict[str, Any]:
@@ -372,13 +372,13 @@ class ConfigManager:
         config = self.get_config('TradePreference', default={})
 
         return {
-            'lot_size_multiplier': int(config.get('LotSizeMultiplier', '1')),
-            'max_perc_per_asset': float(config.get('MaxPercPerAsset', '10')),
-            'stock_list': self._parse_json_list(config.get('StockList', '[]')),
-            'order_size': int(config.get('OrderSize', '100')),
-            'order_type': config.get('OrderType', 'NORMAL'),
-            'auto_normalize': config.get('AutoNormalize', 'true').lower() == 'true',
-            'max_positions': int(config.get('MaxPositions', '10'))
+            'lot_size_multiplier': int(config.get('lotsizemultiplier', '1')),
+            'max_perc_per_asset': float(config.get('maxpercperasset', '10')),
+            'stock_list': self._parse_json_list(config.get('stocklist', '[]')),
+            'order_size': int(config.get('ordersize', '100')),
+            'order_type': config.get('ordertype', 'NORMAL'),
+            'auto_normalize': config.get('autonormalize', 'true').lower() == 'true',
+            'max_positions': int(config.get('maxpositions', '10'))
         }
 
     def get_application_config(self) -> Dict[str, Any]:
@@ -386,15 +386,15 @@ class ConfigManager:
         config = self.get_config('Application', default={})
 
         return {
-            'log_level': config.get('LogLevel', 'INFO').upper(),
-            'log_to_file': config.get('LogToFile', 'true').lower() == 'true',
-            'log_to_console': config.get('LogToConsole', 'false').lower() == 'true',
-            'log_file_max_size': int(config.get('LogFileMaxSize', '10')),
-            'log_file_backup_count': int(config.get('LogFileBackupCount', '5')),
-            'debug_mode': config.get('DebugMode', 'false').lower() == 'true',
-            'performance_monitoring': config.get('PerformanceMonitoring', 'false').lower() == 'true',
-            'data_cache_ttl': int(config.get('DataCacheTTL', '300')),
-            'max_concurrent_requests': int(config.get('MaxConcurrentRequests', '10'))
+            'log_level': config.get('loglevel', 'INFO').upper(),
+            'log_to_file': config.get('logtofile', 'true').lower() == 'true',
+            'log_to_console': config.get('logtoconsole', 'false').lower() == 'true',
+            'log_file_max_size': int(config.get('logfilemaxsize', '10')),
+            'log_file_backup_count': int(config.get('logfilebackupcount', '5')),
+            'debug_mode': config.get('debugmode', 'false').lower() == 'true',
+            'performance_monitoring': config.get('performancemonitoring', 'false').lower() == 'true',
+            'data_cache_ttl': int(config.get('datacachettl', '300')),
+            'max_concurrent_requests': int(config.get('maxconcurrentrequests', '10'))
         }
     
     def _parse_json_list(self, json_str: str) -> List[str]:
