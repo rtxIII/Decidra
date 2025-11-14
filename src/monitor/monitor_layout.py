@@ -1084,7 +1084,7 @@ class MonitorLayout(Container):
         Binding("tab", "switch_tab", "切换标签"),
         Binding("enter", "enter_analysis", "进入分析"),
         Binding("ctrl+c", "quit", "强制退出", priority=True),
-        Binding("i", "open_ai_dialog", "AI问答"),
+        Binding("i", "open_ai_dialog", "AI问答", priority=True)
     ]
     
     DEFAULT_CSS = """

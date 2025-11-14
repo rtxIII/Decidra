@@ -83,6 +83,7 @@ class MonitorApp(App):
         Binding("ctrl+c", "quit", "强制退出", priority=True),
         Binding("space+w", "close_current_tab", "关闭标签页", priority=True),
         Binding("ctrl+w", "close_current_tab", "关闭标签页", priority=True),
+        Binding("i", "open_ai_dialog", "AI问答", priority=True),
     ]
     
     def __init__(self):
@@ -373,7 +374,12 @@ class MonitorApp(App):
     async def action_open_ai_dialog(self) -> None:
         """打开AI快捷问答对话框"""
         if not self.show_splash and self.managers_initialized:
-            await self.event_handler.action_open_ai_dialog()
+            # 直接调用info_panel的AI对话框方法
+            ui_manager = getattr(self, 'ui_manager', None)
+            if ui_manager and ui_manager.info_panel:
+                await ui_manager.info_panel._show_ai_dialog()
+            else:
+                self.logger.error("UIManager或InfoPanel未初始化，无法打开AI对话框")
 
     async def action_quit(self) -> None:
         """退出应用动作"""

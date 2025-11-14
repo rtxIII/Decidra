@@ -168,7 +168,7 @@ class QuoteManager:
                 quote = StockQuote.from_dict(row.to_dict())
                 quote_list.append(quote)
             
-            self.logger.info(f"获取到 {len(quote_list)} 只股票的实时报价")
+            self.logger.debug(f"获取到 {len(quote_list)} 只股票的实时报价")
             return quote_list
             
         except Exception as e:
