@@ -374,10 +374,14 @@ class MonitorApp(App):
     async def action_open_ai_dialog(self) -> None:
         """打开AI快捷问答对话框"""
         if not self.show_splash and self.managers_initialized:
-            # 直接调用info_panel的AI对话框方法
+            # 使用 run_worker 调用info_panel的AI对话框方法，避免 push_screen_wait 错误
             ui_manager = getattr(self, 'ui_manager', None)
             if ui_manager and ui_manager.info_panel:
-                await ui_manager.info_panel._show_ai_dialog()
+                ui_manager.info_panel.run_worker(
+                    ui_manager.info_panel._show_ai_dialog(),
+                    exclusive=True,
+                    group="ai_dialog"
+                )
             else:
                 self.logger.error("UIManager或InfoPanel未初始化，无法打开AI对话框")
 
