@@ -58,7 +58,7 @@ class ClaudeAIClient:
             
             # 构建分析提示词
             prompt = self._build_analysis_prompt(request)
-            
+            self.logger.debug(f"分析提示词: {prompt}")
             # 调用Claude Code SDK
             self.logger.info(f"开始生成{request.analysis_type}分析: {request.stock_code}")
             

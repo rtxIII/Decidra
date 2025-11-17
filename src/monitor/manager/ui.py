@@ -128,6 +128,11 @@ class UIManager:
             from monitor.widgets.line_panel import InfoPanel
             self.info_panel = self.app.query_one("#info_panel", InfoPanel)
             self.logger.info("InfoPanel引用设置成功")
+
+            # 设置交易管理器
+            if hasattr(self.app, 'futu_trade'):
+                self.info_panel.set_trade_manager(self.app.futu_trade)
+                self.logger.info("InfoPanel交易管理器设置成功")
         except Exception as e:
             self.logger.error(f"获取InfoPanel引用失败: {e}")
         

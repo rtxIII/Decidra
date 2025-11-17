@@ -521,14 +521,14 @@ class InfoPanel(Widget):
     def set_trade_manager(self, trade_manager) -> None:
         """设置交易管理器"""
         self.trade_manager = trade_manager
-        self.logger.info("交易管理器已设置")
+        self.logger.debug("交易管理器已设置")
     
     async def on_mount(self) -> None:
         """组件挂载时初始化"""
         # 重构后的InfoPanel不再包含AI显示组件
         # AI功能已移至独立的AIDisplayWidget组件中
         self.ai_display_widget = None
-        self.logger.info("InfoPanel双面板组件初始化完成")
+        self.logger.debug("InfoPanel双面板组件初始化完成")
     
     def compose(self) -> ComposeResult:
         """组合信息面板 - 左右分栏设计"""
@@ -833,10 +833,6 @@ class InfoPanel(Widget):
             self.logger.info(f"收到用户AI请求: {user_input.strip()}")
             await self._process_ai_request(user_input.strip())
 
-        except ImportError:
-            # 如果快捷对话框不可用，回退到标准输入对话框
-            self.logger.warning("AIQuickDialog不可用，使用标准输入对话框")
-            await self._show_standard_ai_dialog()
         except Exception as e:
             self.logger.error(f"AI对话框交互失败: {e}")
             await self.add_info(
@@ -846,42 +842,12 @@ class InfoPanel(Widget):
                 source="AI助手"
             )
 
-    async def _show_standard_ai_dialog(self) -> None:
-        """显示标准AI输入对话框（回退方案）"""
-        try:
-            ai_dialog = WindowInputDialog(
-                message="请输入您想要咨询的问题:",
-                title="💻 AI 智能助手",
-                placeholder="例如: 请分析一下腾讯这只股票的投资价值...",
-                submit_text="提交",
-                cancel_text="取消",
-                dialog_id="ai_input_dialog",
-                required=True
-            )
-
-            user_input = await self.app.push_screen_wait(ai_dialog)
-
-            if not user_input or not user_input.strip():
-                return
-
-            await self._process_ai_request(user_input.strip())
-
-        except Exception as e:
-            self.logger.error(f"标准AI对话框失败: {e}")
-            await self.add_info(
-                content=f"AI对话框失败: {str(e)}",
-                info_type=InfoType.ERROR,
-                level=InfoLevel.ERROR,
-                source="AI助手"
-            )
-    
-    
     async def _process_ai_request(self, user_input: str) -> None:
         """处理AI请求并显示响应"""
         self.logger.info(f"开始处理AI请求: {user_input}")
 
         if not user_input.strip():
-            self.logger.debug(f"[DEBUG] 用户输入为空，返回")
+            self.logger.warning(f"用户输入为空，返回")
             return
 
         try:
@@ -907,27 +873,54 @@ class InfoPanel(Widget):
                 )
                 return
 
-            # 检测是否为建议确认命令
-            advice_command = self._parse_advice_command(user_input)
-            if advice_command:
-                await self._handle_advice_command(advice_command)
-            # 检测是否为交易相关请求
-            elif self._is_trading_request(user_input):
-                await self._handle_trading_request(ai_client, user_input)
-            else:
-                # 普通AI对话
-                ai_response = await ai_client.chat_with_ai(user_input)
+            # 获取交易上下文
+            context = self._get_current_trading_context()
+
+            # 检测是否为明确的交易操作请求
+            if self._is_explicit_trading_request(user_input):
+                # 生成交易建议
+                self.logger.info(f"检测到交易操作请求，生成交易建议")
+                advice = await ai_client.generate_trading_advice(user_input, context)
 
                 # 停止思考动画
                 await self._stop_thinking_animation()
 
-                # 显示AI回复
-                await self.add_info(
-                    content=f"🤖 AI回复:\n{ai_response}",
-                    info_type=InfoType.LOG,
-                    level=InfoLevel.INFO,
-                    source="AI助手"
+                # 显示交易建议（会触发按钮显示）
+                await self._display_trading_advice(advice)
+            else:
+                # 使用股票分析方法处理普通分析请求
+                from base.ai import AIAnalysisRequest
+
+                # 准备数据上下文
+                data_context = {}
+                if context.get('current_stock'):
+                    data_context['basic_info'] = {
+                        'code': context.get('current_stock', ''),
+                        'name': context.get('stock_name', '未知'),
+                    }
+                if context.get('current_price'):
+                    data_context['realtime_quote'] = {
+                        'cur_price': context.get('current_price', 0),
+                        'change_rate': context.get('change_rate', 0),
+                        'volume': context.get('volume', 0),
+                    }
+
+                # 创建分析请求
+                analysis_request = AIAnalysisRequest(
+                    stock_code=context.get('current_stock', 'HK.00700'),
+                    analysis_type='comprehensive',  # 综合分析
+                    data_context=data_context,
+                    user_question=user_input  # 用户问题作为特别关心的问题
                 )
+
+                # 调用股票分析方法
+                analysis_response = await ai_client.generate_stock_analysis(analysis_request)
+
+                # 停止思考动画
+                await self._stop_thinking_animation()
+
+                # 显示AI分析回复（使用结构化响应）
+                await self._display_analysis_response(analysis_response)
 
         except Exception as e:
             # 确保停止动画
@@ -941,10 +934,27 @@ class InfoPanel(Widget):
                 source="AI助手"
             )
     
+    def _is_explicit_trading_request(self, user_input: str) -> bool:
+        """检测是否为明确的交易操作请求
+
+        只有包含明确交易操作词汇的请求才会触发交易建议生成
+        避免将普通分析问题误判为交易请求
+        """
+        explicit_trading_keywords = [
+            '买卖', '买入', '卖出', '下单', '建仓', '平仓', '加仓', '减仓',
+            '市价单', '限价单', '止损单', '止盈单',
+            '帮我买', '帮我卖', '我要买', '我要卖',
+            '建议买', '建议卖', '应该买', '应该卖',
+            '给个交易建议', '交易策略', '操作建议'
+        ]
+
+        user_lower = user_input.lower()
+        return any(keyword in user_lower for keyword in explicit_trading_keywords)
+
     def _extract_stock_code(self, user_input: str) -> str:
         """从用户输入中提取股票代码"""
         import re
-        
+
         # 匹配常见的股票代码格式
         patterns = [
             r'([A-Z]{2}\.[0-9]{5})',  # HK.00700
@@ -953,52 +963,13 @@ class InfoPanel(Widget):
             r'([0-9]{6})',  # 000001, 600000
             r'([A-Z]{3,4})'  # AAPL
         ]
-        
+
         for pattern in patterns:
             match = re.search(pattern, user_input.upper())
             if match:
                 return match.group(1)
-        
+
         return ""
-
-    def _is_trading_request(self, user_input: str) -> bool:
-        """检测是否为交易相关请求"""
-        trading_keywords = [
-            '买入', '卖出', '交易', '投资', '建议', '策略',
-            '止损', '止盈', '市价', '限价', '下单',
-            '持仓', '买', '卖', '仓位', '资金',
-            '股票', '股价', '收益', '分析'
-        ]
-
-        user_lower = user_input.lower()
-        return any(keyword in user_lower for keyword in trading_keywords)
-
-    async def _handle_trading_request(self, ai_client, user_input: str) -> None:
-        """处理交易相关请求"""
-        try:
-            # 获取当前股票上下文（从应用中获取）
-            context = self._get_current_trading_context()
-
-            # 生成AI交易建议
-            advice = await ai_client.generate_trading_advice(user_input, context)
-
-            # 停止思考动画
-            await self._stop_thinking_animation()
-
-            # 显示交易建议
-            await self._display_trading_advice(advice)
-
-        except Exception as e:
-            # 停止思考动画
-            await self._stop_thinking_animation()
-
-            self.logger.error(f"处理交易请求失败: {e}")
-            await self.add_info(
-                content=f"交易建议生成失败: {str(e)}",
-                info_type=InfoType.ERROR,
-                level=InfoLevel.ERROR,
-                source="AI交易助手"
-            )
 
     def _get_current_trading_context(self) -> dict:
         """获取当前交易上下文"""
@@ -1047,6 +1018,86 @@ class InfoPanel(Widget):
                 'current_position': '无持仓'
             }
 
+    async def _display_analysis_response(self, response) -> None:
+        """显示AI股票分析响应
+
+        Args:
+            response: AIAnalysisResponse 对象
+        """
+        try:
+            from base.ai import AIAnalysisResponse
+
+            if not isinstance(response, AIAnalysisResponse):
+                self.logger.error(f"无效的分析响应类型: {type(response)}")
+                await self.add_info(
+                    content="AI分析响应格式错误",
+                    info_type=InfoType.ERROR,
+                    level=InfoLevel.ERROR,
+                    source="AI助手"
+                )
+                return
+
+            # 构建格式化的分析内容
+            content_parts = [
+                f"📊 AI股票分析 - {response.stock_code}",
+                f"分析类型: {self._get_analysis_type_display(response.analysis_type)}",
+                f"置信度: {response.confidence_score:.2%}",
+                f"风险等级: {response.risk_level}",
+                "",
+                "=" * 50,
+                ""
+            ]
+
+            # 添加关键点
+            if response.key_points:
+                content_parts.append("🔑 关键要点:")
+                for idx, point in enumerate(response.key_points, 1):
+                    content_parts.append(f"  {idx}. {point}")
+                content_parts.append("")
+
+            # 添加主要分析内容
+            content_parts.append("📝 详细分析:")
+            content_parts.append(response.content)
+            content_parts.append("")
+
+            # 添加投资建议
+            if response.recommendation:
+                content_parts.append("💡 投资建议:")
+                content_parts.append(response.recommendation)
+
+            # 组合所有内容
+            formatted_content = "\n".join(content_parts)
+
+            # 显示分析结果
+            await self.add_info(
+                content=formatted_content,
+                info_type=InfoType.LOG,
+                level=InfoLevel.INFO,
+                source="AI分析助手"
+            )
+
+        except Exception as e:
+            self.logger.error(f"显示分析响应失败: {e}")
+            import traceback
+            self.logger.error(f"错误详情: {traceback.format_exc()}")
+            await self.add_info(
+                content=f"显示分析结果失败: {str(e)}",
+                info_type=InfoType.ERROR,
+                level=InfoLevel.ERROR,
+                source="AI助手"
+            )
+
+    def _get_analysis_type_display(self, analysis_type: str) -> str:
+        """获取分析类型的显示名称"""
+        type_names = {
+            'technical': '技术分析',
+            'fundamental': '基本面分析',
+            'comprehensive': '综合分析',
+            'risk_assessment': '风险评估',
+            'capital_flow': '资金流向分析'
+        }
+        return type_names.get(analysis_type, '未知分析')
+
     async def _display_trading_advice(self, advice: TradingAdvice) -> None:
         """显示交易建议"""
         try:
@@ -1070,10 +1121,6 @@ class InfoPanel(Widget):
                     'suggested_orders': len(advice.suggested_orders)
                 }
             )
-
-            # 如果有具体订单建议，显示操作选项
-            if advice.suggested_orders:
-                await self._show_advice_confirmation_options(advice)
 
         except Exception as e:
             self.logger.error(f"显示交易建议失败: {e}")
@@ -1116,53 +1163,6 @@ class InfoPanel(Widget):
                 content.append(f"  • {risk}")
 
         return "\n".join(content)
-
-    async def _show_advice_confirmation_options(self, advice: TradingAdvice) -> None:
-        """显示建议确认选项"""
-        confirmation_content = [
-            f"🤖 针对建议 {advice.advice_id[:8]}，您希望:",
-            "",
-            f"1️⃣ 确认执行 - 回复: 确认 {advice.advice_id[:8]}",
-            f"2️⃣ 拒绝建议 - 回复: 拒绝 {advice.advice_id[:8]}",
-            "",
-            "💡 提示: 直接在AI对话框中输入上述命令即可"
-        ]
-
-        await self.add_info(
-            content="\n".join(confirmation_content),
-            info_type=InfoType.USER_ACTION,
-            level=InfoLevel.INFO,
-            source="交易确认系统"
-        )
-
-    def _parse_advice_command(self, user_input: str) -> dict:
-        """解析建议确认命令"""
-        import re
-
-        user_input = user_input.strip()
-
-        # 匹配确认命令
-        confirm_pattern = r'确认\s+([a-f0-9]{8})'
-        reject_pattern = r'拒绝\s+([a-f0-9]{8})'
-        detail_pattern = r'详情\s+([a-f0-9]{8})'
-
-        for pattern, action in [
-            (confirm_pattern, 'confirm'),
-            (reject_pattern, 'reject'),
-            (detail_pattern, 'detail')
-        ]:
-            match = re.search(pattern, user_input, re.IGNORECASE)
-            if match:
-                advice_id_prefix = match.group(1)
-                # 查找匹配的完整建议ID
-                for full_id in self.pending_trading_advice.keys():
-                    if full_id.startswith(advice_id_prefix):
-                        return {
-                            'action': action,
-                            'advice_id': full_id
-                        }
-
-        return None
 
     async def _handle_advice_command(self, command: dict) -> None:
         """处理建议确认命令"""

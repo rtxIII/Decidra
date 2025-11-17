@@ -334,7 +334,7 @@ class AIQuickDialog(ModalScreen):
             f"分析{stock_display}投资价值",
             f"{stock_display}买卖建议",
             "技术指标信号分析",
-            "短期风险与机会",
+            "短期买入建议",
             "同行业股票对比",
             "主力资金流向"
         ]

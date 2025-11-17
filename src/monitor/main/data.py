@@ -758,7 +758,7 @@ class DataManager:
                 except asyncio.CancelledError:
                     pass
                 self.market_status_poller = None
-                self.logger.info("市场状态轮询任务已停止")
+                self.logger.debug("市场状态轮询任务已停止")
 
             # 停止用户数据刷新定时器（订单和持仓）
             if self.user_refresh_timer:
@@ -768,7 +768,7 @@ class DataManager:
                 except asyncio.CancelledError:
                     pass
                 self.user_refresh_timer = None
-                self.logger.info("用户数据定时刷新任务已停止")
+                self.logger.debug("用户数据定时刷新任务已停止")
 
             # 清理缓存
             self._global_market_state_cache = None
@@ -776,7 +776,7 @@ class DataManager:
             
 
                 
-            self.logger.info("DataManager 清理完成")
+            self.logger.debug("DataManager 清理完成")
 
         except Exception as e:
             self.logger.error(f"DataManager 清理失败: {e}")
@@ -784,7 +784,7 @@ class DataManager:
     async def refresh_order_data(self) -> None:
         """刷新订单数据并更新UI"""
         try:
-            self.logger.info("开始刷新订单数据")
+            self.logger.debug("开始刷新订单数据")
 
             # 先通过 UserDataManager 加载订单数据到 app_core.order_data
             group_manager = getattr(self.app_core.app, 'group_manager', None)
@@ -801,7 +801,7 @@ class DataManager:
             else:
                 self.logger.warning("UIManager 未初始化，跳过更新订单表格UI")
 
-            self.logger.info(f"订单数据刷新完成，共 {len(self.app_core.order_data)} 条订单")
+            self.logger.debug(f"订单数据刷新完成，共 {len(self.app_core.order_data)} 条订单")
 
         except Exception as e:
             self.logger.error(f"刷新订单数据失败: {e}")
@@ -809,7 +809,7 @@ class DataManager:
     async def refresh_position_data(self) -> None:
         """刷新持仓数据并更新UI"""
         try:
-            self.logger.info("开始刷新持仓数据")
+            self.logger.debug("开始刷新持仓数据")
 
             # 先通过 UserDataManager 加载持仓数据到 app_core.position_data
             group_manager = getattr(self.app_core.app, 'group_manager', None)
@@ -826,7 +826,7 @@ class DataManager:
             else:
                 self.logger.warning("UIManager 未初始化，跳过更新持仓显示UI")
 
-            self.logger.info(f"持仓数据刷新完成，共 {len(self.app_core.position_data)} 只持仓")
+            self.logger.debug(f"持仓数据刷新完成，共 {len(self.app_core.position_data)} 只持仓")
 
         except Exception as e:
             self.logger.error(f"刷新持仓数据失败: {e}")
