@@ -239,36 +239,33 @@ class AIQuickDialog(ModalScreen):
     @on(Button.Pressed)
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """处理按钮点击事件"""
-        # 首先记录事件被触发
-        self.log.info(f"[BUTTON-DEBUG] on_button_pressed 被触发")
-
         button_id = event.button.id
-        self.log.info(f"[BUTTON-DEBUG] button_id = {button_id}")
-        self.log.info(f"[BUTTON-DEBUG] button label = {event.button.label}")
+        self.log.debug(f"button_id = {button_id}")
+        self.log.debug(f"button label = {event.button.label}")
 
         if button_id == "submit_btn":
-            self.log.info(f"[BUTTON-DEBUG] 识别为提交按钮")
+            self.log.debug(f"识别为提交按钮")
             self.action_submit_custom()
         elif button_id == "cancel_btn":
-            self.log.info(f"[BUTTON-DEBUG] 识别为取消按钮")
+            self.log.debug(f"识别为取消按钮")
             self.action_cancel()
         elif button_id and button_id.startswith("quick_"):
-            self.log.info(f"[BUTTON-DEBUG] 识别为快捷问题按钮: {button_id}")
+            self.log.debug(f"识别为快捷问题按钮: {button_id}")
 
             # 快捷问题按钮
             try:
                 idx = int(button_id.split("_")[1]) - 1
-                self.log.info(f"[BUTTON-DEBUG] 解析到索引: {idx}")
+                self.log.debug(f"解析到索引: {idx}")
                 if 0 <= idx < len(self.quick_questions):
                     question = self.quick_questions[idx]
-                    self.log.info(f"[BUTTON-DEBUG] 提交问题: {question}")
+                    self.log.debug(f"提交问题: {question}")
                     self._submit_question(question)
                 else:
-                    self.log.error(f"[BUTTON-DEBUG] 索引越界: {idx}, 问题数量: {len(self.quick_questions)}")
+                    self.log.error(f"索引越界: {idx}, 问题数量: {len(self.quick_questions)}")
             except (ValueError, IndexError) as e:
-                self.log.error(f"[BUTTON-DEBUG] 快捷问题索引错误: {e}")
+                self.log.error(f"快捷问题索引错误: {e}")
         else:
-            self.log.warning(f"[BUTTON-DEBUG] 未识别的按钮ID: {button_id}")
+            self.log.warning(f"未识别的按钮ID: {button_id}")
 
     @on(Input.Submitted, "#custom_input")
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -334,7 +331,7 @@ class AIQuickDialog(ModalScreen):
             f"分析{stock_display}投资价值",
             f"{stock_display}买卖建议",
             "技术指标信号分析",
-            "短期买入建议",
+            "短期买入建仓",
             "同行业股票对比",
             "主力资金流向"
         ]

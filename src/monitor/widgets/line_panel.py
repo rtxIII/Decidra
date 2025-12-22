@@ -36,6 +36,7 @@ try:
     from monitor.widgets.window_dialog import WindowInputDialog
     from monitor.widgets.thinking_animation import ThinkingAnimation
     from monitor.widgets.order_dialog import PlaceOrderDialog, OrderData
+    from base.ai import AIAnalysisRequest, AITradingAdviceRequest
     AI_MODULES_AVAILABLE = True
 except ImportError:
     create_claude_client = None
@@ -45,6 +46,8 @@ except ImportError:
     ThinkingAnimation = None
     PlaceOrderDialog = None
     OrderData = None
+    AIAnalysisRequest = None
+    AITradingAdviceRequest = None
     AI_MODULES_AVAILABLE = False
 
 
@@ -873,14 +876,25 @@ class InfoPanel(Widget):
                 )
                 return
 
-            # 获取交易上下文
-            context = self._get_current_trading_context()
+            # 统一准备上下文数据 - 一次性构建完整context
+            context = self._prepare_unified_context()
+            stock_code = context.get('current_stock', 'HK.00700')
 
             # 检测是否为明确的交易操作请求
             if self._is_explicit_trading_request(user_input):
-                # 生成交易建议
-                self.logger.info(f"检测到交易操作请求，生成交易建议")
-                advice = await ai_client.generate_trading_advice(user_input, context)
+                # 生成交易建议 - 使用统一的请求对象
+                self.logger.info(f"Process_ai_request 检测到交易操作请求，生成交易建议")
+
+                # 创建交易建议请求对象
+                advice_request = AITradingAdviceRequest(
+                    stock_code=stock_code,
+                    user_input=user_input,
+                    context=context,  # 使用统一的完整context
+                    available_funds=context.get('available_funds', 50000.0),
+                    current_position=context.get('current_position', '无持仓')
+                )
+
+                advice = await ai_client.generate_trading_advice(advice_request)
 
                 # 停止思考动画
                 await self._stop_thinking_animation()
@@ -888,29 +902,15 @@ class InfoPanel(Widget):
                 # 显示交易建议（会触发按钮显示）
                 await self._display_trading_advice(advice)
             else:
-                # 使用股票分析方法处理普通分析请求
-                from base.ai import AIAnalysisRequest
+                # 使用股票分析方法处理普通分析请求 - 使用统一的请求对象
+                self.logger.info(f"Process_ai_request 检测到分析请求，生成股票分析")
 
-                # 准备数据上下文
-                data_context = {}
-                if context.get('current_stock'):
-                    data_context['basic_info'] = {
-                        'code': context.get('current_stock', ''),
-                        'name': context.get('stock_name', '未知'),
-                    }
-                if context.get('current_price'):
-                    data_context['realtime_quote'] = {
-                        'cur_price': context.get('current_price', 0),
-                        'change_rate': context.get('change_rate', 0),
-                        'volume': context.get('volume', 0),
-                    }
-
-                # 创建分析请求
+                # 创建分析请求对象 - 使用相同的统一context
                 analysis_request = AIAnalysisRequest(
-                    stock_code=context.get('current_stock', 'HK.00700'),
-                    analysis_type='comprehensive',  # 综合分析
-                    data_context=data_context,
-                    user_question=user_input  # 用户问题作为特别关心的问题
+                    stock_code=stock_code,
+                    user_input=user_input,
+                    context=context,  # 使用统一的完整context
+                    analysis_type='comprehensive'
                 )
 
                 # 调用股票分析方法
@@ -971,8 +971,20 @@ class InfoPanel(Widget):
 
         return ""
 
-    def _get_current_trading_context(self) -> dict:
-        """获取当前交易上下文"""
+    def _prepare_unified_context(self) -> dict:
+        """统一准备AI请求的完整上下文数据
+
+        返回包含所有必要信息的结构化context，供两种AI请求共享使用
+
+        Returns:
+            dict: 包含以下结构的完整上下文：
+                - current_stock: 当前股票代码
+                - stock_name: 股票名称
+                - available_funds: 可用资金
+                - current_position: 当前持仓
+                - basic_info: 基本信息字典
+                - realtime_quote: 实时报价字典
+        """
         try:
             # 尝试从app_core中获取当前股票信息
             app = self._app_instance
@@ -987,36 +999,77 @@ class InfoPanel(Widget):
                     stock_code = app_core.current_stock_code
                     context['current_stock'] = stock_code
 
-                    # 从缓存获取股票名称
+                    # 从缓存获取股票基本信息
                     if hasattr(app_core, 'stock_basicinfo_cache') and stock_code in app_core.stock_basicinfo_cache:
                         stock_info = app_core.stock_basicinfo_cache[stock_code]
                         context['stock_name'] = stock_info.get('name', '')
 
-                    # 从stock_data获取价格信息
+                        # 构建结构化的基本信息
+                        context['basic_info'] = {
+                            'code': stock_code,
+                            'name': stock_info.get('name', ''),
+                            'stock_type': stock_info.get('stock_type', '未知')
+                        }
+
+                    # 从stock_data获取实时价格信息
                     if hasattr(app_core, 'stock_data') and stock_code in app_core.stock_data:
                         stock_data = app_core.stock_data[stock_code]
+
+                        # 构建结构化的实时报价
+                        context['realtime_quote'] = {
+                            'cur_price': getattr(stock_data, 'current_price', 0),
+                            'change_rate': getattr(stock_data, 'change_rate', 0),
+                            'volume': getattr(stock_data, 'volume', 0),
+                            'turnover_rate': getattr(stock_data, 'turnover_rate', 0)
+                        }
+
+                        # 同时保留顶层字段以兼容旧代码
                         context['current_price'] = getattr(stock_data, 'current_price', None)
                         context['change_rate'] = getattr(stock_data, 'change_rate', None)
                         context['volume'] = getattr(stock_data, 'volume', None)
 
-            # 如果没有获取到股票信息,使用默认值
+            # 设置默认值
             context.setdefault('current_stock', 'HK.00700')
             context.setdefault('stock_name', '腾讯控股')
             context.setdefault('available_funds', 50000.0)
             context.setdefault('current_position', '无持仓')
 
+            # 确保结构化字段存在
+            context.setdefault('basic_info', {
+                'code': context['current_stock'],
+                'name': context['stock_name']
+            })
+            context.setdefault('realtime_quote', {})
+
             return context
 
         except Exception as e:
-            self.logger.warning(f"获取交易上下文失败: {e}，使用默认值")
+            self.logger.warning(f"准备统一上下文失败: {e}，使用默认值")
             return {
                 'current_stock': 'HK.00700',
                 'stock_name': '腾讯控股',
                 'current_price': 425.0,
                 'change_rate': '+2.35%',
                 'available_funds': 50000.0,
-                'current_position': '无持仓'
+                'current_position': '无持仓',
+                'basic_info': {
+                    'code': 'HK.00700',
+                    'name': '腾讯控股'
+                },
+                'realtime_quote': {
+                    'cur_price': 425.0,
+                    'change_rate': 2.35,
+                    'volume': 0
+                }
             }
+
+    def _get_current_trading_context(self) -> dict:
+        """获取当前交易上下文（向后兼容方法）
+
+        注意：此方法已被 _prepare_unified_context 替代
+        保留此方法仅为向后兼容
+        """
+        return self._prepare_unified_context()
 
     async def _display_analysis_response(self, response) -> None:
         """显示AI股票分析响应

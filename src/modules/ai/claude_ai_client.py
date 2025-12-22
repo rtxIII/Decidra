@@ -12,7 +12,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from base.order import OrderType
 from base.trading import TradingAdvice, TradingOrder
-from base.ai      import AIAnalysisRequest, AIAnalysisResponse
+from base.ai import AIRequest, AIAnalysisRequest, AITradingAdviceRequest, AIAnalysisResponse
 from utils.global_vars import get_logger
 
 try:
@@ -201,27 +201,34 @@ class ClaudeAIClient:
             self.logger.error(f"AI对话失败: {e}")
             return f"对话过程中出现错误: {str(e)}"
 
-    async def generate_trading_advice(self, user_prompt: str, context: Dict[str, Any] = None) -> TradingAdvice:
-        """根据用户输入生成交易建议"""
+    async def generate_trading_advice(self, request: AITradingAdviceRequest) -> TradingAdvice:
+        """根据用户输入生成交易建议
+
+        Args:
+            request: AI交易建议请求对象
+
+        Returns:
+            TradingAdvice: 交易建议对象
+        """
         try:
             if not self.is_available():
-                return self._create_error_advice(user_prompt, "AI服务不可用")
+                return self._create_error_advice(request.user_input, "AI服务不可用")
 
-            # 构建建议生成提示词
-            advice_prompt = self._build_advice_prompt(user_prompt, context or {})
+            # 构建建议生成提示词 - 使用统一的request对象
+            advice_prompt = self._build_advice_prompt(request)
 
             # 调用AI生成建议
             ai_response = await self.chat_with_ai(advice_prompt)
 
             # 解析AI响应为交易建议
-            trading_advice = self._parse_advice_response(user_prompt, ai_response, context)
+            trading_advice = self._parse_advice_response(request, ai_response)
 
-            self.logger.info(f"交易建议生成完成: {user_prompt} -> {trading_advice.advice_id}")
+            self.logger.info(f"交易建议生成完成: {request.user_input} -> {trading_advice.advice_id}")
             return trading_advice
 
         except Exception as e:
             self.logger.error(f"生成交易建议失败: {e}")
-            return self._create_error_advice(user_prompt, f"建议生成失败: {str(e)}")
+            return self._create_error_advice(request.user_input, f"建议生成失败: {str(e)}")
 
     async def confirm_and_execute_advice(self, advice: TradingAdvice, trade_manager=None, trd_env="SIMULATE") -> Dict[str, Any]:
         """确认并执行交易建议"""
@@ -345,39 +352,50 @@ class ClaudeAIClient:
             )
     
     def _build_analysis_prompt(self, request: AIAnalysisRequest) -> str:
-        """构建分析提示词"""
+        """构建分析提示词
+
+        Args:
+            request: AI分析请求对象（使用统一的AIRequest基类）
+
+        Returns:
+            str: 格式化的分析提示词
+        """
         try:
+            # 使用统一的上下文获取方法
+            basic_info = request.get_basic_info()
+            realtime_quote = request.get_realtime_quote()
+            technical_indicators = request.get_technical_indicators()
+
             # 基础分析模板
             prompt = f"""你是一位专业的股票分析师，请对股票 {request.stock_code} 进行{self._get_analysis_type_name(request.analysis_type)}。
 
 股票数据:"""
-            
-            # 添加数据上下文
-            if 'basic_info' in request.data_context:
-                basic_info = request.data_context['basic_info']
+
+            # 添加基本信息
+            if basic_info:
                 prompt += f"""
 基本信息:
 - 股票代码: {basic_info.get('code', request.stock_code)}
-- 股票名称: {basic_info.get('name', '未知')}
+- 股票名称: {request.get_stock_name()}
 - 股票类型: {basic_info.get('stock_type', '未知')}"""
-            
-            if 'realtime_quote' in request.data_context:
-                quote = request.data_context['realtime_quote']
+
+            # 添加实时报价
+            if realtime_quote:
                 prompt += f"""
 实时报价:
-- 当前价格: {quote.get('cur_price', 0):.2f}
-- 涨跌幅: {quote.get('change_rate', 0):+.2f}%
-- 成交量: {quote.get('volume', 0):,}
-- 换手率: {quote.get('turnover_rate', 0):.2f}%"""
-            
-            if 'technical_indicators' in request.data_context:
-                indicators = request.data_context['technical_indicators']
+- 当前价格: {realtime_quote.get('cur_price', 0):.2f}
+- 涨跌幅: {realtime_quote.get('change_rate', 0):+.2f}%
+- 成交量: {realtime_quote.get('volume', 0):,}
+- 换手率: {realtime_quote.get('turnover_rate', 0):.2f}%"""
+
+            # 添加技术指标
+            if technical_indicators:
                 prompt += f"""
 技术指标:
-- RSI: {indicators.get('rsi', 0):.1f}
-- MACD: DIF={indicators.get('macd', {}).get('dif', 0):.3f}
-- 均线: MA5={indicators.get('ma5', 0):.2f}, MA20={indicators.get('ma20', 0):.2f}"""
-            
+- RSI: {technical_indicators.get('rsi', 0):.1f}
+- MACD: DIF={technical_indicators.get('macd', {}).get('dif', 0):.3f}
+- 均线: MA5={technical_indicators.get('ma5', 0):.2f}, MA20={technical_indicators.get('ma20', 0):.2f}"""
+
             # 添加分析要求
             prompt += f"""
 
@@ -385,13 +403,13 @@ class ClaudeAIClient:
 - 提供明确的分析结论
 - 给出投资建议和风险评估
 - 评估置信度和风险等级"""
-            
-            # 添加用户问题
-            if request.user_question:
-                prompt += f"\n\n用户特别关心的问题: {request.user_question}\n请在分析中特别回答这个问题。"
-            
+
+            # 添加用户问题（使用统一的user_input字段）
+            if request.user_input:
+                prompt += f"\n\n用户特别关心的问题: {request.user_input}\n请在分析中特别回答这个问题。"
+
             return prompt
-            
+
         except Exception as e:
             self.logger.error(f"构建分析提示词失败: {e}")
             return f"分析股票 {request.stock_code} 的{self._get_analysis_type_name(request.analysis_type)}"
@@ -659,21 +677,32 @@ class ClaudeAIClient:
                 order.warnings = []
             order.warnings.append(f"验证过程异常: {str(e)}")
 
-    def _build_advice_prompt(self, user_prompt: str, context: Dict[str, Any]) -> str:
-        """构建AI建议生成提示词"""
+    def _build_advice_prompt(self, request: AITradingAdviceRequest) -> str:
+        """构建AI建议生成提示词
+
+        Args:
+            request: AI交易建议请求对象
+
+        Returns:
+            str: 格式化的提示词
+        """
+        # 从统一的request对象中提取信息
+        realtime_quote = request.get_realtime_quote()
+
         return f"""
 你是一位专业的股票投资顾问AI助手。用户向你咨询投资建议，请根据用户的需求和当前市场情况，生成专业的交易建议。
 
-用户需求: {user_prompt}
+用户需求: {request.user_input}
 
 当前市场上下文:
-- 当前关注股票: {context.get('current_stock', '无')}
-- 股票名称: {context.get('stock_name', '未知')}
-- 当前股价: {context.get('current_price', '未知')}
-- 今日涨跌幅: {context.get('change_rate', '未知')}
-- 成交量: {context.get('volume', '未知')}
-- 可用资金: {context.get('available_funds', '未知')}
-- 当前持仓: {context.get('current_position', '无')}
+- 当前关注股票: {request.stock_code}
+- 股票名称: {request.get_stock_name()}
+- 当前股价: {realtime_quote.get('cur_price', '未知')}
+- 今日涨跌幅: {realtime_quote.get('change_rate', '未知')}
+- 成交量: {realtime_quote.get('volume', '未知')}
+- 可用资金: {request.get_available_funds()}
+- 当前持仓: {request.get_current_position()}
+- 风险偏好: {request.risk_preference}
 
 请按以下JSON格式返回投资建议:
 {{
@@ -709,19 +738,35 @@ class ClaudeAIClient:
 回答请用中文，格式严格按照上述JSON结构。
 """
 
-    def _parse_advice_response(self, user_prompt: str, ai_response: str, context: Dict[str, Any]) -> TradingAdvice:
-        """解析AI响应为交易建议"""
+    def _parse_advice_response(self, request: AITradingAdviceRequest, ai_response: str) -> TradingAdvice:
+        """解析AI响应为交易建议
+
+        Args:
+            request: AI交易建议请求对象
+            ai_response: AI返回的响应文本
+
+        Returns:
+            TradingAdvice: 解析后的交易建议对象
+        """
         try:
+            # 调试日志：记录原始响应
+            self.logger.debug(f"AI原始响应: {ai_response[:500]}...")
+
             # 提取JSON数据
             json_str = self._extract_json_from_response(ai_response)
             if json_str:
+                self.logger.debug(f"提取的JSON字符串: {json_str[:500]}...")
                 advice_data = json.loads(json_str)
+
+                # 调试日志：记录解析后的数据
+                self.logger.info(f"解析后的建议数据: recommended_action={advice_data.get('recommended_action')}, "
+                               f"suggested_orders数量={len(advice_data.get('suggested_orders', []))}")
 
                 # 解析建议的订单
                 suggested_orders = []
                 for order_data in advice_data.get('suggested_orders', []):
                     order = TradingOrder(
-                        stock_code=order_data.get('stock_code', context.get('current_stock', '')),
+                        stock_code=order_data.get('stock_code', request.stock_code),
                         action=order_data.get('action', ''),
                         quantity=int(order_data.get('quantity', 0)),
                         price=order_data.get('price'),
@@ -733,14 +778,18 @@ class ClaudeAIClient:
                     self._validate_order(order)
                     suggested_orders.append(order)
 
+                # 如果没有订单但有recommended_action，记录警告
+                if not suggested_orders and advice_data.get('recommended_action') not in ['wait', 'hold']:
+                    self.logger.warning(f"AI建议操作为{advice_data.get('recommended_action')}但未提供具体订单！")
+
                 # 生成建议ID
-                advice_id = f"advice_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{hash(user_prompt) % 10000}"
+                advice_id = f"advice_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{hash(request.user_input) % 10000}"
 
                 return TradingAdvice(
                     advice_id=advice_id,
-                    user_prompt=user_prompt,
-                    stock_code=context.get('current_stock', ''),
-                    stock_name=context.get('stock_name', '未知'),
+                    user_prompt=request.user_input,
+                    stock_code=request.stock_code,
+                    stock_name=request.get_stock_name(),
                     advice_summary=advice_data.get('advice_summary', ''),
                     detailed_analysis=advice_data.get('detailed_analysis', ''),
                     recommended_action=advice_data.get('recommended_action', 'wait'),
@@ -754,24 +803,32 @@ class ClaudeAIClient:
                 )
             else:
                 # 无法解析JSON，创建基于文本的建议
-                return self._create_text_based_advice(user_prompt, ai_response, context)
+                return self._create_text_based_advice(request, ai_response)
 
         except json.JSONDecodeError as e:
             self.logger.error(f"建议JSON解析失败: {e}")
-            return self._create_error_advice(user_prompt, f"AI响应格式错误: {str(e)}")
+            return self._create_error_advice(request.user_input, f"AI响应格式错误: {str(e)}")
         except Exception as e:
             self.logger.error(f"解析交易建议失败: {e}")
-            return self._create_error_advice(user_prompt, f"建议解析异常: {str(e)}")
+            return self._create_error_advice(request.user_input, f"建议解析异常: {str(e)}")
 
-    def _create_text_based_advice(self, user_prompt: str, ai_response: str, context: Dict[str, Any]) -> TradingAdvice:
-        """基于纯文本响应创建建议"""
-        advice_id = f"text_advice_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{hash(user_prompt) % 10000}"
+    def _create_text_based_advice(self, request: AITradingAdviceRequest, ai_response: str) -> TradingAdvice:
+        """基于纯文本响应创建建议
+
+        Args:
+            request: AI交易建议请求对象
+            ai_response: AI返回的文本响应
+
+        Returns:
+            TradingAdvice: 基于文本的建议对象
+        """
+        advice_id = f"text_advice_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{hash(request.user_input) % 10000}"
 
         return TradingAdvice(
             advice_id=advice_id,
-            user_prompt=user_prompt,
-            stock_code=context.get('current_stock', ''),
-            stock_name=context.get('stock_name', '未知'),
+            user_prompt=request.user_input,
+            stock_code=request.stock_code,
+            stock_name=request.get_stock_name(),
             advice_summary="AI提供了文本建议，请查看详细分析",
             detailed_analysis=ai_response,
             recommended_action="wait",
