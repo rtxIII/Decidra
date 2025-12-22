@@ -347,12 +347,38 @@ class EventHandler:
                 if ui_manager:
                     await ui_manager.update_group_cursor()
                 self.logger.debug(f"分组光标向上移动到: {self.app_core.current_group_cursor}")
+            elif self.app_core.active_table == "position" and len(self.app_core.position_data) > 0:
+                # 持仓表：向上移动时，如果在第一行则跳转到分组表最后一行
+                if self.app_core.current_position_cursor == 0:
+                    # 跳转到分组表
+                    self.app_core.active_table = "group"
+                    if len(self.app_core.group_data) > 0:
+                        self.app_core.current_group_cursor = len(self.app_core.group_data) - 1
+                    if ui_manager:
+                        await ui_manager.update_table_focus()
+                    self.logger.debug("持仓表第一行向上移动，跳转到分组表最后一行")
+                else:
+                    # 正常向上移动
+                    self.app_core.current_position_cursor -= 1
+                    if ui_manager:
+                        await ui_manager.update_position_cursor()
+                    self.logger.debug(f"持仓光标向上移动到: {self.app_core.current_position_cursor}")
             elif self.app_core.active_table == "orders" and len(self.app_core.order_data) > 0:
-                # 移动订单表格光标
-                self.app_core.current_order_cursor = (self.app_core.current_order_cursor - 1) % len(self.app_core.order_data)
-                if ui_manager:
-                    await ui_manager.update_order_cursor()
-                self.logger.debug(f"订单光标向上移动到: {self.app_core.current_order_cursor}")
+                # 订单表：向上移动时，如果在第一行则跳转到持仓表最后一行
+                if self.app_core.current_order_cursor == 0:
+                    # 跳转到持仓表
+                    self.app_core.active_table = "position"
+                    if len(self.app_core.position_data) > 0:
+                        self.app_core.current_position_cursor = len(self.app_core.position_data) - 1
+                    if ui_manager:
+                        await ui_manager.update_table_focus()
+                    self.logger.debug("订单表第一行向上移动，跳转到持仓表最后一行")
+                else:
+                    # 正常向上移动
+                    self.app_core.current_order_cursor -= 1
+                    if ui_manager:
+                        await ui_manager.update_order_cursor()
+                    self.logger.debug(f"订单光标向上移动到: {self.app_core.current_order_cursor}")
             else:
                 self.logger.debug(f"当前表格({self.app_core.active_table})无数据或非活跃状态，无法移动光标")
         except Exception as e:
@@ -369,13 +395,37 @@ class EventHandler:
                     await ui_manager.update_stock_cursor()
                 self.logger.debug(f"股票光标向下移动到: {self.app_core.current_stock_cursor}")
             elif self.app_core.active_table == "group" and len(self.app_core.group_data) > 0:
-                # 移动分组表格光标
-                self.app_core.current_group_cursor = (self.app_core.current_group_cursor + 1) % len(self.app_core.group_data)
-                if ui_manager:
-                    await ui_manager.update_group_cursor()
-                self.logger.debug(f"分组光标向下移动到: {self.app_core.current_group_cursor}")
+                # 分组表：向下移动时，如果在最后一行则跳转到持仓表第一行
+                if self.app_core.current_group_cursor == len(self.app_core.group_data) - 1:
+                    # 跳转到持仓表
+                    self.app_core.active_table = "position"
+                    self.app_core.current_position_cursor = 0
+                    if ui_manager:
+                        await ui_manager.update_table_focus()
+                    self.logger.debug("分组表最后一行向下移动，跳转到持仓表第一行")
+                else:
+                    # 正常向下移动
+                    self.app_core.current_group_cursor += 1
+                    if ui_manager:
+                        await ui_manager.update_group_cursor()
+                    self.logger.debug(f"分组光标向下移动到: {self.app_core.current_group_cursor}")
+            elif self.app_core.active_table == "position" and len(self.app_core.position_data) > 0:
+                # 持仓表：向下移动时，如果在最后一行则跳转到订单表第一行
+                if self.app_core.current_position_cursor == len(self.app_core.position_data) - 1:
+                    # 跳转到订单表
+                    self.app_core.active_table = "orders"
+                    self.app_core.current_order_cursor = 0
+                    if ui_manager:
+                        await ui_manager.update_table_focus()
+                    self.logger.debug("持仓表最后一行向下移动，跳转到订单表第一行")
+                else:
+                    # 正常向下移动
+                    self.app_core.current_position_cursor += 1
+                    if ui_manager:
+                        await ui_manager.update_position_cursor()
+                    self.logger.debug(f"持仓光标向下移动到: {self.app_core.current_position_cursor}")
             elif self.app_core.active_table == "orders" and len(self.app_core.order_data) > 0:
-                # 移动订单表格光标
+                # 移动订单表格光标（循环移动）
                 self.app_core.current_order_cursor = (self.app_core.current_order_cursor + 1) % len(self.app_core.order_data)
                 if ui_manager:
                     await ui_manager.update_order_cursor()
@@ -470,10 +520,12 @@ class EventHandler:
             self.logger.info(f"选择分组: {group_data['name']}, 包含 {group_data['stock_count']} 只股票")
     
     async def action_focus_left_table(self) -> None:
-        """左移焦点：订单表 → 分组表 → 股票表 → 订单表"""
+        """左移焦点：订单表 → 持仓表 → 分组表 → 股票表 → 订单表"""
         try:
-            # 循环切换：orders → group → stock → orders
+            # 循环切换：orders → position → group → stock → orders
             if self.app_core.active_table == "orders":
+                self.app_core.active_table = "position"
+            elif self.app_core.active_table == "position":
                 self.app_core.active_table = "group"
             elif self.app_core.active_table == "group":
                 self.app_core.active_table = "stock"
@@ -491,12 +543,14 @@ class EventHandler:
             self.logger.error(f"焦点左移切换失败: {e}")
 
     async def action_focus_right_table(self) -> None:
-        """右移焦点：股票表 → 分组表 → 订单表 → 股票表"""
+        """右移焦点：股票表 → 分组表 → 持仓表 → 订单表 → 股票表"""
         try:
-            # 循环切换：stock → group → orders → stock
+            # 循环切换：stock → group → position → orders → stock
             if self.app_core.active_table == "stock":
                 self.app_core.active_table = "group"
             elif self.app_core.active_table == "group":
+                self.app_core.active_table = "position"
+            elif self.app_core.active_table == "position":
                 self.app_core.active_table = "orders"
             elif self.app_core.active_table == "orders":
                 self.app_core.active_table = "stock"

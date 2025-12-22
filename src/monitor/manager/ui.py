@@ -323,6 +323,31 @@ class UIManager:
         except Exception as e:
             self.logger.error(f"更新分组光标失败: {e}")
 
+    async def update_position_cursor(self) -> None:
+        """更新持仓表格的光标显示 - 使用DataTable原生光标"""
+        if not self.position_table or len(self.app_core.position_data) == 0:
+            return
+
+        try:
+            # 确保光标位置在有效范围内
+            if self.app_core.current_position_cursor < 0:
+                self.app_core.current_position_cursor = 0
+            elif self.app_core.current_position_cursor >= len(self.app_core.position_data):
+                self.app_core.current_position_cursor = len(self.app_core.position_data) - 1
+
+            # 使用DataTable的原生光标移动功能
+            self.position_table.move_cursor(
+                row=self.app_core.current_position_cursor,
+                column=0,
+                animate=False,
+                scroll=True
+            )
+
+            self.logger.debug(f"持仓光标移动到行 {self.app_core.current_position_cursor}")
+
+        except Exception as e:
+            self.logger.error(f"更新持仓光标失败: {e}")
+
     async def update_order_cursor(self) -> None:
         """更新订单表格的光标显示 - 使用DataTable原生光标"""
         if not self.orders_table or len(self.app_core.order_data) == 0:
@@ -347,7 +372,7 @@ class UIManager:
 
         except Exception as e:
             self.logger.error(f"更新订单光标失败: {e}")
-    
+
     async def update_table_focus(self) -> None:
         """更新表格焦点显示，确保同一时间只有一个表格显示光标"""
         try:
@@ -359,6 +384,9 @@ class UIManager:
                 if self.group_table:
                     self.group_table.show_cursor = False
                     self.group_table.refresh()
+                if self.position_table:
+                    self.position_table.show_cursor = False
+                    self.position_table.refresh()
                 if self.orders_table:
                     self.orders_table.show_cursor = False
                     self.orders_table.refresh()
@@ -372,10 +400,29 @@ class UIManager:
                 if self.stock_table:
                     self.stock_table.show_cursor = False
                     self.stock_table.refresh()
+                if self.position_table:
+                    self.position_table.show_cursor = False
+                    self.position_table.refresh()
                 if self.orders_table:
                     self.orders_table.show_cursor = False
                     self.orders_table.refresh()
                 self.logger.debug("激活分组表格焦点")
+
+            elif self.app_core.active_table == "position":
+                # 激活持仓表格光标，隐藏其他表格光标
+                if self.position_table:
+                    self.position_table.show_cursor = True
+                    await self.update_position_cursor()
+                if self.stock_table:
+                    self.stock_table.show_cursor = False
+                    self.stock_table.refresh()
+                if self.group_table:
+                    self.group_table.show_cursor = False
+                    self.group_table.refresh()
+                if self.orders_table:
+                    self.orders_table.show_cursor = False
+                    self.orders_table.refresh()
+                self.logger.debug("激活持仓表格焦点")
 
             elif self.app_core.active_table == "orders":
                 # 激活订单表格光标，隐藏其他表格光标
@@ -388,6 +435,9 @@ class UIManager:
                 if self.group_table:
                     self.group_table.show_cursor = False
                     self.group_table.refresh()
+                if self.position_table:
+                    self.position_table.show_cursor = False
+                    self.position_table.refresh()
                 self.logger.debug("激活订单表格焦点")
 
         except Exception as e:
