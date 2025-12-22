@@ -443,6 +443,9 @@ class EventHandler:
         elif self.app_core.active_table == "group":
             # 当前在分组表格：选择分组（原有逻辑）
             await self.select_current_group()
+        elif self.app_core.active_table == "position":
+            # 当前在持仓表格：触发卖出订单
+            await self.action_sell_from_position()
         elif self.app_core.active_table == "orders":
             # 当前在订单表格：修改订单
             await self.action_modify_order()
@@ -576,6 +579,81 @@ class EventHandler:
                 self.logger.debug("焦点切换到订单表格")
         except Exception as e:
             self.logger.error(f"切换焦点到订单表格失败: {e}")
+
+    async def action_sell_from_position(self) -> None:
+        """从持仓表卖出 - 弹出卖出对话框"""
+        self.app.run_worker(self._sell_from_position_worker, exclusive=True)
+
+    async def _sell_from_position_worker(self) -> None:
+        """从持仓表卖出的工作线程"""
+        try:
+            # 检查是否有持仓数据
+            if not self.app_core.position_data or len(self.app_core.position_data) == 0:
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+                if ui_manager and ui_manager.info_panel:
+                    await ui_manager.info_panel.log_info("没有持仓数据，无法卖出", "卖出操作")
+                return
+
+            # 获取当前选中的持仓
+            if not (0 <= self.app_core.current_position_cursor < len(self.app_core.position_data)):
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+                if ui_manager and ui_manager.info_panel:
+                    await ui_manager.info_panel.log_info("请选择要卖出的持仓", "卖出操作")
+                return
+
+            selected_position = self.app_core.position_data[self.app_core.current_position_cursor]
+
+            # 提取持仓信息
+            stock_code = selected_position.get('stock_code', '')
+            stock_name = selected_position.get('stock_name', '')
+            can_sell_qty = int(selected_position.get('can_sell_qty', 0))
+            nominal_price = selected_position.get('nominal_price', 0)
+
+            # 检查可卖数量
+            if can_sell_qty <= 0:
+                ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+                if ui_manager and ui_manager.info_panel:
+                    await ui_manager.info_panel.log_warning(
+                        f"股票 {stock_code} ({stock_name}) 可卖数量为0，无法卖出",
+                        "卖出操作"
+                    )
+                return
+
+            self.logger.info(f"准备卖出持仓: {stock_code} ({stock_name}), 可卖数量: {can_sell_qty}, 当前价: {nominal_price}")
+
+            # 构建默认值字典
+            default_values = {
+                "code": stock_code,
+                "price": nominal_price,
+                "qty": can_sell_qty,
+                "trd_side": "SELL"  # 强制设置为卖出
+            }
+
+            # 导入并显示下单对话框
+            from monitor.widgets.order_dialog import show_place_order_dialog
+
+            order_data = await show_place_order_dialog(
+                app=self.app,
+                title=f"卖出 - {stock_code} ({stock_name})",
+                default_values=default_values,
+                submit_callback=self._handle_place_submit,
+                cancel_callback=self._handle_place_cancel
+            )
+
+            if order_data:
+                self.logger.info(f"卖出订单数据已收集: {order_data}")
+                # 提交订单请求
+                await self._submit_place_order(order_data)
+            else:
+                self.logger.info("用户取消了卖出操作")
+
+        except Exception as e:
+            self.logger.error(f"卖出持仓失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if ui_manager and ui_manager.info_panel:
+                await ui_manager.info_panel.log_info(f"卖出持仓失败: {e}", "卖出操作")
 
     async def action_place_order(self) -> None:
         """新订单动作 - 弹出下单对话框"""
