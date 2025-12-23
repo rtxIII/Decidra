@@ -880,6 +880,13 @@ class InfoPanel(Widget):
             context = self._prepare_unified_context()
             stock_code = context.get('current_stock', 'HK.00700')
 
+            # 如果技术指标为空，主动加载分析数据
+            if not context.get('technical_indicators'):
+                self.logger.info(f"技术指标为空，主动加载股票 {stock_code} 的分析数据...")
+                await self._ensure_analysis_data_loaded(stock_code)
+                # 重新准备上下文以获取最新的技术指标
+                context = self._prepare_unified_context()
+
             # 检测是否为明确的交易操作请求
             if self._is_explicit_trading_request(user_input):
                 # 生成交易建议 - 使用统一的请求对象
@@ -912,6 +919,13 @@ class InfoPanel(Widget):
                     context=context,  # 使用统一的完整context
                     analysis_type='comprehensive'
                 )
+
+                # 调试日志：检查技术指标是否传递
+                tech_indicators = analysis_request.get_technical_indicators()
+                if tech_indicators:
+                    self.logger.info(f"✓ 技术指标已传递到分析请求: MA5={tech_indicators.get('ma5')}, RSI={tech_indicators.get('rsi')}")
+                else:
+                    self.logger.warning(f"✗ 技术指标为空! context keys: {context.keys()}")
 
                 # 调用股票分析方法
                 analysis_response = await ai_client.generate_stock_analysis(analysis_request)
@@ -984,6 +998,7 @@ class InfoPanel(Widget):
                 - current_position: 当前持仓
                 - basic_info: 基本信息字典
                 - realtime_quote: 实时报价字典
+                - technical_indicators: 技术指标字典
         """
         try:
             # 尝试从app_core中获取当前股票信息
@@ -1028,6 +1043,24 @@ class InfoPanel(Widget):
                         context['change_rate'] = getattr(stock_data, 'change_rate', None)
                         context['volume'] = getattr(stock_data, 'volume', None)
 
+                    # 从分析数据管理器获取技术指标
+                    if hasattr(app_core, 'analysis_data_manager'):
+                        analysis_data_manager = app_core.analysis_data_manager
+                        self.logger.debug(f"检查股票 {stock_code} 的技术指标缓存...")
+                        # 检查是否有该股票的分析数据缓存
+                        if stock_code in analysis_data_manager.analysis_data_cache:
+                            analysis_data = analysis_data_manager.analysis_data_cache[stock_code]
+                            # 获取技术指标数据
+                            if hasattr(analysis_data, 'technical_indicators') and analysis_data.technical_indicators:
+                                context['technical_indicators'] = analysis_data.technical_indicators
+                                self.logger.info(f"✓ 成功获取股票 {stock_code} 技术指标: MA5={analysis_data.technical_indicators.get('ma5')}, RSI={analysis_data.technical_indicators.get('rsi')}")
+                            else:
+                                self.logger.warning(f"✗ 股票 {stock_code} 分析数据中无技术指标")
+                        else:
+                            self.logger.warning(f"✗ 股票 {stock_code} 不在分析数据缓存中，可用股票: {list(analysis_data_manager.analysis_data_cache.keys())}")
+                    else:
+                        self.logger.warning(f"✗ app_core 没有 analysis_data_manager 属性")
+
             # 设置默认值
             context.setdefault('current_stock', 'HK.00700')
             context.setdefault('stock_name', '腾讯控股')
@@ -1040,6 +1073,7 @@ class InfoPanel(Widget):
                 'name': context['stock_name']
             })
             context.setdefault('realtime_quote', {})
+            context.setdefault('technical_indicators', {})
 
             return context
 
@@ -1060,7 +1094,8 @@ class InfoPanel(Widget):
                     'cur_price': 425.0,
                     'change_rate': 2.35,
                     'volume': 0
-                }
+                },
+                'technical_indicators': {}
             }
 
     def _get_current_trading_context(self) -> dict:
@@ -1070,6 +1105,52 @@ class InfoPanel(Widget):
         保留此方法仅为向后兼容
         """
         return self._prepare_unified_context()
+
+    async def _ensure_analysis_data_loaded(self, stock_code: str) -> bool:
+        """确保股票的分析数据已加载（包括技术指标）
+
+        Args:
+            stock_code: 股票代码
+
+        Returns:
+            bool: 是否成功加载分析数据
+        """
+        try:
+            app = self._app_instance
+            if not hasattr(app, 'app_core'):
+                self.logger.warning("app_core 不存在，无法加载分析数据")
+                return False
+
+            app_core = app.app_core
+
+            # 检查是否有分析数据管理器
+            if not hasattr(app_core, 'analysis_data_manager'):
+                self.logger.warning("analysis_data_manager 不存在，无法加载分析数据")
+                return False
+
+            analysis_data_manager = app_core.analysis_data_manager
+
+            # 如果缓存中已有数据，检查是否包含技术指标
+            if stock_code in analysis_data_manager.analysis_data_cache:
+                analysis_data = analysis_data_manager.analysis_data_cache[stock_code]
+                if hasattr(analysis_data, 'technical_indicators') and analysis_data.technical_indicators:
+                    self.logger.debug(f"股票 {stock_code} 分析数据已存在且包含技术指标")
+                    return True
+
+            # 主动加载分析数据
+            self.logger.info(f"主动加载股票 {stock_code} 的分析数据和技术指标...")
+            analysis_data = await analysis_data_manager.load_analysis_data(stock_code)
+
+            if analysis_data and analysis_data.technical_indicators:
+                self.logger.info(f"✓ 成功加载股票 {stock_code} 的技术指标: MA5={analysis_data.technical_indicators.get('ma5')}, RSI={analysis_data.technical_indicators.get('rsi')}")
+                return True
+            else:
+                self.logger.warning(f"✗ 加载股票 {stock_code} 的分析数据失败或无技术指标")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"确保分析数据加载失败: {e}")
+            return False
 
     async def _display_analysis_response(self, response) -> None:
         """显示AI股票分析响应

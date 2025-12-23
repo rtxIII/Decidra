@@ -217,6 +217,8 @@ class ClaudeAIClient:
             # 构建建议生成提示词 - 使用统一的request对象
             advice_prompt = self._build_advice_prompt(request)
 
+            self.logger.debug(f"用户PROMPT: {advice_prompt}")
+
             # 调用AI生成建议
             ai_response = await self.chat_with_ai(advice_prompt)
 
@@ -688,6 +690,43 @@ class ClaudeAIClient:
         """
         # 从统一的request对象中提取信息
         realtime_quote = request.get_realtime_quote()
+        technical_indicators = request.get_technical_indicators()
+
+        # 构建技术指标信息文本
+        technical_info = ""
+        if technical_indicators:
+            technical_info = "\n技术指标数据:"
+
+            # MA均线
+            if 'ma5' in technical_indicators:
+                technical_info += f"\n- MA5: {technical_indicators['ma5']:.2f}"
+            if 'ma10' in technical_indicators:
+                technical_info += f", MA10: {technical_indicators['ma10']:.2f}"
+            if 'ma20' in technical_indicators:
+                technical_info += f", MA20: {technical_indicators['ma20']:.2f}"
+            if 'ma60' in technical_indicators:
+                technical_info += f", MA60: {technical_indicators['ma60']:.2f}"
+
+            # RSI指标
+            if 'rsi' in technical_indicators:
+                rsi_value = technical_indicators['rsi']
+                rsi_status = "超买" if rsi_value > 70 else ("超卖" if rsi_value < 30 else "正常")
+                technical_info += f"\n- RSI(14): {rsi_value:.1f} ({rsi_status})"
+
+            # MACD指标
+            if 'macd' in technical_indicators and isinstance(technical_indicators['macd'], dict):
+                macd_data = technical_indicators['macd']
+                dif = macd_data.get('dif', 0)
+                dea = macd_data.get('dea', 0)
+                histogram = macd_data.get('histogram', 0)
+                macd_trend = "金叉" if dif > dea and histogram > 0 else ("死叉" if dif < dea and histogram < 0 else "中性")
+                technical_info += f"\n- MACD: DIF({dif:.3f}), DEA({dea:.3f}), 柱({histogram:.3f}), 趋势: {macd_trend}"
+
+            # 价格和成交量趋势
+            if 'price_trend' in technical_indicators:
+                technical_info += f"\n- 价格趋势: {technical_indicators['price_trend']}"
+            if 'volume_trend' in technical_indicators:
+                technical_info += f"\n- 成交量趋势: {technical_indicators['volume_trend']}"
 
         return f"""
 你是一位专业的股票投资顾问AI助手。用户向你咨询投资建议，请根据用户的需求和当前市场情况，生成专业的交易建议。
@@ -703,6 +742,7 @@ class ClaudeAIClient:
 - 可用资金: {request.get_available_funds()}
 - 当前持仓: {request.get_current_position()}
 - 风险偏好: {request.risk_preference}
+{technical_info}
 
 请按以下JSON格式返回投资建议:
 {{
@@ -728,12 +768,13 @@ class ClaudeAIClient:
 }}
 
 分析要求:
-1. 结合当前股价和市场情况进行分析
+1. 结合当前股价、技术指标和市场情况进行分析
 2. 考虑用户的资金状况和风险承受能力
 3. 提供具体可执行的交易策略
 4. 明确指出风险因素和注意事项
 5. 如果市场条件不适合交易，建议等待
 6. 所有建议必须基于风险控制原则
+7. 充分利用技术指标(MA、RSI、MACD等)进行技术面分析
 
 回答请用中文，格式严格按照上述JSON结构。
 """
