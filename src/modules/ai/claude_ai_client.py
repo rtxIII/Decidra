@@ -368,6 +368,7 @@ class ClaudeAIClient:
             realtime_quote = request.get_realtime_quote()
             technical_indicators = request.get_technical_indicators()
             capital_flow = request.get_capital_flow()
+            orderbook = request.get_orderbook()
 
             # 基础分析模板
             prompt = f"""你是一位专业的股票分析师，请对股票 {request.stock_code} 进行{self._get_analysis_type_name(request.analysis_type)}。
@@ -410,11 +411,37 @@ class ClaudeAIClient:
 - 超大单: {capital_flow.get('super_in_flow', 0):+.2f}, 大单: {capital_flow.get('big_in_flow', 0):+.2f}
 - 中单: {capital_flow.get('mid_in_flow', 0):+.2f}, 小单: {capital_flow.get('sml_in_flow', 0):+.2f}"""
 
+            # 添加五档买卖盘
+            if orderbook:
+                ask_data = orderbook.get('ask', [])
+                bid_data = orderbook.get('bid', [])
+                if ask_data or bid_data:
+                    prompt += "\n五档买卖盘:"
+                    if ask_data:
+                        prompt += "\n- 卖盘: "
+                        ask_items = []
+                        for i, ask in enumerate(ask_data[:5], 1):
+                            price = ask.get('price', 0)
+                            volume = ask.get('volume', 0)
+                            if price > 0:
+                                ask_items.append(f"卖{i}={price:.2f}({volume})")
+                        prompt += ", ".join(ask_items) if ask_items else "无数据"
+                    if bid_data:
+                        prompt += "\n- 买盘: "
+                        bid_items = []
+                        for i, bid in enumerate(bid_data[:5], 1):
+                            price = bid.get('price', 0)
+                            volume = bid.get('volume', 0)
+                            if price > 0:
+                                bid_items.append(f"买{i}={price:.2f}({volume})")
+                        prompt += ", ".join(bid_items) if bid_items else "无数据"
+
             # 添加分析要求
             prompt += f"""
 
 请进行{self._get_analysis_type_name(request.analysis_type)}，用中文回答，格式要求:
 - 结合技术指标和资金流向进行综合分析
+- 分析五档买卖盘判断短期买卖力量对比
 - 提供明确的分析结论
 - 给出投资建议和风险评估
 - 评估置信度和风险等级"""
@@ -705,6 +732,7 @@ class ClaudeAIClient:
         realtime_quote = request.get_realtime_quote()
         technical_indicators = request.get_technical_indicators()
         capital_flow = request.get_capital_flow()
+        orderbook = request.get_orderbook()
 
         # 构建技术指标信息文本
         technical_info = ""
@@ -757,6 +785,32 @@ class ClaudeAIClient:
                     flow_value = capital_flow[flow_key]
                     capital_flow_info += f", {flow_label}: {flow_value:+.2f}"
 
+        # 构建五档买卖盘信息文本
+        orderbook_info = ""
+        if orderbook:
+            ask_data = orderbook.get('ask', [])
+            bid_data = orderbook.get('bid', [])
+            if ask_data or bid_data:
+                orderbook_info = "\n五档买卖盘:"
+                if ask_data:
+                    ask_items = []
+                    for i, ask in enumerate(ask_data[:5], 1):
+                        price = ask.get('price', 0)
+                        volume = ask.get('volume', 0)
+                        if price > 0:
+                            ask_items.append(f"卖{i}={price:.2f}({volume})")
+                    if ask_items:
+                        orderbook_info += f"\n- 卖盘: {', '.join(ask_items)}"
+                if bid_data:
+                    bid_items = []
+                    for i, bid in enumerate(bid_data[:5], 1):
+                        price = bid.get('price', 0)
+                        volume = bid.get('volume', 0)
+                        if price > 0:
+                            bid_items.append(f"买{i}={price:.2f}({volume})")
+                    if bid_items:
+                        orderbook_info += f"\n- 买盘: {', '.join(bid_items)}"
+
         return f"""
 你是一位专业的股票投资顾问AI助手。用户向你咨询投资建议，请根据用户的需求和当前市场情况，生成专业的交易建议。
 
@@ -771,7 +825,7 @@ class ClaudeAIClient:
 - 可用资金: {request.get_available_funds()}
 - 当前持仓: {request.get_current_position()}
 - 风险偏好: {request.risk_preference}
-{technical_info}{capital_flow_info}
+{technical_info}{capital_flow_info}{orderbook_info}
 
 请按以下JSON格式返回投资建议:
 {{
@@ -800,11 +854,12 @@ class ClaudeAIClient:
 1. 结合当前股价、技术指标、资金流向和市场情况进行综合分析
 2. 充分利用技术指标(MA、RSI、MACD等)进行技术面分析
 3. 结合资金流向数据分析主力资金动向和市场情绪
-4. 考虑用户的资金状况和风险承受能力
-5. 提供具体可执行的交易策略
-6. 明确指出风险因素和注意事项
-7. 如果市场条件不适合交易，建议等待
-8. 所有建议必须基于风险控制原则
+4. 分析五档买卖盘数据判断短期买卖力量对比和支撑阻力位
+5. 考虑用户的资金状况和风险承受能力
+6. 提供具体可执行的交易策略
+7. 明确指出风险因素和注意事项
+8. 如果市场条件不适合交易，建议等待
+9. 所有建议必须基于风险控制原则
 
 回答请用中文，格式严格按照上述JSON结构。
 """

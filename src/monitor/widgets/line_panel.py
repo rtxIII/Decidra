@@ -1064,6 +1064,29 @@ class InfoPanel(Widget):
                                 self.logger.info(f"✓ 成功获取股票 {stock_code} 资金流向数据")
                             else:
                                 self.logger.debug(f"股票 {stock_code} 分析数据中无资金流向（将在需要时动态获取）")
+
+                            # 获取五档买卖盘数据
+                            if hasattr(analysis_data, 'orderbook_data') and analysis_data.orderbook_data:
+                                orderbook = analysis_data.orderbook_data
+                                context['orderbook'] = {
+                                    'ask': [
+                                        {'price': getattr(orderbook, 'ask_price_1', 0), 'volume': getattr(orderbook, 'ask_volume_1', 0)},
+                                        {'price': getattr(orderbook, 'ask_price_2', 0), 'volume': getattr(orderbook, 'ask_volume_2', 0)},
+                                        {'price': getattr(orderbook, 'ask_price_3', 0), 'volume': getattr(orderbook, 'ask_volume_3', 0)},
+                                        {'price': getattr(orderbook, 'ask_price_4', 0), 'volume': getattr(orderbook, 'ask_volume_4', 0)},
+                                        {'price': getattr(orderbook, 'ask_price_5', 0), 'volume': getattr(orderbook, 'ask_volume_5', 0)},
+                                    ],
+                                    'bid': [
+                                        {'price': getattr(orderbook, 'bid_price_1', 0), 'volume': getattr(orderbook, 'bid_volume_1', 0)},
+                                        {'price': getattr(orderbook, 'bid_price_2', 0), 'volume': getattr(orderbook, 'bid_volume_2', 0)},
+                                        {'price': getattr(orderbook, 'bid_price_3', 0), 'volume': getattr(orderbook, 'bid_volume_3', 0)},
+                                        {'price': getattr(orderbook, 'bid_price_4', 0), 'volume': getattr(orderbook, 'bid_volume_4', 0)},
+                                        {'price': getattr(orderbook, 'bid_price_5', 0), 'volume': getattr(orderbook, 'bid_volume_5', 0)},
+                                    ]
+                                }
+                                self.logger.info(f"✓ 成功获取股票 {stock_code} 五档买卖盘数据")
+                            else:
+                                self.logger.debug(f"股票 {stock_code} 分析数据中无五档买卖盘")
                         else:
                             self.logger.warning(f"✗ 股票 {stock_code} 不在分析数据缓存中，可用股票: {list(analysis_data_manager.analysis_data_cache.keys())}")
                     else:
@@ -1083,6 +1106,7 @@ class InfoPanel(Widget):
             context.setdefault('realtime_quote', {})
             context.setdefault('technical_indicators', {})
             context.setdefault('capital_flow', {})
+            context.setdefault('orderbook', {})
 
             return context
 
@@ -1105,7 +1129,8 @@ class InfoPanel(Widget):
                     'volume': 0
                 },
                 'technical_indicators': {},
-                'capital_flow': {}
+                'capital_flow': {},
+                'orderbook': {}
             }
 
     def _get_current_trading_context(self) -> dict:

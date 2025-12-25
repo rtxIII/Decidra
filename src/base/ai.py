@@ -37,6 +37,10 @@ class AIRequest(ABC):
         """获取资金流向"""
         return self.context.get('capital_flow', {})
 
+    def get_orderbook(self) -> Dict[str, Any]:
+        """获取五档买卖盘数据"""
+        return self.context.get('orderbook', {})
+
 
 @dataclass
 class AIAnalysisRequest(AIRequest):
