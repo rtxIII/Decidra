@@ -780,7 +780,20 @@ class InfoPanel(Widget):
     async def add_performance_info(self, content: str, data: Dict[str, Any] = None, source: str = "") -> None:
         """添加性能信息"""
         await self.add_info(content, InfoType.PERFORMANCE, InfoLevel.INFO, source, data)
-    
+
+    async def select_last_message(self) -> bool:
+        """选择最后一条消息并显示详情
+
+        Returns:
+            bool: 是否成功选择
+        """
+        try:
+            message_list = self.query_one("#info_message_list", InfoMessageList)
+            return await message_list.select_last_message()
+        except Exception as e:
+            self.logger.error(f"选择最后一条消息失败: {e}")
+            return False
+
     async def _show_ai_dialog(self) -> None:
         """显示AI对话框并处理用户交互 - 优化版：快捷问题 + 自定义输入"""
         if not AI_MODULES_AVAILABLE:
@@ -1245,6 +1258,9 @@ class InfoPanel(Widget):
                 source="AI分析助手"
             )
 
+            # 自动选中AI回复的消息，方便用户查看详情
+            await self.select_last_message()
+
         except Exception as e:
             self.logger.error(f"显示分析响应失败: {e}")
             import traceback
@@ -1290,6 +1306,9 @@ class InfoPanel(Widget):
                     'suggested_orders': len(advice.suggested_orders)
                 }
             )
+
+            # 自动选中AI回复的消息，方便用户查看详情
+            await self.select_last_message()
 
         except Exception as e:
             self.logger.error(f"显示交易建议失败: {e}")
@@ -1947,6 +1966,35 @@ class InfoMessageList(ScrollableContainer):
         self.post_message(self.MessageSelected(message))
 
         self.logger.info(f"选中消息: {message.content[:50]}...")
+
+    async def select_last_message(self) -> bool:
+        """选择最后一条消息并滚动到底部
+
+        Returns:
+            bool: 是否成功选择
+        """
+        try:
+            if not self.message_widgets:
+                return False
+
+            # 获取最后一条消息
+            if not self.buffer.messages:
+                return False
+
+            last_message = self.buffer.messages[-1]
+            message_id = f"msg_{id(last_message)}"
+
+            if message_id in self.message_widgets:
+                widget = self.message_widgets[message_id]
+                await self.select_message(last_message, widget)
+                # 确保滚动到底部
+                self.scroll_end(animate=True)
+                return True
+
+            return False
+        except Exception as e:
+            self.logger.error(f"选择最后一条消息失败: {e}")
+            return False
 
 
 class InfoDetailView(ScrollableContainer):
