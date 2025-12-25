@@ -1043,19 +1043,27 @@ class InfoPanel(Widget):
                         context['change_rate'] = getattr(stock_data, 'change_rate', None)
                         context['volume'] = getattr(stock_data, 'volume', None)
 
-                    # 从分析数据管理器获取技术指标
+                    # 从分析数据管理器获取技术指标和资金流向
                     if hasattr(app_core, 'analysis_data_manager'):
                         analysis_data_manager = app_core.analysis_data_manager
-                        self.logger.debug(f"检查股票 {stock_code} 的技术指标缓存...")
+                        self.logger.debug(f"检查股票 {stock_code} 的分析数据缓存...")
                         # 检查是否有该股票的分析数据缓存
                         if stock_code in analysis_data_manager.analysis_data_cache:
                             analysis_data = analysis_data_manager.analysis_data_cache[stock_code]
+
                             # 获取技术指标数据
                             if hasattr(analysis_data, 'technical_indicators') and analysis_data.technical_indicators:
                                 context['technical_indicators'] = analysis_data.technical_indicators
                                 self.logger.info(f"✓ 成功获取股票 {stock_code} 技术指标: MA5={analysis_data.technical_indicators.get('ma5')}, RSI={analysis_data.technical_indicators.get('rsi')}")
                             else:
                                 self.logger.warning(f"✗ 股票 {stock_code} 分析数据中无技术指标")
+
+                            # 获取资金流向数据
+                            if hasattr(analysis_data, 'capital_flow') and analysis_data.capital_flow:
+                                context['capital_flow'] = analysis_data.capital_flow
+                                self.logger.info(f"✓ 成功获取股票 {stock_code} 资金流向数据")
+                            else:
+                                self.logger.debug(f"股票 {stock_code} 分析数据中无资金流向（将在需要时动态获取）")
                         else:
                             self.logger.warning(f"✗ 股票 {stock_code} 不在分析数据缓存中，可用股票: {list(analysis_data_manager.analysis_data_cache.keys())}")
                     else:
@@ -1074,6 +1082,7 @@ class InfoPanel(Widget):
             })
             context.setdefault('realtime_quote', {})
             context.setdefault('technical_indicators', {})
+            context.setdefault('capital_flow', {})
 
             return context
 
@@ -1095,7 +1104,8 @@ class InfoPanel(Widget):
                     'change_rate': 2.35,
                     'volume': 0
                 },
-                'technical_indicators': {}
+                'technical_indicators': {},
+                'capital_flow': {}
             }
 
     def _get_current_trading_context(self) -> dict:

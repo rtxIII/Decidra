@@ -33,6 +33,10 @@ class AIRequest(ABC):
         """获取技术指标"""
         return self.context.get('technical_indicators', {})
 
+    def get_capital_flow(self) -> Dict[str, Any]:
+        """获取资金流向"""
+        return self.context.get('capital_flow', {})
+
 
 @dataclass
 class AIAnalysisRequest(AIRequest):

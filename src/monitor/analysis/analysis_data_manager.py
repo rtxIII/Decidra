@@ -204,10 +204,10 @@ class AnalysisDataManager:
             
             # 计算技术指标
             technical_indicators = await self._calculate_technical_indicators(kline_data)
-            
-            # 获取资金流向数据（暂时用空字典）
-            capital_flow = {}
-            
+
+            # 获取资金流向数据
+            capital_flow = await self._get_capital_flow_data(_stock_code)
+
             # 创建分析数据集
             analysis_data = AnalysisDataSet(
                 stock_code=stock_code,
@@ -408,11 +408,50 @@ class AnalysisDataManager:
         try:
             broker_queue = self.futu_market.get_broker_queue(stock_code)
             return broker_queue
-            
+
         except Exception as e:
             self.logger.error(f"获取经纪队列失败: {e}")
             return None
-    
+
+    async def _get_capital_flow_data(self, stock_code: str) -> Dict[str, Any]:
+        """获取资金流向数据
+
+        Args:
+            stock_code: 股票代码
+
+        Returns:
+            Dict: 资金流向数据字典，包含主力、超大单、大单、中单、小单等
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            capital_flow_list = await loop.run_in_executor(
+                None, self.futu_market.get_capital_flow, stock_code, "INTRADAY"
+            )
+
+            if not capital_flow_list or len(capital_flow_list) == 0:
+                self.logger.debug(f"股票 {stock_code} 无资金流向数据")
+                return {}
+
+            # 获取最新的资金流向数据（列表中的最后一条）
+            latest_flow = capital_flow_list[-1]
+
+            capital_flow = {
+                'main_in_flow': getattr(latest_flow, 'main_in_flow', 0),
+                'super_in_flow': getattr(latest_flow, 'super_in_flow', 0),
+                'big_in_flow': getattr(latest_flow, 'big_in_flow', 0),
+                'mid_in_flow': getattr(latest_flow, 'mid_in_flow', 0),
+                'sml_in_flow': getattr(latest_flow, 'sml_in_flow', 0),
+                'capital_flow_item_time': getattr(latest_flow, 'capital_flow_item_time', ''),
+                'last_valid_time': getattr(latest_flow, 'last_valid_time', '')
+            }
+
+            self.logger.info(f"✓ 成功获取股票 {stock_code} 资金流向: 主力净流入={capital_flow['main_in_flow']:.2f}")
+            return capital_flow
+
+        except Exception as e:
+            self.logger.error(f"获取资金流向数据失败: {e}")
+            return {}
+
     async def _calculate_technical_indicators(self, kline_data: List[KLineData]) -> Dict[str, Any]:
         """计算技术指标"""
         try:

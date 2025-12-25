@@ -367,6 +367,7 @@ class ClaudeAIClient:
             basic_info = request.get_basic_info()
             realtime_quote = request.get_realtime_quote()
             technical_indicators = request.get_technical_indicators()
+            capital_flow = request.get_capital_flow()
 
             # 基础分析模板
             prompt = f"""你是一位专业的股票分析师，请对股票 {request.stock_code} 进行{self._get_analysis_type_name(request.analysis_type)}。
@@ -392,16 +393,28 @@ class ClaudeAIClient:
 
             # 添加技术指标
             if technical_indicators:
+                macd_data = technical_indicators.get('macd', {})
                 prompt += f"""
 技术指标:
-- RSI: {technical_indicators.get('rsi', 0):.1f}
-- MACD: DIF={technical_indicators.get('macd', {}).get('dif', 0):.3f}
-- 均线: MA5={technical_indicators.get('ma5', 0):.2f}, MA20={technical_indicators.get('ma20', 0):.2f}"""
+- 均线: MA5={technical_indicators.get('ma5', 0):.2f}, MA10={technical_indicators.get('ma10', 0):.2f}, MA20={technical_indicators.get('ma20', 0):.2f}, MA60={technical_indicators.get('ma60', 0):.2f}
+- RSI(14): {technical_indicators.get('rsi', 0):.1f}
+- MACD: DIF={macd_data.get('dif', 0):.3f}, DEA={macd_data.get('dea', 0):.3f}, 柱状图={macd_data.get('histogram', 0):.3f}"""
+
+            # 添加资金流向
+            if capital_flow:
+                main_flow = capital_flow.get('main_in_flow', 0)
+                flow_direction = "流入" if main_flow > 0 else "流出"
+                prompt += f"""
+资金流向:
+- 主力净{flow_direction}: {abs(main_flow):.2f}
+- 超大单: {capital_flow.get('super_in_flow', 0):+.2f}, 大单: {capital_flow.get('big_in_flow', 0):+.2f}
+- 中单: {capital_flow.get('mid_in_flow', 0):+.2f}, 小单: {capital_flow.get('sml_in_flow', 0):+.2f}"""
 
             # 添加分析要求
             prompt += f"""
 
 请进行{self._get_analysis_type_name(request.analysis_type)}，用中文回答，格式要求:
+- 结合技术指标和资金流向进行综合分析
 - 提供明确的分析结论
 - 给出投资建议和风险评估
 - 评估置信度和风险等级"""
@@ -691,6 +704,7 @@ class ClaudeAIClient:
         # 从统一的request对象中提取信息
         realtime_quote = request.get_realtime_quote()
         technical_indicators = request.get_technical_indicators()
+        capital_flow = request.get_capital_flow()
 
         # 构建技术指标信息文本
         technical_info = ""
@@ -710,8 +724,7 @@ class ClaudeAIClient:
             # RSI指标
             if 'rsi' in technical_indicators:
                 rsi_value = technical_indicators['rsi']
-                rsi_status = "超买" if rsi_value > 70 else ("超卖" if rsi_value < 30 else "正常")
-                technical_info += f"\n- RSI(14): {rsi_value:.1f} ({rsi_status})"
+                technical_info += f"\n- RSI(14): {rsi_value:.1f}"
 
             # MACD指标
             if 'macd' in technical_indicators and isinstance(technical_indicators['macd'], dict):
@@ -719,14 +732,30 @@ class ClaudeAIClient:
                 dif = macd_data.get('dif', 0)
                 dea = macd_data.get('dea', 0)
                 histogram = macd_data.get('histogram', 0)
-                macd_trend = "金叉" if dif > dea and histogram > 0 else ("死叉" if dif < dea and histogram < 0 else "中性")
-                technical_info += f"\n- MACD: DIF({dif:.3f}), DEA({dea:.3f}), 柱({histogram:.3f}), 趋势: {macd_trend}"
+                technical_info += f"\n- MACD: DIF={dif:.3f}, DEA={dea:.3f}, 柱状图={histogram:.3f}"
 
-            # 价格和成交量趋势
-            if 'price_trend' in technical_indicators:
-                technical_info += f"\n- 价格趋势: {technical_indicators['price_trend']}"
-            if 'volume_trend' in technical_indicators:
-                technical_info += f"\n- 成交量趋势: {technical_indicators['volume_trend']}"
+        # 构建资金流向信息文本
+        capital_flow_info = ""
+        if capital_flow:
+            capital_flow_info = "\n资金流向数据:"
+
+            # 主力资金流向
+            if 'main_in_flow' in capital_flow:
+                main_flow = capital_flow['main_in_flow']
+                flow_direction = "流入" if main_flow > 0 else "流出"
+                capital_flow_info += f"\n- 主力净{flow_direction}: {abs(main_flow):.2f}"
+
+            # 超大单、大单、中单、小单
+            flow_types = [
+                ('super_in_flow', '超大单'),
+                ('big_in_flow', '大单'),
+                ('mid_in_flow', '中单'),
+                ('sml_in_flow', '小单')
+            ]
+            for flow_key, flow_label in flow_types:
+                if flow_key in capital_flow:
+                    flow_value = capital_flow[flow_key]
+                    capital_flow_info += f", {flow_label}: {flow_value:+.2f}"
 
         return f"""
 你是一位专业的股票投资顾问AI助手。用户向你咨询投资建议，请根据用户的需求和当前市场情况，生成专业的交易建议。
@@ -742,7 +771,7 @@ class ClaudeAIClient:
 - 可用资金: {request.get_available_funds()}
 - 当前持仓: {request.get_current_position()}
 - 风险偏好: {request.risk_preference}
-{technical_info}
+{technical_info}{capital_flow_info}
 
 请按以下JSON格式返回投资建议:
 {{
@@ -768,13 +797,14 @@ class ClaudeAIClient:
 }}
 
 分析要求:
-1. 结合当前股价、技术指标和市场情况进行分析
-2. 考虑用户的资金状况和风险承受能力
-3. 提供具体可执行的交易策略
-4. 明确指出风险因素和注意事项
-5. 如果市场条件不适合交易，建议等待
-6. 所有建议必须基于风险控制原则
-7. 充分利用技术指标(MA、RSI、MACD等)进行技术面分析
+1. 结合当前股价、技术指标、资金流向和市场情况进行综合分析
+2. 充分利用技术指标(MA、RSI、MACD等)进行技术面分析
+3. 结合资金流向数据分析主力资金动向和市场情绪
+4. 考虑用户的资金状况和风险承受能力
+5. 提供具体可执行的交易策略
+6. 明确指出风险因素和注意事项
+7. 如果市场条件不适合交易，建议等待
+8. 所有建议必须基于风险控制原则
 
 回答请用中文，格式严格按照上述JSON结构。
 """

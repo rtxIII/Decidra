@@ -92,7 +92,7 @@ class StockListPanel(Container):
         # 快捷键提示区域
         with Container(classes="button-bar"):
             yield Static(
-                "[bold green]N[/bold green] 添加股票  [bold red]K[/bold red] 删除股票  [bold blue]O[/bold blue] 添加订单  [bold yellow]Space[/bold yellow] 选择分组",
+                "[bold green]N[/bold green] 添加股票  [bold red]K[/bold red] 删除股票  [bold blue]O[/bold blue] 订单操作  [bold yellow]Space[/bold yellow] 选择分组  [bold white]I[/bold white] AI",
                 id="hotkey_hints"
             )
 
