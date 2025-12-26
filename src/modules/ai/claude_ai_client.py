@@ -733,6 +733,9 @@ class ClaudeAIClient:
         technical_indicators = request.get_technical_indicators()
         capital_flow = request.get_capital_flow()
         orderbook = request.get_orderbook()
+        trading_mode = request.get_trading_mode()
+        position_list = request.get_position_list()
+        account_info = request.get_account_info()
 
         # 构建技术指标信息文本
         technical_info = ""
@@ -811,6 +814,31 @@ class ClaudeAIClient:
                     if bid_items:
                         orderbook_info += f"\n- 买盘: {', '.join(bid_items)}"
 
+        # 构建账户资金信息文本
+        account_info_text = ""
+        if account_info:
+            total_assets = account_info.get('total_assets', 0)
+            cash = account_info.get('cash', 0)
+            market_val = account_info.get('market_val', 0)
+            currency = account_info.get('currency', 'HKD')
+            account_info_text = f"\n账户资金({trading_mode}):"
+            account_info_text += f"\n- 总资产: {total_assets:.2f} {currency}"
+            account_info_text += f", 现金: {cash:.2f}, 持仓市值: {market_val:.2f}"
+
+        # 构建持仓列表信息文本
+        position_info_text = ""
+        if position_list:
+            position_info_text = f"\n持仓列表({len(position_list)}只股票):"
+            for pos in position_list[:5]:  # 最多显示5只
+                stock_code = pos.get('stock_code', '')
+                stock_name = pos.get('stock_name', '')
+                qty = pos.get('qty', 0)
+                cost_price = pos.get('cost_price', 0)
+                pl_ratio = pos.get('pl_ratio', 0)
+                position_info_text += f"\n- {stock_code} {stock_name}: {qty}股, 成本{cost_price:.2f}, 盈亏{pl_ratio:+.2f}%"
+            if len(position_list) > 5:
+                position_info_text += f"\n- ... 还有{len(position_list) - 5}只股票"
+
         return f"""
 你是一位专业的股票投资顾问AI助手。用户向你咨询投资建议，请根据用户的需求和当前市场情况，生成专业的交易建议。
 
@@ -822,10 +850,11 @@ class ClaudeAIClient:
 - 当前股价: {realtime_quote.get('cur_price', '未知')}
 - 今日涨跌幅: {realtime_quote.get('change_rate', '未知')}
 - 成交量: {realtime_quote.get('volume', '未知')}
+- 交易模式: {trading_mode}
 - 可用资金: {request.get_available_funds()}
-- 当前持仓: {request.get_current_position()}
+- 当前股票持仓: {request.get_current_position()}
 - 风险偏好: {request.risk_preference}
-{technical_info}{capital_flow_info}{orderbook_info}
+{account_info_text}{position_info_text}{technical_info}{capital_flow_info}{orderbook_info}
 
 请按以下JSON格式返回投资建议:
 {{
@@ -855,11 +884,13 @@ class ClaudeAIClient:
 2. 充分利用技术指标(MA、RSI、MACD等)进行技术面分析
 3. 结合资金流向数据分析主力资金动向和市场情绪
 4. 分析五档买卖盘数据判断短期买卖力量对比和支撑阻力位
-5. 考虑用户的资金状况和风险承受能力
-6. 提供具体可执行的交易策略
-7. 明确指出风险因素和注意事项
-8. 如果市场条件不适合交易，建议等待
-9. 所有建议必须基于风险控制原则
+5. 基于用户的实际持仓和可用资金制定合理的仓位建议
+6. 如果用户已持有该股票，考虑是加仓、减仓还是持有
+7. 考虑用户的风险偏好和风险承受能力
+8. 提供具体可执行的交易策略，建议数量应与可用资金匹配
+9. 明确指出风险因素和注意事项
+10. 如果市场条件不适合交易，建议等待
+11. 所有建议必须基于风险控制原则
 
 回答请用中文，格式严格按照上述JSON结构。
 """

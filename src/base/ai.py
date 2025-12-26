@@ -41,6 +41,18 @@ class AIRequest(ABC):
         """获取五档买卖盘数据"""
         return self.context.get('orderbook', {})
 
+    def get_trading_mode(self) -> str:
+        """获取当前交易模式（模拟交易/真实交易）"""
+        return self.context.get('trading_mode', '模拟交易')
+
+    def get_position_list(self) -> List[Dict[str, Any]]:
+        """获取持仓列表"""
+        return self.context.get('position_list', [])
+
+    def get_account_info(self) -> Dict[str, Any]:
+        """获取账户信息"""
+        return self.context.get('account_info', {})
+
 
 @dataclass
 class AIAnalysisRequest(AIRequest):

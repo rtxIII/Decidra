@@ -1105,11 +1105,17 @@ class InfoPanel(Widget):
                     else:
                         self.logger.warning(f"✗ app_core 没有 analysis_data_manager 属性")
 
+                # 获取交易模式和持仓/资金信息
+                self._add_trading_context(app, app_core, context)
+
             # 设置默认值
             context.setdefault('current_stock', 'HK.00700')
             context.setdefault('stock_name', '腾讯控股')
-            context.setdefault('available_funds', 50000.0)
+            context.setdefault('available_funds', 0.0)
             context.setdefault('current_position', '无持仓')
+            context.setdefault('trading_mode', '模拟交易')
+            context.setdefault('position_list', [])
+            context.setdefault('account_info', {})
 
             # 确保结构化字段存在
             context.setdefault('basic_info', {
@@ -1143,8 +1149,115 @@ class InfoPanel(Widget):
                 },
                 'technical_indicators': {},
                 'capital_flow': {},
-                'orderbook': {}
+                'orderbook': {},
+                'trading_mode': '模拟交易',
+                'position_list': [],
+                'account_info': {}
             }
+
+    def _add_trading_context(self, app, app_core, context: dict) -> None:
+        """添加交易模式、持仓和资金信息到上下文
+
+        Args:
+            app: 应用实例
+            app_core: 应用核心实例
+            context: 上下文字典（会被修改）
+        """
+        try:
+            # 获取当前交易模式
+            from monitor.main.data import CURRENT_TRADING_MODE, TRADING_MODE_SIMULATION, TRADING_MODE_REAL
+
+            trading_mode = CURRENT_TRADING_MODE
+            context['trading_mode'] = trading_mode
+
+            # 根据交易模式确定富途API的trd_env参数
+            trd_env = "SIMULATE" if trading_mode == TRADING_MODE_SIMULATION else "REAL"
+            context['trd_env'] = trd_env
+
+            self.logger.debug(f"当前交易模式: {trading_mode}, trd_env: {trd_env}")
+
+            # 获取当前股票代码用于筛选持仓
+            current_stock = context.get('current_stock', '')
+
+            # 获取持仓数据
+            if hasattr(app_core, 'position_data') and app_core.position_data:
+                position_list = []
+                current_stock_position = None
+
+                for pos in app_core.position_data:
+                    position_info = {
+                        'stock_code': pos.get('stock_code', ''),
+                        'stock_name': pos.get('stock_name', ''),
+                        'qty': pos.get('qty', 0),
+                        'can_sell_qty': pos.get('can_sell_qty', 0),
+                        'cost_price': pos.get('cost_price', 0),
+                        'market_val': pos.get('market_val', 0),
+                        'pl_val': pos.get('pl_val', 0),
+                        'pl_ratio': pos.get('pl_ratio', 0)
+                    }
+                    position_list.append(position_info)
+
+                    # 检查是否为当前股票的持仓
+                    if pos.get('stock_code', '') == current_stock:
+                        current_stock_position = position_info
+
+                context['position_list'] = position_list
+
+                # 构建当前持仓描述
+                if current_stock_position:
+                    qty = current_stock_position.get('qty', 0)
+                    cost_price = current_stock_position.get('cost_price', 0)
+                    pl_ratio = current_stock_position.get('pl_ratio', 0)
+                    context['current_position'] = f"持有{qty}股，成本价{cost_price:.2f}，盈亏{pl_ratio:.2f}%"
+                elif position_list:
+                    context['current_position'] = f"持有{len(position_list)}只股票，但不包含当前股票"
+                else:
+                    context['current_position'] = "无持仓"
+
+                self.logger.info(f"✓ 成功获取持仓数据: {len(position_list)}只股票")
+            else:
+                context['position_list'] = []
+                context['current_position'] = "无持仓"
+
+            # 获取账户资金信息
+            futu_trade = getattr(app, 'futu_trade', None)
+            if futu_trade:
+                try:
+                    # 根据当前股票确定市场
+                    market = "HK"
+                    if current_stock.startswith("US."):
+                        market = "US"
+                    elif current_stock.startswith(("SH.", "SZ.")):
+                        market = "CN"
+
+                    # 获取账户信息
+                    account_info = futu_trade.get_account_info(trd_env=trd_env, market=market)
+
+                    if account_info:
+                        context['account_info'] = {
+                            'total_assets': account_info.get('total_assets', 0),
+                            'cash': account_info.get('cash', 0),
+                            'market_val': account_info.get('market_val', 0),
+                            'frozen_cash': account_info.get('frozen_cash', 0),
+                            'avl_withdrawal_cash': account_info.get('avl_withdrawal_cash', 0),
+                            'currency': account_info.get('currency', 'HKD')
+                        }
+                        # 可用资金 = 现金 - 冻结资金
+                        available_funds = account_info.get('cash', 0) - account_info.get('frozen_cash', 0)
+                        context['available_funds'] = available_funds
+
+                        self.logger.info(f"✓ 成功获取{trading_mode}账户资金: 可用{available_funds:.2f}, 总资产{account_info.get('total_assets', 0):.2f}")
+                    else:
+                        self.logger.warning(f"获取{trading_mode}账户信息返回空")
+                except Exception as e:
+                    self.logger.error(f"获取账户资金信息失败: {e}")
+            else:
+                self.logger.debug("futu_trade 未初始化，跳过账户资金获取")
+
+        except Exception as e:
+            self.logger.error(f"添加交易上下文失败: {e}")
+            context['trading_mode'] = '模拟交易'
+            context['trd_env'] = 'SIMULATE'
 
     def _get_current_trading_context(self) -> dict:
         """获取当前交易上下文（向后兼容方法）
