@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0,<70", "wheel>=0.37"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "decidra"
 version = "1.0.0"
 description = "Intelligent Trading Decision System - Python Stock Trading Analysis Platform Based on Futu OpenAPI"
-readme = "README.md"
-license = "MIT"
+readme = {file = "README.md", content-type = "text/markdown"}
+license = {file = "LICENSE"}
 authors = [
     {name = "rtx3", email = "r@rtx3.com"}
 ]
@@ -110,8 +110,8 @@ docs = [
 ]
 
 [project.scripts]
-decidra = "src.cli:cli"
-decidra-monitor = "src.monitor_app:main"
+decidra = "cli:cli"
+decidra-monitor = "monitor_app:main"
 
 [project.urls]
 Homepage = "https://github.com/rtxIII/decidra"
@@ -121,14 +121,14 @@ Repository = "https://github.com/rtxIII/decidra.git"
 Changelog = "https://github.com/rtxIII/decidra/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
-# Use find directive to automatically discover all packages in src/
+# Use src-layout: packages in src/ become top-level imports
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src*"]
-exclude = ["src.tests*", "src.*test*", "src.*.runtime*"]
+where = ["src"]
+include = ["*"]
+exclude = ["tests*", "*test*", "*.runtime*", "examples*"]
 
 [tool.setuptools.package-dir]
-"" = "."
+"" = "src"
 
 [tool.setuptools.package-data]
 "*" = ["*.txt", "*.md", "*.json", "*.yaml", "*.yml", "*.ini", "*.toml", "*.css"]
@@ -164,7 +164,8 @@ extend-exclude = '''
 profile = "black"
 multi_line_output = 3
 line_length = 88
-known_first_party = ["src"]
+known_first_party = ["api", "base", "modules", "monitor", "strategies", "utils", "cli", "monitor_app"]
+src_paths = ["src"]
 skip_glob = ["*/.runtime/*"]
 
 # MyPy configuration
