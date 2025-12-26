@@ -736,6 +736,8 @@ class ClaudeAIClient:
         trading_mode = request.get_trading_mode()
         position_list = request.get_position_list()
         account_info = request.get_account_info()
+        pending_orders = request.get_pending_orders()
+        today_deals = request.get_today_deals()
 
         # 构建技术指标信息文本
         technical_info = ""
@@ -839,6 +841,35 @@ class ClaudeAIClient:
             if len(position_list) > 5:
                 position_info_text += f"\n- ... 还有{len(position_list) - 5}只股票"
 
+        # 构建待成交订单信息文本
+        pending_orders_text = ""
+        if pending_orders:
+            pending_orders_text = f"\n当日待成交订单({len(pending_orders)}笔):"
+            for order in pending_orders[:5]:  # 最多显示5笔
+                stock_code = order.get('stock_code', '')
+                trd_side = "买入" if order.get('trd_side', '') == 'BUY' else "卖出"
+                qty = order.get('qty', 0)
+                price = order.get('price', 0)
+                dealt_qty = order.get('dealt_qty', 0)
+                create_time = order.get('create_time', '')
+                pending_orders_text += f"\n- {stock_code} {trd_side} {qty}股@{price:.2f}, 已成交{dealt_qty}股, 时间{create_time}"
+            if len(pending_orders) > 5:
+                pending_orders_text += f"\n- ... 还有{len(pending_orders) - 5}笔订单"
+
+        # 构建当日成交记录信息文本
+        today_deals_text = ""
+        if today_deals:
+            today_deals_text = f"\n当日成交记录({len(today_deals)}笔):"
+            for deal in today_deals[:5]:  # 最多显示5笔
+                stock_code = deal.get('stock_code', '')
+                trd_side = "买入" if deal.get('trd_side', '') == 'BUY' else "卖出"
+                qty = deal.get('qty', 0)
+                price = deal.get('price', 0)
+                create_time = deal.get('create_time', '')
+                today_deals_text += f"\n- {stock_code} {trd_side} {qty}股@{price:.2f}, 时间{create_time}"
+            if len(today_deals) > 5:
+                today_deals_text += f"\n- ... 还有{len(today_deals) - 5}笔成交"
+
         return f"""
 你是一位专业的股票投资顾问AI助手。用户向你咨询投资建议，请根据用户的需求和当前市场情况，生成专业的交易建议。
 
@@ -854,7 +885,7 @@ class ClaudeAIClient:
 - 可用资金: {request.get_available_funds()}
 - 当前股票持仓: {request.get_current_position()}
 - 风险偏好: {request.risk_preference}
-{account_info_text}{position_info_text}{technical_info}{capital_flow_info}{orderbook_info}
+{account_info_text}{position_info_text}{pending_orders_text}{today_deals_text}{technical_info}{capital_flow_info}{orderbook_info}
 
 请按以下JSON格式返回投资建议:
 {{
@@ -891,6 +922,8 @@ class ClaudeAIClient:
 9. 明确指出风险因素和注意事项
 10. 如果市场条件不适合交易，建议等待
 11. 所有建议必须基于风险控制原则
+12. 如果用户已有待成交订单，避免建议重复挂单，可建议修改或取消现有订单
+13. 参考当日成交记录了解用户今日交易行为，避免频繁交易建议
 
 回答请用中文，格式严格按照上述JSON结构。
 """

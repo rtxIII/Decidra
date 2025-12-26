@@ -53,6 +53,14 @@ class AIRequest(ABC):
         """获取账户信息"""
         return self.context.get('account_info', {})
 
+    def get_pending_orders(self) -> List[Dict[str, Any]]:
+        """获取当日待成交订单列表"""
+        return self.context.get('pending_orders', [])
+
+    def get_today_deals(self) -> List[Dict[str, Any]]:
+        """获取当日成交记录列表"""
+        return self.context.get('today_deals', [])
+
 
 @dataclass
 class AIAnalysisRequest(AIRequest):

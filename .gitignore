@@ -30,7 +30,7 @@ master.d/
 minion.d/
 # C extensions
 #*.so
-script/
+
 # Distribution / packaging
 .Python
 py3/
@@ -128,7 +128,7 @@ __pycache__/
 .benchmarks/
 deploy/
 docker/
-scripts/
+
 src/data/
 src/runtime/
 src/.runtime/

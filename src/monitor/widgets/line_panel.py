@@ -1254,10 +1254,108 @@ class InfoPanel(Widget):
             else:
                 self.logger.debug("futu_trade 未初始化，跳过账户资金获取")
 
+            # 获取当日待成交订单和成交记录
+            if futu_trade:
+                self._add_orders_and_deals_context(futu_trade, trd_env, market, current_stock, context)
+
         except Exception as e:
             self.logger.error(f"添加交易上下文失败: {e}")
             context['trading_mode'] = '模拟交易'
             context['trd_env'] = 'SIMULATE'
+
+    def _add_orders_and_deals_context(self, futu_trade, trd_env: str, market: str, current_stock: str, context: dict) -> None:
+        """添加订单和成交记录到上下文
+
+        Args:
+            futu_trade: 富途交易实例
+            trd_env: 交易环境（SIMULATE/REAL）
+            market: 市场（HK/US/CN）
+            current_stock: 当前股票代码
+            context: 上下文字典（会被修改）
+        """
+        try:
+            # 获取当日待成交订单（状态为SUBMITTED的订单）
+            pending_orders = futu_trade.get_order_list(
+                order_status='SUBMITTED',
+                trd_env=trd_env,
+                market=market
+            )
+
+            if pending_orders:
+                orders_list = []
+                current_stock_orders = []
+
+                for order in pending_orders:
+                    order_info = {
+                        'order_id': order.get('order_id', ''),
+                        'stock_code': order.get('code', ''),
+                        'stock_name': order.get('stock_name', ''),
+                        'trd_side': order.get('trd_side', ''),  # BUY/SELL
+                        'order_type': order.get('order_type', ''),
+                        'qty': order.get('qty', 0),
+                        'price': order.get('price', 0),
+                        'dealt_qty': order.get('dealt_qty', 0),
+                        'dealt_avg_price': order.get('dealt_avg_price', 0),
+                        'create_time': order.get('create_time', ''),
+                        'order_status': order.get('order_status', '')
+                    }
+                    orders_list.append(order_info)
+
+                    # 筛选当前股票的订单
+                    if order.get('code', '') == current_stock:
+                        current_stock_orders.append(order_info)
+
+                context['pending_orders'] = orders_list
+                context['current_stock_pending_orders'] = current_stock_orders
+
+                self.logger.info(f"✓ 成功获取待成交订单: {len(orders_list)}笔, 当前股票{len(current_stock_orders)}笔")
+            else:
+                context['pending_orders'] = []
+                context['current_stock_pending_orders'] = []
+
+            # 获取当日成交记录
+            today_deals = futu_trade.get_deal_list(
+                trd_env=trd_env,
+                market=market
+            )
+
+            if today_deals:
+                deals_list = []
+                current_stock_deals = []
+
+                for deal in today_deals:
+                    deal_info = {
+                        'deal_id': deal.get('deal_id', ''),
+                        'order_id': deal.get('order_id', ''),
+                        'stock_code': deal.get('code', ''),
+                        'stock_name': deal.get('stock_name', ''),
+                        'trd_side': deal.get('trd_side', ''),  # BUY/SELL
+                        'qty': deal.get('qty', 0),
+                        'price': deal.get('price', 0),
+                        'create_time': deal.get('create_time', ''),
+                        'counter_broker_id': deal.get('counter_broker_id', ''),
+                        'counter_broker_name': deal.get('counter_broker_name', '')
+                    }
+                    deals_list.append(deal_info)
+
+                    # 筛选当前股票的成交
+                    if deal.get('code', '') == current_stock:
+                        current_stock_deals.append(deal_info)
+
+                context['today_deals'] = deals_list
+                context['current_stock_deals'] = current_stock_deals
+
+                self.logger.info(f"✓ 成功获取当日成交: {len(deals_list)}笔, 当前股票{len(current_stock_deals)}笔")
+            else:
+                context['today_deals'] = []
+                context['current_stock_deals'] = []
+
+        except Exception as e:
+            self.logger.error(f"获取订单和成交记录失败: {e}")
+            context['pending_orders'] = []
+            context['today_deals'] = []
+            context['current_stock_pending_orders'] = []
+            context['current_stock_deals'] = []
 
     def _get_current_trading_context(self) -> dict:
         """获取当前交易上下文（向后兼容方法）
