@@ -132,6 +132,10 @@ docker/
 src/data/
 src/runtime/
 src/.runtime/
+decidra/data/
+decidra/tests/
+decidra/runtime/
+decidra/.runtime/
 .runtime/
 config.ini
 stock_strategy_map.yml
