@@ -11,6 +11,7 @@ import json
 import subprocess
 import unittest
 import configparser
+import traceback
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
@@ -1061,6 +1062,7 @@ def start_monitor(stocks: Optional[str], refresh: int, mode: str):
         except ImportError as e:
             print_error(f"无法导入监控应用: {e}")
             print_warning("请确保monitor_app.py文件存在且可访问")
+            traceback.print_exc()
             sys.exit(1)
         
         # 设置环境变量（如果需要）

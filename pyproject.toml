@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "decidra"
-version = "1.0.0"
+version = "1.0.2"
 description = "Intelligent Trading Decision System - Python Stock Trading Analysis Platform Based on Futu OpenAPI"
 readme = {file = "README.md", content-type = "text/markdown"}
 license = {file = "LICENSE"}
@@ -36,7 +36,7 @@ dependencies = [
     # Core dependencies
     "setuptools",
     "wheel",
-    "numpy",
+    "numpy==1.26.4",
     "six",
     "backports.functools_lru_cache",
     "pandas==1.5.3",
@@ -56,7 +56,6 @@ dependencies = [
     "tushare",
     "akshare",
     "yfinance==0.2.64",
-    "yahooquery==2.4.1",
     "futu_api==9.3.5308",
     
     # Data processing and analysis
@@ -71,7 +70,7 @@ dependencies = [
     
     # CLI and UI
     "click==8.1.7",
-    "rich==14.0.0",
+    "rich==13.9.4",
     "rich_interactive==0.6.0",
     "colorama",
     
@@ -111,7 +110,8 @@ docs = [
 
 [project.scripts]
 decidra = "cli:cli"
-decidra-monitor = "monitor_app:main"
+decidra-monitor = "decidra.monitor_app:main"
+decidra-init = "decidra.post_install:main"
 
 [project.urls]
 Homepage = "https://github.com/rtxIII/decidra"
@@ -121,21 +121,21 @@ Repository = "https://github.com/rtxIII/decidra.git"
 Changelog = "https://github.com/rtxIII/decidra/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
-# Use src-layout: packages in src/ become top-level imports
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["*"]
-exclude = ["tests*", "*test*", "*.runtime*", "examples*"]
+# 额外的py模块文件(在包外的文件)
+py-modules = ["cli"]
 
-[tool.setuptools.package-dir]
-"" = "src"
+# 使用标准布局: decidra/ 目录作为包
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["decidra*"]
+exclude = ["tests*", "*test*", "*.runtime*", "examples*", "decidra.tests*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.txt", "*.md", "*.json", "*.yaml", "*.yml", "*.ini", "*.toml", "*.css"]
 
 # Remove dynamic version since we don't have __version__.py
 # [tool.setuptools.dynamic]
-# version = {attr = "src.__version__"}
+# version = {attr = "decidra.__version__"}
 
 # Black formatting
 [tool.black]
@@ -164,8 +164,8 @@ extend-exclude = '''
 profile = "black"
 multi_line_output = 3
 line_length = 88
-known_first_party = ["api", "base", "modules", "monitor", "strategies", "utils", "cli", "monitor_app"]
-src_paths = ["src"]
+known_first_party = ["decidra"]
+src_paths = ["decidra"]
 skip_glob = ["*/.runtime/*"]
 
 # MyPy configuration
@@ -193,7 +193,7 @@ exclude = [
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q --strict-markers --strict-config"
-testpaths = ["src/tests"]
+testpaths = ["decidra/tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -212,7 +212,7 @@ filterwarnings = [
 
 # Coverage configuration
 [tool.coverage.run]
-source = ["src"]
+source = ["decidra"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
@@ -299,6 +299,6 @@ exclude = [
 
 [tool.ruff.per-file-ignores]
 "__init__.py" = ["F401"]
-"src/tests/*" = ["E501"]
+"decidra/tests/*" = ["E501"]
 
 # Note: Pre-commit configuration should be in .pre-commit-config.yaml file
