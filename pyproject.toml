@@ -113,6 +113,9 @@ decidra = "cli:cli"
 decidra-monitor = "decidra.monitor_app:main"
 decidra-init = "decidra.post_install:main"
 
+# 注意: 自动安装后执行在现代pip中不可行(wheel安装跳过所有命令)
+# 用户需要手动运行: decidra-init
+
 [project.urls]
 Homepage = "https://github.com/rtxIII/decidra"
 Documentation = "https://decidra.readthedocs.io/"

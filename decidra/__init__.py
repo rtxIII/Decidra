@@ -12,7 +12,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*setDae
 warnings.filterwarnings("ignore", category=ResourceWarning, message=".*unclosed.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*Pandas.*")
 
-__version__ = "1.0.0"
+__version__ = "1.0.2"
 __author__ = "rtx3"
 __email__ = "r@rtx3.com"
 

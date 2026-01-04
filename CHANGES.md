@@ -1,6 +1,47 @@
 # Decidra 配置系统变更记录
 
-## 2025-12-29 - 包配置重构
+## 2025-12-29 - 包配置重构 (最终方案)
+
+### 🎯 最终解决方案
+
+**方案:** 将 `src/` 目录直接重命名为 `decidra/`,使目录结构与包名完全一致。
+
+**优势:**
+- ✅ 无需 `package-dir` 映射
+- ✅ 无需 `sys.modules` 别名
+- ✅ 目录结构清晰直观
+- ✅ 开发和生产环境完全一致
+- ✅ 所有导入语句保持不变
+
+**修改的配置:**
+```toml
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["decidra*"]
+exclude = ["tests*", "*test*", "*.runtime*", "examples*", "decidra.tests*"]
+
+[project.scripts]
+decidra = "decidra.cli:cli"
+decidra-monitor = "decidra.monitor_app:main"
+decidra-init = "decidra.post_install:main"
+```
+
+**最终的包结构:**
+```
+decidra/                    # 包根目录
+├── __init__.py            # 包入口
+├── api/
+├── base/
+├── cli.py
+├── modules/
+├── monitor/
+├── monitor_app.py
+├── post_install.py
+├── strategies/
+└── utils/
+```
+
+## 2025-12-29 - 包配置重构 (初始方案)
 
 ### 🎯 解决的问题
 

@@ -9,11 +9,15 @@ import yaml
 # 路径常量
 HOME = Path.home()
 DEV_PATH = Path(__file__).parent.parent
-DECIDRA_PATH  = HOME / '.decidra'
-if DECIDRA_PATH.is_dir():
-    PATH = DECIDRA_PATH
-else:
+DECIDRA_PATH = HOME / '.decidra'
+
+# 用户目录优先：始终使用 ~/.decidra 作为配置目录
+# 只有在明确设置 DECIDRA_DEV_MODE=1 时才使用开发目录
+import os
+if os.environ.get('DECIDRA_DEV_MODE') == '1':
     PATH = DEV_PATH
+else:
+    PATH = DECIDRA_PATH
 
 PATH_RUNTIME = PATH / '.runtime'
 PATH_CONFIG = PATH

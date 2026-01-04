@@ -38,36 +38,43 @@ def check_package_structure():
     print("检查包结构...")
     print("=" * 60)
 
-    src_dir = Path("src")
-    if not src_dir.exists():
-        print("✗ src/ 目录不存在")
+    decidra_dir = Path("decidra")
+    if not decidra_dir.exists():
+        print("✗ decidra/ 目录不存在")
         return False
+
+    print(f"✓ decidra/ 目录存在")
 
     # 检查主要模块
     modules = ["api", "base", "modules", "monitor", "strategies", "utils"]
 
     for module in modules:
-        module_path = src_dir / module
+        module_path = decidra_dir / module
         init_file = module_path / "__init__.py"
 
         if module_path.exists():
             has_init = init_file.exists()
             status = "✓" if has_init else "⚠"
-            print(f"{status} src/{module}/ {'(有__init__.py)' if has_init else '(缺少__init__.py)'}")
+            print(f"{status} decidra/{module}/ {'(有__init__.py)' if has_init else '(缺少__init__.py)'}")
         else:
-            print(f"✗ src/{module}/ 不存在")
+            print(f"✗ decidra/{module}/ 不存在")
 
     # 检查入口点文件
-    entry_points = ["cli.py", "monitor_app.py"]
+    entry_points = ["cli.py", "monitor_app.py", "post_install.py"]
     for entry in entry_points:
-        entry_path = src_dir / entry
+        entry_path = decidra_dir / entry
         status = "✓" if entry_path.exists() else "✗"
-        print(f"{status} src/{entry}")
+        print(f"{status} decidra/{entry}")
+
+    # 检查包初始化文件
+    init_file = decidra_dir / "__init__.py"
+    status = "✓" if init_file.exists() else "✗"
+    print(f"{status} decidra/__init__.py")
 
     # 检查 py.typed
-    py_typed = src_dir / "py.typed"
+    py_typed = decidra_dir / "py.typed"
     status = "✓" if py_typed.exists() else "⚠"
-    print(f"{status} src/py.typed {'(类型检查支持)' if py_typed.exists() else '(建议添加)'}")
+    print(f"{status} decidra/py.typed {'(类型检查支持)' if py_typed.exists() else '(建议添加)'}")
 
     return True
 

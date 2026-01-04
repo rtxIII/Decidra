@@ -219,6 +219,9 @@ stock_1 = HK.09988
     template_file = decidra_dir / 'config_template.ini'
 
     try:
+        # 确保目录存在
+        decidra_dir.mkdir(parents=True, exist_ok=True)
+
         # 创建模板文件
         template_file.write_text(config_content)
         print_success(f"创建配置模板: {template_file}")
