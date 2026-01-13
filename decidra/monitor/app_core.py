@@ -77,10 +77,10 @@ class AppCore:
             # 在线程池中执行同步的配置加载
             loop = asyncio.get_event_loop()
             config_data = await loop.run_in_executor(
-                None, 
+                None,
                 lambda: self.config_manager._config_data
             )
-            
+
             # 提取监控股票列表
             stocks_config = config_data.get('monitored_stocks', {})
             if isinstance(stocks_config, dict):
@@ -98,13 +98,92 @@ class AppCore:
                     'HK.00700',  # 腾讯
                     'HK.09988',  # 阿里巴巴
                 ]
-            
+
             self.logger.info(f"加载配置完成，监控股票: {self.monitored_stocks}")
-            
+
         except Exception as e:
             self.logger.error(f"加载配置失败: {e}")
             # 使用默认配置
             self.monitored_stocks = ['HK.00700', 'HK.09988']
+
+    async def load_trading_mode(self) -> str:
+        """从配置文件加载交易模式
+
+        Returns:
+            str: 交易模式，TRADING_MODE_SIMULATION 或 TRADING_MODE_REAL
+        """
+        from .main.data import TRADING_MODE_SIMULATION, TRADING_MODE_REAL
+
+        # 配置文件值到应用层值的映射
+        CONFIG_TO_APP_MODE = {
+            "SIMULATE": TRADING_MODE_SIMULATION,
+            "REAL": TRADING_MODE_REAL
+        }
+
+        try:
+            loop = asyncio.get_event_loop()
+            config_data = await loop.run_in_executor(
+                None,
+                lambda: self.config_manager._config_data
+            )
+
+            # 从配置中获取交易模式
+            trading_config = config_data.get('Trading', {})
+            if isinstance(trading_config, dict):
+                mode_str = trading_config.get('mode', 'SIMULATE')
+            else:
+                mode_str = 'SIMULATE'
+
+            # 转换为应用层值
+            mode = CONFIG_TO_APP_MODE.get(mode_str.upper(), TRADING_MODE_SIMULATION)
+            self.logger.info(f"加载交易模式: {mode}")
+            return mode
+
+        except Exception as e:
+            self.logger.error(f"加载交易模式失败: {e}")
+            return TRADING_MODE_SIMULATION
+
+    async def save_trading_mode(self, mode: str) -> bool:
+        """保存交易模式到配置文件
+
+        Args:
+            mode: 交易模式
+
+        Returns:
+            bool: 保存是否成功
+        """
+        from .main.data import TRADING_MODE_SIMULATION, TRADING_MODE_REAL
+
+        # 应用层值到配置文件值的映射
+        APP_TO_CONFIG_MODE = {
+            TRADING_MODE_SIMULATION: "SIMULATE",
+            TRADING_MODE_REAL: "REAL"
+        }
+
+        try:
+            # 更新配置管理器的内部数据
+            if hasattr(self.config_manager, '_config_data'):
+                if 'Trading' not in self.config_manager._config_data:
+                    self.config_manager._config_data['Trading'] = {}
+
+                # 转换为配置文件值
+                config_mode = APP_TO_CONFIG_MODE.get(mode, "SIMULATE")
+                self.config_manager._config_data['Trading']['mode'] = config_mode
+
+                # 在线程池中执行同步的配置保存
+                loop = asyncio.get_event_loop()
+                await asyncio.wait_for(
+                    loop.run_in_executor(None, self.config_manager.save_config),
+                    timeout=1.0
+                )
+
+                self.logger.info(f"交易模式已保存: {mode} -> {config_mode}")
+                return True
+
+        except Exception as e:
+            self.logger.error(f"保存交易模式失败: {e}")
+
+        return False
     
     async def save_config_async(self):
         """异步保存配置"""

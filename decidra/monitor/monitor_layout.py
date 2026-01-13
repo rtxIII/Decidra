@@ -92,7 +92,7 @@ class StockListPanel(Container):
         # 快捷键提示区域
         with Container(classes="button-bar"):
             yield Static(
-                "[bold green]N[/bold green] 添加股票  [bold red]K[/bold red] 删除股票  [bold blue]O[/bold blue] 订单操作  [bold yellow]Space[/bold yellow] 选择分组  [bold white]I[/bold white] AI",
+                "[bold green]N[/bold green] 添加  [bold red]K[/bold red] 删除  [bold blue]O[/bold blue] 订单  [bold magenta]T[/bold magenta] 切换模式  [bold yellow]Space[/bold yellow] 选择  [bold white]I[/bold white] AI",
                 id="hotkey_hints"
             )
 
@@ -1079,7 +1079,8 @@ class MonitorLayout(Container):
         Binding("r", "refresh", "刷新", priority=True),
         Binding("h", "help", "帮助"),
         Binding("n", "add_stock", "添加股票"),
-        Binding("m", "delete_stock", "删除股票"),
+        Binding("k", "delete_stock", "删除股票"),
+        Binding("t", "toggle_trading_mode", "切换交易模式"),
         Binding("escape", "go_back", "返回"),
         Binding("tab", "switch_tab", "切换标签"),
         Binding("enter", "enter_analysis", "进入分析"),
@@ -1170,6 +1171,11 @@ class MonitorLayout(Container):
         """打开AI问答对话框 - 委托给主应用处理"""
         if hasattr(self.app, 'action_open_ai_dialog'):
             await self.app.action_open_ai_dialog()
+
+    async def action_toggle_trading_mode(self) -> None:
+        """切换交易模式 - 委托给主应用处理"""
+        if hasattr(self.app, 'action_toggle_trading_mode'):
+            await self.app.action_toggle_trading_mode()
 
     def compose(self) -> ComposeResult:
         """组合完整监控界面"""

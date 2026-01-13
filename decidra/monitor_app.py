@@ -69,6 +69,7 @@ class MonitorApp(App):
         Binding("h", "help", "帮助"),
         Binding("n", "add_stock", "添加股票"),
         Binding("k", "delete_stock", "删除股票"),
+        Binding("t", "toggle_trading_mode", "切换交易模式"),
         Binding("o", "place_order", "新订单"),
         Binding("r", "refresh", "刷新数据"),
         Binding("escape", "go_back", "返回"),
@@ -384,6 +385,11 @@ class MonitorApp(App):
                 )
             else:
                 self.logger.error("UIManager或InfoPanel未初始化，无法打开AI对话框")
+
+    async def action_toggle_trading_mode(self) -> None:
+        """切换交易模式动作"""
+        if not self.show_splash and self.managers_initialized:
+            await self.event_handler.action_toggle_trading_mode()
 
     async def action_quit(self) -> None:
         """退出应用动作"""

@@ -13,6 +13,7 @@ from textual.validation import Function
 from ...monitor.widgets.window_dialog import show_confirm_dialog
 from ...monitor.widgets.auto_dialog import show_auto_input_dialog
 from ...utils.global_vars import get_logger
+from .data import TRADING_MODE_SIMULATION, TRADING_MODE_REAL
 
 
 class EventHandler:
@@ -295,6 +296,149 @@ class EventHandler:
         """显示帮助动作"""
         # TODO: 实现帮助对话框
         self.logger.info("帮助功能待实现")
+
+    async def action_toggle_trading_mode(self) -> None:
+        """切换交易模式动作"""
+        self.app.run_worker(self._toggle_trading_mode_worker, exclusive=True)
+
+    async def _toggle_trading_mode_worker(self) -> None:
+        """切换交易模式的工作线程"""
+        try:
+            # 获取数据管理器
+            data_manager = getattr(self.app_core.app, 'data_manager', None)
+            if not data_manager:
+                self.logger.error("DataManager未初始化")
+                return
+
+            current_mode = data_manager.get_trading_mode()
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+
+            if current_mode == TRADING_MODE_SIMULATION:
+                # 当前是模拟模式，切换到真实模式需要确认
+                confirmed = await show_confirm_dialog(
+                    self.app,
+                    message=(
+                        "⚠️ 您即将切换到[bold red]真实交易模式[/bold red]。\n\n"
+                        "在此模式下：\n"
+                        "• 所有交易将使用[bold]真实资金[/bold]\n"
+                        "• 订单将提交到[bold]真实市场[/bold]\n"
+                        "• 盈亏将影响您的[bold]实际账户[/bold]\n\n"
+                        "[red]请确保您了解相关风险！[/red]"
+                    ),
+                    title="切换到真实交易模式",
+                    confirm_text="确认切换",
+                    cancel_text="取消"
+                )
+
+                if confirmed:
+                    # 用户确认，执行切换（包括解锁操作）
+                    await self._execute_trading_mode_switch(TRADING_MODE_REAL)
+                else:
+                    self.logger.info("用户取消切换到真实交易模式")
+                    if ui_manager and ui_manager.info_panel:
+                        await ui_manager.info_panel.log_info("已取消切换交易模式", "交易模式")
+            else:
+                # 当前是真实模式，切换到模拟模式无需确认（安全操作）
+                await self._execute_trading_mode_switch(TRADING_MODE_SIMULATION)
+
+        except Exception as e:
+            self.logger.error(f"切换交易模式失败: {e}")
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+            if ui_manager and ui_manager.info_panel:
+                await ui_manager.info_panel.log_info(f"切换交易模式失败: {e}", "交易模式")
+
+    async def _execute_trading_mode_switch(self, new_mode: str) -> None:
+        """执行交易模式切换
+
+        Args:
+            new_mode: 新的交易模式
+        """
+        import asyncio
+        try:
+            data_manager = getattr(self.app_core.app, 'data_manager', None)
+            ui_manager = getattr(self.app_core.app, 'ui_manager', None)
+
+            if not data_manager:
+                self.logger.error("DataManager未初始化")
+                return
+
+            # 如果切换到真实交易模式，需要先解锁
+            if new_mode == TRADING_MODE_REAL:
+                futu_trade = getattr(data_manager, 'futu_trade', None)
+                if futu_trade:
+                    # 检查是否配置了交易密码
+                    if not futu_trade.password_md5:
+                        self.logger.error("未配置交易密码，无法解锁真实交易")
+                        if ui_manager and ui_manager.info_panel:
+                            await ui_manager.info_panel.log_info(
+                                "未配置交易密码，请在config.ini的[FutuOpenD.Credential]节中设置password_md5",
+                                "交易模式"
+                            )
+                        return
+
+                    self.logger.info("正在解锁真实交易功能...")
+                    if ui_manager and ui_manager.info_panel:
+                        await ui_manager.info_panel.log_info("正在解锁真实交易功能...", "交易模式")
+
+                    # 在线程池中执行解锁操作，显式传递密码和市场参数
+                    loop = asyncio.get_event_loop()
+                    unlock_success = await loop.run_in_executor(
+                        None,
+                        lambda: futu_trade.unlock_trading(
+                            password=futu_trade.password_md5,
+                            market=futu_trade.default_market
+                        )
+                    )
+
+                    if not unlock_success:
+                        self.logger.error("解锁真实交易失败")
+                        if ui_manager and ui_manager.info_panel:
+                            await ui_manager.info_panel.log_info("解锁真实交易失败，请检查交易密码是否正确", "交易模式")
+                        return
+                    else:
+                        self.logger.info("真实交易解锁成功")
+                else:
+                    self.logger.warning("FutuTrade未初始化，跳过解锁步骤")
+
+            # 1. 更新 DataManager 中的交易模式
+            success = data_manager.set_trading_mode(new_mode)
+            if not success:
+                self.logger.error(f"设置交易模式失败: {new_mode}")
+                return
+
+            # 2. 更新 FutuTrade 的默认交易环境
+            futu_trade = getattr(data_manager, 'futu_trade', None)
+            if futu_trade:
+                trd_env = "SIMULATE" if new_mode == TRADING_MODE_SIMULATION else "REAL"
+                futu_trade.default_trd_env = trd_env
+                self.logger.info(f"FutuTrade默认交易环境已更新为: {trd_env}")
+
+            # 3. 保存到配置文件
+            save_success = await self.app_core.save_trading_mode(new_mode)
+            if not save_success:
+                self.logger.warning("交易模式保存到配置文件失败，但内存中已更新")
+
+            # 4. 刷新 UI 显示
+            if ui_manager:
+                await ui_manager.update_trading_mode_display()
+
+            # 5. 刷新用户持仓和订单数据（模拟盘和真实盘数据不同）
+            group_manager = getattr(self.app_core.app, 'group_manager', None)
+            if group_manager:
+                self.logger.info("刷新用户持仓和订单数据...")
+                await group_manager.refresh_user_positions()
+                await group_manager.refresh_user_orders()
+
+            # 6. 记录操作日志到 InfoPanel
+            mode_display = "🔄 模拟交易" if new_mode == TRADING_MODE_SIMULATION else "⚠️ 真实交易"
+            if ui_manager and ui_manager.info_panel:
+                await ui_manager.info_panel.log_info(f"已切换到{mode_display}模式", "交易模式")
+
+            self.logger.info(f"交易模式已成功切换为: {new_mode}")
+
+        except Exception as e:
+            self.logger.error(f"执行交易模式切换失败: {e}")
+            raise
     
     async def action_go_back(self) -> None:
         """返回主界面动作"""
