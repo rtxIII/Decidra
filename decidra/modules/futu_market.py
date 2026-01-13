@@ -20,7 +20,7 @@ from ..api.futu import create_client
 from ..base.futu_class import FutuException
 
 
-from ..base.futu_modue import FutuModuleBase
+from ..base.futu_module import FutuModuleBase
 
 """
 from decidra.modules.futu_market import FutuMarket

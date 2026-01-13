@@ -9,7 +9,7 @@ from ..utils import logger
 from ..utils.global_vars import *
 
 # 使用新的API封装
-from ..base.futu_modue import FutuModuleBase
+from ..base.futu_module import FutuModuleBase
 
 
 class FutuTrade(FutuModuleBase):
@@ -71,17 +71,26 @@ class FutuTrade(FutuModuleBase):
             self.logger.error(f"Get account list error: {e}")
             return []
     
-    def unlock_trading(self, password: str = None, market: str = "HK") -> bool:
-        """解锁交易功能"""
+    def unlock_trading(self, password: str = None, password_md5: str = None, market: str = "HK") -> bool:
+        """解锁交易功能
+
+        Args:
+            password: 交易密码（明文）
+            password_md5: 交易密码（MD5加密后），优先使用
+            market: 市场代码
+        """
         try:
             market = market or self.default_market
-            password = password or self.password_md5
-            
-            if not password:
+
+            # 优先使用传入的参数，其次使用实例属性
+            pwd_md5 = password_md5 or getattr(self, 'password_md5', None)
+            pwd = password
+
+            if not pwd and not pwd_md5:
                 self.logger.error("No password provided for trading unlock")
                 return False
-            
-            result = self.client.trade.unlock_trade(password, market)
+
+            result = self.client.trade.unlock_trade(password=pwd, password_md5=pwd_md5, market=market)
             
             if result:
                 self.is_trade_unlocked = True

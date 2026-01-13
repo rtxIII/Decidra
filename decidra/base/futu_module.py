@@ -32,9 +32,9 @@ class FutuModuleBase:
         credential_config = self.config['FutuOpenD.Credential']
         futu_config = self.config['FutuOpenD.Config']  # 修正：使用正确的配置节名称
         
-        self.password_md5 = credential_config.get('Password_md5')
-        self.host = futu_config.get('Host', '127.0.0.1')
-        self.port = int(futu_config.get('Port', '11111'))
+        self.password_md5 = credential_config.get('password_md5')
+        self.host = futu_config.get('host', '127.0.0.1')
+        self.port = int(futu_config.get('port', '11111'))
         
         # 连接状态标志
         self._is_closed = False

@@ -7,7 +7,7 @@ Decidra 基础数据模型模块
 __all__ = [
     "ai",
     "futu_class",
-    "futu_modue",
+    "futu_module",
     "monitor",
     "order",
     "trading",

@@ -113,21 +113,22 @@ class TradeManager:
                 raise
             raise FutuTradeException(-1, f"获取账户列表异常: {str(e)}")
     
-    def unlock_trade(self, password: str, market: str = "HK"):
+    def unlock_trade(self, password: str = None, password_md5: str = None, market: str = "HK"):
         """
         解锁交易
-        
+
         Args:
-            password: 交易密码
+            password: 交易密码（明文）
+            password_md5: 交易密码（MD5加密后）
             market: 市场代码
-        
+
         Returns:
-            Dict: 解锁结果
+            bool: 解锁结果
         """
         try:
             trade_ctx = self._get_trade_context(market)
-            
-            ret, data = trade_ctx.unlock_trade(password)
+
+            ret, data = trade_ctx.unlock_trade(password=password, password_md5=password_md5, is_unlock=True)
             
             if ret == 0:         
                 self.logger.info("交易解锁成功")
