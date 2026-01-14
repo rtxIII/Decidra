@@ -4,13 +4,15 @@
 Analyzer 模块配置
 ===================================
 
-为 analyzer 模块提供配置支持，从环境变量或配置文件读取 AI API 配置。
+为 analyzer 模块提供配置支持，从配置文件读取 AI API 配置。
 """
 
 import os
 import logging
 from dataclasses import dataclass, field
 from typing import Optional, List
+
+from decidra.utils.global_vars import get_config as get_ini_config
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,8 @@ class AnalyzerConfig:
 
     配置优先级：
     1. 环境变量
-    2. 默认值
+    2. 配置文件 (config.ini [Analyzer] 节)
+    3. 默认值
     """
 
     # Gemini API 配置
@@ -43,24 +46,60 @@ class AnalyzerConfig:
     serpapi_keys: List[str] = field(default_factory=list)
 
     def __post_init__(self):
-        """从环境变量加载配置"""
-        # Gemini
-        self.gemini_api_key = os.getenv("GEMINI_API_KEY", self.gemini_api_key)
-        self.gemini_model = os.getenv("GEMINI_MODEL", self.gemini_model)
-        self.gemini_model_fallback = os.getenv("GEMINI_MODEL_FALLBACK", self.gemini_model_fallback)
+        """从环境变量和配置文件加载配置"""
+        # Gemini - 环境变量优先，其次配置文件
+        self.gemini_api_key = os.getenv(
+            "GEMINI_API_KEY",
+            get_ini_config('Analyzer', 'GeminiApiKey', self.gemini_api_key)
+        )
+        self.gemini_model = os.getenv(
+            "GEMINI_MODEL",
+            get_ini_config('Analyzer', 'GeminiModel', self.gemini_model)
+        )
+        self.gemini_model_fallback = os.getenv(
+            "GEMINI_MODEL_FALLBACK",
+            get_ini_config('Analyzer', 'GeminiModelFallback', self.gemini_model_fallback)
+        )
+        self.gemini_max_retries = int(os.getenv(
+            "GEMINI_MAX_RETRIES",
+            get_ini_config('Analyzer', 'GeminiMaxRetries', self.gemini_max_retries)
+        ))
+        self.gemini_retry_delay = float(os.getenv(
+            "GEMINI_RETRY_DELAY",
+            get_ini_config('Analyzer', 'GeminiRetryDelay', self.gemini_retry_delay)
+        ))
+        self.gemini_request_delay = float(os.getenv(
+            "GEMINI_REQUEST_DELAY",
+            get_ini_config('Analyzer', 'GeminiRequestDelay', self.gemini_request_delay)
+        ))
 
         # OpenAI
-        self.openai_api_key = os.getenv("OPENAI_API_KEY", self.openai_api_key)
-        self.openai_base_url = os.getenv("OPENAI_BASE_URL", self.openai_base_url)
-        self.openai_model = os.getenv("OPENAI_MODEL", self.openai_model)
+        self.openai_api_key = os.getenv(
+            "OPENAI_API_KEY",
+            get_ini_config('Analyzer', 'OpenaiApiKey', self.openai_api_key)
+        )
+        self.openai_base_url = os.getenv(
+            "OPENAI_BASE_URL",
+            get_ini_config('Analyzer', 'OpenaiBaseUrl', self.openai_base_url)
+        )
+        self.openai_model = os.getenv(
+            "OPENAI_MODEL",
+            get_ini_config('Analyzer', 'OpenaiModel', self.openai_model)
+        )
 
-        # Tavily (支持多个 key，用逗号分隔)
-        tavily_keys_str = os.getenv("TAVILY_API_KEYS", "")
+        # Tavily (支持多个 key，用逗号分隔) - 环境变量优先
+        tavily_keys_str = os.getenv(
+            "TAVILY_API_KEYS",
+            get_ini_config('Analyzer', 'TavilyApiKeys', '')
+        )
         if tavily_keys_str:
             self.tavily_api_keys = [k.strip() for k in tavily_keys_str.split(",") if k.strip()]
 
         # SerpAPI (支持多个 key，用逗号分隔)
-        serpapi_keys_str = os.getenv("SERPAPI_KEYS", "")
+        serpapi_keys_str = os.getenv(
+            "SERPAPI_KEYS",
+            get_ini_config('Analyzer', 'SerpApiKeys', '')
+        )
         if serpapi_keys_str:
             self.serpapi_keys = [k.strip() for k in serpapi_keys_str.split(",") if k.strip()]
 
