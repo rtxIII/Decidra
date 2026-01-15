@@ -28,6 +28,11 @@ class AnalyzerConfig:
     3. 默认值
     """
 
+    # Anthropic Claude API 配置
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-20250514"
+    anthropic_max_tokens: int = 4096
+
     # Gemini API 配置
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
@@ -47,6 +52,20 @@ class AnalyzerConfig:
 
     def __post_init__(self):
         """从环境变量和配置文件加载配置"""
+        # Anthropic - 环境变量优先，其次配置文件
+        self.anthropic_api_key = os.getenv(
+            "ANTHROPIC_API_KEY",
+            get_ini_config('Analyzer', 'AnthropicApiKey', self.anthropic_api_key)
+        )
+        self.anthropic_model = os.getenv(
+            "ANTHROPIC_MODEL",
+            get_ini_config('Analyzer', 'AnthropicModel', self.anthropic_model)
+        )
+        self.anthropic_max_tokens = int(os.getenv(
+            "ANTHROPIC_MAX_TOKENS",
+            get_ini_config('Analyzer', 'AnthropicMaxTokens', self.anthropic_max_tokens)
+        ))
+
         # Gemini - 环境变量优先，其次配置文件
         self.gemini_api_key = os.getenv(
             "GEMINI_API_KEY",
@@ -104,6 +123,8 @@ class AnalyzerConfig:
             self.serpapi_keys = [k.strip() for k in serpapi_keys_str.split(",") if k.strip()]
 
         # 日志记录配置状态
+        if self.anthropic_api_key:
+            logger.debug(f"Anthropic API Key 已配置 (长度: {len(self.anthropic_api_key)})")
         if self.gemini_api_key:
             logger.debug(f"Gemini API Key 已配置 (长度: {len(self.gemini_api_key)})")
         if self.openai_api_key:

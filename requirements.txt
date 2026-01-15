@@ -34,7 +34,8 @@ click==8.1.7
 scikit-learn==1.7.0
 rich==13.9.4
 rich_interactive==0.6.0
-claude-code-sdk
+claude-code-sdk==0.0.14
+anthropicp==0.76.0
 textual-window==0.5.2
 textual-autocomplete==4.0.4
 textual-slidecontainer

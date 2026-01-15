@@ -189,7 +189,25 @@ class ConfigManager:
             'EMAIL_SMTP_PORT': ('Email', 'smtpport'),
             'EMAIL_USER': ('Email', 'emailuser'),
             'EMAIL_PASS': ('Email', 'emailpass'),
-            'EMAIL_TO': ('Email', 'emailto')
+            'EMAIL_TO': ('Email', 'emailto'),
+            # Anthropic Claude API configuration (与 analyzer/config.py 一致)
+            'ANTHROPIC_API_KEY': ('Analyzer', 'anthropicapikey'),
+            'ANTHROPIC_MODEL': ('Analyzer', 'anthropicmodel'),
+            'ANTHROPIC_MAX_TOKENS': ('Analyzer', 'anthropicmaxtokens'),
+            # Gemini API configuration
+            'GEMINI_API_KEY': ('Analyzer', 'geminiapikey'),
+            'GEMINI_MODEL': ('Analyzer', 'geminimodel'),
+            'GEMINI_MODEL_FALLBACK': ('Analyzer', 'geminimodelfallback'),
+            'GEMINI_MAX_RETRIES': ('Analyzer', 'geminimaxretries'),
+            'GEMINI_RETRY_DELAY': ('Analyzer', 'geminiretrydelay'),
+            'GEMINI_REQUEST_DELAY': ('Analyzer', 'geminirequestdelay'),
+            # OpenAI compatible API configuration
+            'OPENAI_API_KEY': ('Analyzer', 'openaiapikey'),
+            'OPENAI_BASE_URL': ('Analyzer', 'openaibaseurl'),
+            'OPENAI_MODEL': ('Analyzer', 'openaimodel'),
+            # Search API configuration
+            'TAVILY_API_KEYS': ('Analyzer', 'tavilyapikeys'),
+            'SERPAPI_KEYS': ('Analyzer', 'serpapikeys')
         }
         
         self._env_overrides = {}

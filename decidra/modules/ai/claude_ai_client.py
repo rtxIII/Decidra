@@ -1,8 +1,10 @@
 """
-Claude AI Client - 基于claude-code-sdk的AI分析客户端
+Claude AI Client - 基于Anthropic SDK的AI分析客户端
 
 提供股票分析、投资建议、对话交互等AI功能
-依赖: claude-code-sdk
+支持完整的 tool use 能力，可动态调用股票数据API
+
+依赖: anthropic SDK
 """
 
 import asyncio
@@ -13,8 +15,18 @@ from dataclasses import dataclass, field
 from ...base.order import OrderType
 from ...base.trading import TradingAdvice, TradingOrder
 from ...base.ai import AIRequest, AIAnalysisRequest, AITradingAdviceRequest, AIAnalysisResponse
-from ...utils.global_vars import get_logger
+from ...utils.global_vars import get_logger, get_config
 
+# Anthropic SDK (支持完整 tool use)
+try:
+    import anthropic
+    ANTHROPIC_SDK_AVAILABLE = True
+except ImportError:
+    get_logger(__name__).warning("anthropic SDK not found, please install anthropic SDK to use this feature")
+    ANTHROPIC_SDK_AVAILABLE = False
+    anthropic = None
+
+# claude-code-sdk 作为备选
 try:
     from claude_code_sdk import query, ClaudeCodeOptions
     from claude_code_sdk.types import SystemMessage, AssistantMessage, ResultMessage
@@ -28,181 +40,688 @@ except ImportError:
     ResultMessage = None
 
 
+# ================== 股票数据工具定义 ==================
+
+STOCK_DATA_TOOLS = [
+    {
+        "name": "get_realtime_quote",
+        "description": "获取股票实时行情报价，包括当前价格、涨跌幅、成交量、换手率等数据",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "stock_codes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "股票代码列表，格式如 ['HK.00700', 'US.AAPL']"
+                }
+            },
+            "required": ["stock_codes"]
+        }
+    },
+    {
+        "name": "get_stock_kline",
+        "description": "获取股票K线数据，用于技术分析。支持日K、周K、月K等多种周期",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "stock_code": {
+                    "type": "string",
+                    "description": "股票代码，格式如 'HK.00700'"
+                },
+                "ktype": {
+                    "type": "string",
+                    "enum": ["K_DAY", "K_WEEK", "K_MON", "K_1M", "K_5M", "K_15M", "K_30M", "K_60M"],
+                    "description": "K线类型：K_DAY=日K, K_WEEK=周K, K_MON=月K, K_1M=1分钟K等",
+                    "default": "K_DAY"
+                },
+                "num": {
+                    "type": "integer",
+                    "description": "获取K线数量，默认100根",
+                    "default": 100
+                }
+            },
+            "required": ["stock_code"]
+        }
+    },
+    {
+        "name": "get_capital_flow",
+        "description": "获取股票资金流向数据，包括主力资金、超大单、大单、中单、小单的净流入流出情况",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "stock_code": {
+                    "type": "string",
+                    "description": "股票代码，格式如 'HK.00700'"
+                },
+                "period_type": {
+                    "type": "string",
+                    "enum": ["INTRADAY", "DAY", "WEEK", "MONTH"],
+                    "description": "资金流向周期：INTRADAY=日内, DAY=日, WEEK=周, MONTH=月",
+                    "default": "INTRADAY"
+                }
+            },
+            "required": ["stock_code"]
+        }
+    },
+    {
+        "name": "get_orderbook",
+        "description": "获取股票五档买卖盘数据，显示当前买卖挂单的价格和数量分布",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "stock_code": {
+                    "type": "string",
+                    "description": "股票代码，格式如 'HK.00700'"
+                }
+            },
+            "required": ["stock_code"]
+        }
+    },
+    {
+        "name": "get_stock_basicinfo",
+        "description": "获取股票基本信息，包括公司名称、行业、市值等基本面数据",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "stock_code": {
+                    "type": "string",
+                    "description": "股票代码，格式如 'HK.00700'"
+                }
+            },
+            "required": ["stock_code"]
+        }
+    }
+]
+
+
+class StockDataToolExecutor:
+    """
+    股票数据工具执行器
+    负责执行AI调用的工具，从FutuMarket获取实际数据
+    """
+
+    def __init__(self, futu_market=None):
+        """
+        初始化工具执行器
+
+        Args:
+            futu_market: FutuMarket实例，用于获取股票数据
+        """
+        self.logger = get_logger(__name__)
+        self.futu_market = futu_market
+
+    def set_futu_market(self, futu_market):
+        """设置FutuMarket实例"""
+        self.futu_market = futu_market
+
+    def execute_tool(self, tool_name: str, tool_input: Dict[str, Any]) -> str:
+        """
+        执行指定的工具并返回结果
+
+        Args:
+            tool_name: 工具名称
+            tool_input: 工具输入参数
+
+        Returns:
+            str: JSON格式的工具执行结果
+        """
+        try:
+            if not self.futu_market:
+                return json.dumps({"error": "FutuMarket未初始化，无法获取股票数据"}, ensure_ascii=False)
+
+            if tool_name == "get_realtime_quote":
+                return self._get_realtime_quote(tool_input)
+            elif tool_name == "get_stock_kline":
+                return self._get_stock_kline(tool_input)
+            elif tool_name == "get_capital_flow":
+                return self._get_capital_flow(tool_input)
+            elif tool_name == "get_orderbook":
+                return self._get_orderbook(tool_input)
+            elif tool_name == "get_stock_basicinfo":
+                return self._get_stock_basicinfo(tool_input)
+            else:
+                return json.dumps({"error": f"未知工具: {tool_name}"}, ensure_ascii=False)
+
+        except Exception as e:
+            self.logger.error(f"工具执行失败 {tool_name}: {e}")
+            return json.dumps({"error": f"工具执行异常: {str(e)}"}, ensure_ascii=False)
+
+    def _get_realtime_quote(self, tool_input: Dict[str, Any]) -> str:
+        """获取实时行情"""
+        stock_codes = tool_input.get("stock_codes", [])
+        if not stock_codes:
+            return json.dumps({"error": "缺少stock_codes参数"}, ensure_ascii=False)
+
+        quotes = self.futu_market.get_stock_quote(stock_codes)
+        if not quotes:
+            return json.dumps({"error": "获取行情数据失败"}, ensure_ascii=False)
+
+        # 转换为可序列化格式
+        result = []
+        for quote in quotes:
+            if hasattr(quote, '__dict__'):
+                result.append(quote.__dict__)
+            elif isinstance(quote, dict):
+                result.append(quote)
+            else:
+                result.append(str(quote))
+
+        return json.dumps({"quotes": result}, ensure_ascii=False, default=str)
+
+    def _get_stock_kline(self, tool_input: Dict[str, Any]) -> str:
+        """获取K线数据"""
+        stock_code = tool_input.get("stock_code", "")
+        ktype = tool_input.get("ktype", "K_DAY")
+        num = tool_input.get("num", 100)
+
+        if not stock_code:
+            return json.dumps({"error": "缺少stock_code参数"}, ensure_ascii=False)
+
+        klines = self.futu_market.get_cur_kline([stock_code], num=num, ktype=ktype)
+        if not klines:
+            return json.dumps({"error": "获取K线数据失败"}, ensure_ascii=False)
+
+        # 转换为可序列化格式
+        result = []
+        for kline in klines:
+            if hasattr(kline, '__dict__'):
+                result.append(kline.__dict__)
+            elif isinstance(kline, dict):
+                result.append(kline)
+            else:
+                result.append(str(kline))
+
+        return json.dumps({"klines": result[-20:]}, ensure_ascii=False, default=str)  # 只返回最近20根K线
+
+    def _get_capital_flow(self, tool_input: Dict[str, Any]) -> str:
+        """获取资金流向"""
+        stock_code = tool_input.get("stock_code", "")
+        period_type = tool_input.get("period_type", "INTRADAY")
+
+        if not stock_code:
+            return json.dumps({"error": "缺少stock_code参数"}, ensure_ascii=False)
+
+        flows = self.futu_market.get_capital_flow(stock_code, period_type)
+        if not flows:
+            return json.dumps({"error": "获取资金流向数据失败"}, ensure_ascii=False)
+
+        # 转换为可序列化格式
+        result = []
+        for flow in flows:
+            if hasattr(flow, '__dict__'):
+                result.append(flow.__dict__)
+            elif isinstance(flow, dict):
+                result.append(flow)
+            else:
+                result.append(str(flow))
+
+        return json.dumps({"capital_flow": result}, ensure_ascii=False, default=str)
+
+    def _get_orderbook(self, tool_input: Dict[str, Any]) -> str:
+        """获取五档买卖盘"""
+        stock_code = tool_input.get("stock_code", "")
+
+        if not stock_code:
+            return json.dumps({"error": "缺少stock_code参数"}, ensure_ascii=False)
+
+        orderbook = self.futu_market.get_order_book(stock_code)
+        if not orderbook:
+            return json.dumps({"error": "获取买卖盘数据失败"}, ensure_ascii=False)
+
+        # 转换为可序列化格式
+        if hasattr(orderbook, '__dict__'):
+            result = orderbook.__dict__
+        elif isinstance(orderbook, dict):
+            result = orderbook
+        else:
+            result = str(orderbook)
+
+        return json.dumps({"orderbook": result}, ensure_ascii=False, default=str)
+
+    def _get_stock_basicinfo(self, tool_input: Dict[str, Any]) -> str:
+        """获取股票基本信息"""
+        stock_code = tool_input.get("stock_code", "")
+
+        if not stock_code:
+            return json.dumps({"error": "缺少stock_code参数"}, ensure_ascii=False)
+
+        # 从股票代码提取市场
+        if stock_code.startswith("HK."):
+            market = "HK"
+        elif stock_code.startswith("US."):
+            market = "US"
+        elif stock_code.startswith("SH."):
+            market = "SH"
+        elif stock_code.startswith("SZ."):
+            market = "SZ"
+        else:
+            market = "HK"
+
+        infos = self.futu_market.get_stock_basicinfo(market=market)
+        if not infos:
+            return json.dumps({"error": "获取股票基本信息失败"}, ensure_ascii=False)
+
+        # 查找指定股票
+        target_info = None
+        for info in infos:
+            info_code = info.get('code', '') if isinstance(info, dict) else getattr(info, 'code', '')
+            if info_code == stock_code:
+                target_info = info
+                break
+
+        if target_info:
+            if hasattr(target_info, '__dict__'):
+                result = target_info.__dict__
+            elif isinstance(target_info, dict):
+                result = target_info
+            else:
+                result = str(target_info)
+            return json.dumps({"stock_info": result}, ensure_ascii=False, default=str)
+        else:
+            return json.dumps({"error": f"未找到股票 {stock_code} 的基本信息"}, ensure_ascii=False)
 
 
 class ClaudeAIClient:
     """
-    Claude AI客户端 - 基于claude-code-sdk
-    在Claude Code环境中自动使用应用内认证，无需API key
+    Claude AI客户端 - 基于Anthropic SDK
+    支持完整的 tool use 能力，可动态调用股票数据API
     """
-    
-    def __init__(self):
+
+    def __init__(self, futu_market=None):
         """初始化Claude AI客户端"""
         self.logger = get_logger(__name__)
-        self.available = CLAUDE_CODE_SDK_AVAILABLE
-        
-        if self.available:
-            self.logger.info("Claude AI客户端初始化成功 (使用claude-code-sdk)")
+        self.config = get_config('Analyzer')
+
+        # 初始化工具执行器
+        self.tool_executor = StockDataToolExecutor(futu_market)
+
+        # 初始化Anthropic客户端
+        self.anthropic_client = None
+        self.anthropic_available = False
+        self._init_anthropic_client()
+
+        # claude-code-sdk 作为备选
+        self.claude_code_available = CLAUDE_CODE_SDK_AVAILABLE
+
+        # 确定主要可用方式
+        self.available = self.anthropic_available or self.claude_code_available
+
+        if self.anthropic_available:
+            self.logger.info("Claude AI客户端初始化成功 (使用Anthropic SDK，支持tool use)")
+        elif self.claude_code_available:
+            self.logger.info("Claude AI客户端初始化成功 (使用claude-code-sdk，不支持tool use)")
         else:
-            self.logger.error("claude-code-sdk未安装，请运行: pip install claude-code-sdk")
-    
+            self.logger.error("Claude AI客户端不可用，请安装anthropic或claude-code-sdk")
+
+    def _init_anthropic_client(self):
+        """初始化Anthropic客户端"""
+        if not ANTHROPIC_SDK_AVAILABLE:
+            self.logger.warning("anthropic SDK未安装")
+            return
+
+        try:
+            # 从配置获取API Key (self.config 是字典，使用 get 方法的 default 参数)
+            api_key = self.config.get("anthropicapikey", "") if isinstance(self.config, dict) else ""
+            if not api_key:
+                self.logger.warning("未配置AnthropicApiKey，无法使用Anthropic SDK")
+                return
+
+            self.anthropic_client = anthropic.Anthropic(api_key=api_key)
+            self.anthropic_model = self.config.get("anthropicmodel", "claude-sonnet-4-20250514") if isinstance(self.config, dict) else "claude-sonnet-4-20250514"
+            max_tokens_str = self.config.get("anthropicmaxtokens", "4096") if isinstance(self.config, dict) else "4096"
+            self.anthropic_max_tokens = int(max_tokens_str) if max_tokens_str else 4096
+            self.anthropic_available = True
+            self.logger.info(f"Anthropic客户端初始化成功，模型: {self.anthropic_model}")
+
+        except Exception as e:
+            self.logger.error(f"Anthropic客户端初始化失败: {e}")
+            self.anthropic_available = False
+
+    def set_futu_market(self, futu_market):
+        """设置FutuMarket实例，用于工具调用"""
+        self.tool_executor.set_futu_market(futu_market)
+
     def is_available(self) -> bool:
         """检查Claude AI客户端是否可用"""
         return self.available
-    
+
+    def is_tool_use_available(self) -> bool:
+        """检查是否支持tool use功能"""
+        return self.anthropic_available and self.tool_executor.futu_market is not None
+
+    def _call_anthropic_with_tools(self, system_prompt: str, user_message: str, use_tools: bool = True) -> str:
+        """
+        使用Anthropic SDK调用API，支持工具调用循环
+
+        Args:
+            system_prompt: 系统提示词
+            user_message: 用户消息
+            use_tools: 是否启用工具调用
+
+        Returns:
+            str: AI响应文本
+        """
+        if not self.anthropic_available:
+            raise RuntimeError("Anthropic SDK不可用")
+
+        messages = [{"role": "user", "content": user_message}]
+
+        # 决定是否使用工具
+        tools = STOCK_DATA_TOOLS if use_tools and self.is_tool_use_available() else None
+
+        max_iterations = 10  # 防止无限循环
+        iteration = 0
+
+        while iteration < max_iterations:
+            iteration += 1
+
+            # 调用API
+            try:
+                if tools:
+                    response = self.anthropic_client.messages.create(
+                        model=self.anthropic_model,
+                        max_tokens=self.anthropic_max_tokens,
+                        system=system_prompt,
+                        tools=tools,
+                        messages=messages
+                    )
+                else:
+                    response = self.anthropic_client.messages.create(
+                        model=self.anthropic_model,
+                        max_tokens=self.anthropic_max_tokens,
+                        system=system_prompt,
+                        messages=messages
+                    )
+            except Exception as e:
+                self.logger.error(f"Anthropic API调用失败: {e}")
+                raise
+
+            # 检查是否需要处理工具调用
+            if response.stop_reason == "tool_use":
+                # 处理工具调用
+                tool_results = []
+                assistant_content = response.content
+
+                for content_block in assistant_content:
+                    if content_block.type == "tool_use":
+                        tool_name = content_block.name
+                        tool_input = content_block.input
+                        tool_use_id = content_block.id
+
+                        self.logger.info(f"执行工具调用: {tool_name}, 输入: {tool_input}")
+
+                        # 执行工具
+                        tool_result = self.tool_executor.execute_tool(tool_name, tool_input)
+
+                        self.logger.debug(f"工具执行结果: {tool_result[:200]}...")
+
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_use_id,
+                            "content": tool_result
+                        })
+
+                # 将助手消息和工具结果添加到消息历史
+                messages.append({"role": "assistant", "content": assistant_content})
+                messages.append({"role": "user", "content": tool_results})
+
+            elif response.stop_reason == "end_turn":
+                # 正常结束，提取文本响应
+                result_text = ""
+                for content_block in response.content:
+                    if hasattr(content_block, 'text'):
+                        result_text += content_block.text
+
+                return result_text
+
+            else:
+                # 其他停止原因
+                self.logger.warning(f"未预期的停止原因: {response.stop_reason}")
+                result_text = ""
+                for content_block in response.content:
+                    if hasattr(content_block, 'text'):
+                        result_text += content_block.text
+                return result_text
+
+        # 超过最大迭代次数
+        self.logger.warning(f"工具调用循环超过最大次数 {max_iterations}")
+        return "分析过程超时，请稍后重试"
+
+    async def _call_anthropic_with_tools_async(self, system_prompt: str, user_message: str, use_tools: bool = True) -> str:
+        """
+        异步版本的Anthropic API调用，支持工具调用循环
+
+        Args:
+            system_prompt: 系统提示词
+            user_message: 用户消息
+            use_tools: 是否启用工具调用
+
+        Returns:
+            str: AI响应文本
+        """
+        # 使用线程池执行同步调用
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self._call_anthropic_with_tools(system_prompt, user_message, use_tools)
+        )
+
     async def generate_stock_analysis(self, request: AIAnalysisRequest) -> AIAnalysisResponse:
-        """生成股票分析"""
+        """生成股票分析，支持工具调用获取实时数据"""
         try:
             if not self.is_available():
                 return self._create_error_response(request, "Claude AI客户端不可用")
-            
-            # 构建分析提示词
-            prompt = self._build_analysis_prompt(request)
-            self.logger.debug(f"分析提示词: {prompt}")
-            # 调用Claude Code SDK
+
             self.logger.info(f"开始生成{request.analysis_type}分析: {request.stock_code}")
-            
-            # 配置Claude Code选项
-            options = None
-            if ClaudeCodeOptions:
-                options = ClaudeCodeOptions(
-                    system_prompt="你是一位专业的股票分析师AI助手。请直接回复，不要使用任何工具。",
-                    max_turns=1,
-                    allowed_tools=[]  # 禁用所有工具
-                )
-            
-            response_content = ""
-            try:
-                if options:
-                    async for message in query(prompt=prompt, options=options):
-                        # 跳过SystemMessage和ResultMessage，只处理AI响应
-                        if SystemMessage and isinstance(message, SystemMessage):
-                            continue
-                        if ResultMessage and isinstance(message, ResultMessage):
-                            continue
-                        
-                        # 处理AssistantMessage
-                        if AssistantMessage and isinstance(message, AssistantMessage):
-                            if hasattr(message, 'content') and message.content:
-                                for content_block in message.content:
-                                    if hasattr(content_block, 'text'):
-                                        response_content += content_block.text
-                        elif isinstance(message, str):
-                            response_content += message
-                        elif hasattr(message, 'content'):
-                            response_content += str(message.content)
-                        else:
-                            response_content += str(message)
-                else:
-                    async for message in query(prompt=prompt):
-                        # 跳过SystemMessage和ResultMessage，只处理AI响应
-                        if SystemMessage and isinstance(message, SystemMessage):
-                            continue
-                        if ResultMessage and isinstance(message, ResultMessage):
-                            continue
-                        
-                        # 处理AssistantMessage
-                        if AssistantMessage and isinstance(message, AssistantMessage):
-                            if hasattr(message, 'content') and message.content:
-                                for content_block in message.content:
-                                    if hasattr(content_block, 'text'):
-                                        response_content += content_block.text
-                        elif isinstance(message, str):
-                            response_content += message
-                        elif hasattr(message, 'content'):
-                            response_content += str(message.content)
-                        else:
-                            response_content += str(message)
-            except Exception as query_error:
-                self.logger.error(f"Query调用异常: {query_error}")
-                return self._create_error_response(request, f"Claude SDK调用异常: {str(query_error)}")
-            
+
+            # 优先使用Anthropic SDK（支持tool use）
+            if self.anthropic_available:
+                response_content = await self._generate_analysis_with_anthropic(request)
+            elif self.claude_code_available:
+                response_content = await self._generate_analysis_with_claude_code(request)
+            else:
+                return self._create_error_response(request, "无可用的AI后端")
+
             if not response_content:
                 return self._create_error_response(request, "Claude API调用失败")
-            
+
             # 解析响应
             analysis_response = self._parse_analysis_response(request, response_content)
-            
+
             self.logger.info(f"股票分析生成完成: {request.stock_code}, 类型: {request.analysis_type}")
             return analysis_response
-            
+
         except Exception as e:
             self.logger.error(f"生成股票分析失败: {e}")
             return self._create_error_response(request, f"分析生成错误: {str(e)}")
+
+    async def _generate_analysis_with_anthropic(self, request: AIAnalysisRequest) -> str:
+        """使用Anthropic SDK生成分析（支持tool use）"""
+        system_prompt = f"""你是一位专业的股票分析师AI助手，擅长技术分析和基本面分析。
+
+你可以使用以下工具获取股票数据：
+- get_realtime_quote: 获取实时行情报价
+- get_stock_kline: 获取K线数据用于技术分析
+- get_capital_flow: 获取资金流向数据
+- get_orderbook: 获取五档买卖盘数据
+- get_stock_basicinfo: 获取股票基本信息
+
+请根据用户需求调用相关工具获取数据，然后进行专业分析。用中文回答。"""
+
+        # 构建用户消息
+        prompt = self._build_analysis_prompt_for_tool_use(request)
+        self.logger.debug(f"分析提示词: {prompt}")
+
+        try:
+            # 使用支持工具调用的API
+            response = await self._call_anthropic_with_tools_async(
+                system_prompt=system_prompt,
+                user_message=prompt,
+                use_tools=self.is_tool_use_available()
+            )
+            return response
+        except Exception as e:
+            self.logger.error(f"Anthropic API调用失败: {e}")
+            raise
+
+    def _build_analysis_prompt_for_tool_use(self, request: AIAnalysisRequest) -> str:
+        """为工具调用模式构建分析提示词"""
+        prompt = f"""请对股票 {request.stock_code} 进行{self._get_analysis_type_name(request.analysis_type)}。
+
+分析要求:
+1. 首先使用工具获取该股票的实时行情、K线数据和资金流向
+2. 结合技术指标（均线、RSI、MACD等）进行技术面分析
+3. 分析资金流向判断主力动向
+4. 分析五档买卖盘判断短期买卖力量
+5. 提供明确的分析结论和投资建议
+6. 评估风险等级和置信度"""
+
+        # 添加用户已提供的上下文数据
+        existing_context = self._build_existing_context(request)
+        if existing_context:
+            prompt += f"\n\n已有数据参考:\n{existing_context}"
+
+        if request.user_input:
+            prompt += f"\n\n用户特别关心的问题: {request.user_input}"
+
+        return prompt
+
+    def _build_existing_context(self, request: AIAnalysisRequest) -> str:
+        """从request中提取已有的上下文数据"""
+        context_parts = []
+
+        realtime_quote = request.get_realtime_quote()
+        if realtime_quote:
+            context_parts.append(f"当前价格: {realtime_quote.get('cur_price', 0)}, 涨跌幅: {realtime_quote.get('change_rate', 0)}%")
+
+        technical = request.get_technical_indicators()
+        if technical:
+            context_parts.append(f"技术指标: MA5={technical.get('ma5', 0)}, RSI={technical.get('rsi', 0)}")
+
+        return "\n".join(context_parts) if context_parts else ""
+
+    async def _generate_analysis_with_claude_code(self, request: AIAnalysisRequest) -> str:
+        """使用claude-code-sdk生成分析（备选方案，不支持tool use）"""
+        prompt = self._build_analysis_prompt(request)
+        self.logger.debug(f"分析提示词: {prompt}")
+
+        system_prompt = "你是一位专业的股票分析师AI助手。请直接回复，不要使用任何工具。"
+        return await self._query_claude_code_sdk(prompt, system_prompt)
+
+    async def _query_claude_code_sdk(self, prompt: str, system_prompt: str = None) -> str:
+        """统一的claude-code-sdk查询方法
+
+        Args:
+            prompt: 用户提示词
+            system_prompt: 系统提示词（可选）
+
+        Returns:
+            str: AI响应文本
+        """
+        if not CLAUDE_CODE_SDK_AVAILABLE or not query:
+            raise RuntimeError("claude-code-sdk不可用")
+
+        options = None
+        if ClaudeCodeOptions and system_prompt:
+            options = ClaudeCodeOptions(
+                system_prompt=system_prompt,
+                max_turns=1,
+                allowed_tools=[]
+            )
+
+        response_content = ""
+        try:
+            query_iter = query(prompt=prompt, options=options) if options else query(prompt=prompt)
+            async for message in query_iter:
+                if SystemMessage and isinstance(message, SystemMessage):
+                    continue
+                if ResultMessage and isinstance(message, ResultMessage):
+                    continue
+                if AssistantMessage and isinstance(message, AssistantMessage):
+                    if hasattr(message, 'content') and message.content:
+                        for content_block in message.content:
+                            if hasattr(content_block, 'text'):
+                                response_content += content_block.text
+                elif isinstance(message, str):
+                    response_content += message
+                elif hasattr(message, 'content'):
+                    response_content += str(message.content)
+                else:
+                    response_content += str(message)
+        except Exception as query_error:
+            self.logger.error(f"claude-code-sdk查询异常: {query_error}")
+            raise
+
+        return response_content
     
-    async def chat_with_ai(self, user_message: str, stock_context: Dict[str, Any] = None) -> str:
-        """与AI进行对话交互"""
+    async def chat_with_ai(self, user_message: str, stock_context: Dict[str, Any] = None, use_tools: bool = True) -> str:
+        """与AI进行对话交互，支持工具调用获取实时数据
+
+        Args:
+            user_message: 用户消息
+            stock_context: 股票上下文信息
+            use_tools: 是否启用工具调用（默认True）
+
+        Returns:
+            str: AI响应文本
+        """
         try:
             if not self.is_available():
                 return "抱歉，AI服务当前不可用，请稍后重试。"
-            
-            # 构建对话提示词
-            prompt = self._build_chat_prompt(user_message, stock_context)
-            
-            # 配置Claude Code选项
-            options = None
-            if ClaudeCodeOptions:
-                options = ClaudeCodeOptions(
-                    system_prompt="你是一位专业的股票分析师AI助手，具有丰富的投资分析经验。请用中文与用户交流，请直接回复，不要使用任何工具。",
-                    max_turns=1,
-                    allowed_tools=[]  # 禁用所有工具
-                )
-            
-            # 调用Claude Code SDK
-            response_content = ""
-            try:
-                if options:
-                    async for message in query(prompt=prompt, options=options):
-                        # 跳过SystemMessage和ResultMessage，只处理AI响应
-                        if SystemMessage and isinstance(message, SystemMessage):
-                            continue
-                        if ResultMessage and isinstance(message, ResultMessage):
-                            continue
-                        
-                        # 处理AssistantMessage
-                        if AssistantMessage and isinstance(message, AssistantMessage):
-                            if hasattr(message, 'content') and message.content:
-                                for content_block in message.content:
-                                    if hasattr(content_block, 'text'):
-                                        response_content += content_block.text
-                        elif isinstance(message, str):
-                            response_content += message
-                        elif hasattr(message, 'content'):
-                            response_content += str(message.content)
-                        else:
-                            response_content += str(message)
-                else:
-                    async for message in query(prompt=prompt):
-                        # 跳过SystemMessage和ResultMessage，只处理AI响应
-                        if SystemMessage and isinstance(message, SystemMessage):
-                            continue
-                        if ResultMessage and isinstance(message, ResultMessage):
-                            continue
-                        
-                        # 处理AssistantMessage
-                        if AssistantMessage and isinstance(message, AssistantMessage):
-                            if hasattr(message, 'content') and message.content:
-                                for content_block in message.content:
-                                    if hasattr(content_block, 'text'):
-                                        response_content += content_block.text
-                        elif isinstance(message, str):
-                            response_content += message
-                        elif hasattr(message, 'content'):
-                            response_content += str(message.content)
-                        else:
-                            response_content += str(message)
-            except Exception as query_error:
-                self.logger.error(f"Chat query调用异常: {query_error}")
-                return f"对话服务异常: {str(query_error)}"
-            
-            return response_content if response_content else "抱歉，AI服务响应异常，请稍后重试。"
-            
+
+            # 优先使用Anthropic SDK（支持tool use）
+            if self.anthropic_available:
+                return await self._chat_with_anthropic(user_message, stock_context, use_tools)
+            elif self.claude_code_available:
+                return await self._chat_with_claude_code(user_message, stock_context)
+            else:
+                return "抱歉，AI服务当前不可用，请稍后重试。"
+
         except Exception as e:
             self.logger.error(f"AI对话失败: {e}")
             return f"对话过程中出现错误: {str(e)}"
 
+    async def _chat_with_anthropic(self, user_message: str, stock_context: Dict[str, Any] = None, use_tools: bool = True) -> str:
+        """使用Anthropic SDK进行对话（支持tool use）"""
+        system_prompt = """你是一位专业的股票分析师AI助手，具有丰富的投资分析经验。请用中文与用户交流。
+
+你可以使用以下工具获取股票数据：
+- get_realtime_quote: 获取实时行情报价
+- get_stock_kline: 获取K线数据用于技术分析
+- get_capital_flow: 获取资金流向数据
+- get_orderbook: 获取五档买卖盘数据
+- get_stock_basicinfo: 获取股票基本信息
+
+当用户询问特定股票时，请主动调用相关工具获取最新数据，然后进行专业分析回答。"""
+
+        # 构建用户消息
+        prompt = self._build_chat_prompt(user_message, stock_context)
+
+        try:
+            response = await self._call_anthropic_with_tools_async(
+                system_prompt=system_prompt,
+                user_message=prompt,
+                use_tools=use_tools and self.is_tool_use_available()
+            )
+            return response if response else "抱歉，AI服务响应异常，请稍后重试。"
+        except Exception as e:
+            self.logger.error(f"Anthropic对话异常: {e}")
+            return f"对话服务异常: {str(e)}"
+
+    async def _chat_with_claude_code(self, user_message: str, stock_context: Dict[str, Any] = None) -> str:
+        """使用claude-code-sdk进行对话（备选方案，不支持tool use）"""
+        prompt = self._build_chat_prompt(user_message, stock_context)
+        system_prompt = "你是一位专业的股票分析师AI助手，具有丰富的投资分析经验。请用中文与用户交流，请直接回复，不要使用任何工具。"
+
+        try:
+            response_content = await self._query_claude_code_sdk(prompt, system_prompt)
+            return response_content if response_content else "抱歉，AI服务响应异常，请稍后重试。"
+        except Exception as query_error:
+            self.logger.error(f"Chat query调用异常: {query_error}")
+            return f"对话服务异常: {str(query_error)}"
+
     async def generate_trading_advice(self, request: AITradingAdviceRequest) -> TradingAdvice:
-        """根据用户输入生成交易建议
+        """根据用户输入生成交易建议，支持工具调用获取实时数据
 
         Args:
             request: AI交易建议请求对象
@@ -214,13 +733,16 @@ class ClaudeAIClient:
             if not self.is_available():
                 return self._create_error_advice(request.user_input, "AI服务不可用")
 
-            # 构建建议生成提示词 - 使用统一的request对象
-            advice_prompt = self._build_advice_prompt(request)
+            self.logger.info(f"开始生成交易建议: {request.user_input}")
 
-            self.logger.debug(f"用户PROMPT: {advice_prompt}")
-
-            # 调用AI生成建议
-            ai_response = await self.chat_with_ai(advice_prompt)
+            # 优先使用Anthropic SDK（支持tool use）
+            if self.anthropic_available:
+                ai_response = await self._generate_advice_with_anthropic(request)
+            else:
+                # 备选方案：使用chat_with_ai
+                advice_prompt = self._build_advice_prompt(request)
+                self.logger.debug(f"用户PROMPT: {advice_prompt}")
+                ai_response = await self.chat_with_ai(advice_prompt, use_tools=False)
 
             # 解析AI响应为交易建议
             trading_advice = self._parse_advice_response(request, ai_response)
@@ -231,6 +753,36 @@ class ClaudeAIClient:
         except Exception as e:
             self.logger.error(f"生成交易建议失败: {e}")
             return self._create_error_advice(request.user_input, f"建议生成失败: {str(e)}")
+
+    async def _generate_advice_with_anthropic(self, request: AITradingAdviceRequest) -> str:
+        """使用Anthropic SDK生成交易建议（支持tool use）"""
+        system_prompt = """你是一位专业的股票投资顾问AI助手，具有丰富的投资分析经验和风险管理能力。
+
+你可以使用以下工具获取股票数据：
+- get_realtime_quote: 获取实时行情报价
+- get_stock_kline: 获取K线数据用于技术分析
+- get_capital_flow: 获取资金流向数据
+- get_orderbook: 获取五档买卖盘数据
+- get_stock_basicinfo: 获取股票基本信息
+
+请根据用户需求和市场情况，主动调用工具获取最新数据，然后生成专业的交易建议。
+所有建议必须基于风险控制原则，考虑用户的风险偏好和资金状况。
+用中文回答。"""
+
+        # 构建用户消息
+        advice_prompt = self._build_advice_prompt(request)
+        self.logger.debug(f"用户PROMPT: {advice_prompt}")
+
+        try:
+            response = await self._call_anthropic_with_tools_async(
+                system_prompt=system_prompt,
+                user_message=advice_prompt,
+                use_tools=self.is_tool_use_available()
+            )
+            return response
+        except Exception as e:
+            self.logger.error(f"Anthropic交易建议生成异常: {e}")
+            raise
 
     async def confirm_and_execute_advice(self, advice: TradingAdvice, trade_manager=None, trd_env="SIMULATE") -> Dict[str, Any]:
         """确认并执行交易建议"""
@@ -630,7 +1182,7 @@ class ClaudeAIClient:
             )
 
     def _extract_json_from_response(self, response: str) -> Optional[str]:
-        """从AI响应中提取JSON字符串"""
+        """从AI响应中提取JSON字符串，支持不完整JSON的修复"""
         try:
             # 查找JSON块
             start_markers = ['```json', '```', '{']
@@ -673,11 +1225,92 @@ class ClaudeAIClient:
             if json_str.endswith('```'):
                 json_str = json_str[:-3]
 
-            return json_str.strip()
+            json_str = json_str.strip()
+
+            # 尝试验证JSON是否完整，如果不完整则尝试修复
+            json_str = self._try_fix_incomplete_json(json_str)
+
+            return json_str
 
         except Exception as e:
             self.logger.error(f"提取JSON失败: {e}")
             return None
+
+    def _try_fix_incomplete_json(self, json_str: str) -> str:
+        """尝试修复不完整的JSON字符串
+
+        Args:
+            json_str: 可能不完整的JSON字符串
+
+        Returns:
+            str: 修复后的JSON字符串（如果无法修复则返回原始字符串）
+        """
+        try:
+            # 首先尝试直接解析，如果成功则无需修复
+            json.loads(json_str)
+            return json_str
+        except json.JSONDecodeError as e:
+            self.logger.warning(f"JSON不完整，尝试修复: {e}")
+
+        try:
+            # 统计括号数量
+            open_braces = json_str.count('{')
+            close_braces = json_str.count('}')
+            open_brackets = json_str.count('[')
+            close_brackets = json_str.count(']')
+
+            # 检查是否在字符串中间被截断（查找未闭合的引号）
+            # 简单策略：如果最后一个非空白字符不是 } ] , 或数字，可能是字符串被截断
+            stripped = json_str.rstrip()
+            if stripped and stripped[-1] not in '}],0123456789nulltruefalse"':
+                # 可能在字符串中间被截断，尝试找到最后一个完整的字段
+                # 查找最后一个逗号或冒号后的完整值
+                last_comma = stripped.rfind(',')
+                last_colon = stripped.rfind(':')
+
+                if last_colon > last_comma:
+                    # 在值的中间被截断，截断到上一个逗号
+                    if last_comma > 0:
+                        json_str = stripped[:last_comma]
+                        self.logger.info(f"截断不完整的字段，保留到位置 {last_comma}")
+
+            # 重新统计括号
+            open_braces = json_str.count('{')
+            close_braces = json_str.count('}')
+            open_brackets = json_str.count('[')
+            close_brackets = json_str.count(']')
+
+            # 添加缺失的闭合括号
+            missing_brackets = open_brackets - close_brackets
+            missing_braces = open_braces - close_braces
+
+            if missing_brackets > 0 or missing_braces > 0:
+                # 确保字符串末尾没有悬空的逗号
+                json_str = json_str.rstrip().rstrip(',')
+
+                # 如果末尾是未闭合的字符串，尝试闭合它
+                if json_str.count('"') % 2 != 0:
+                    json_str += '"'
+
+                # 添加缺失的括号
+                json_str += ']' * missing_brackets
+                json_str += '}' * missing_braces
+
+                self.logger.info(f"修复JSON: 添加了 {missing_brackets} 个 ] 和 {missing_braces} 个 }}")
+
+            # 验证修复后的JSON
+            try:
+                json.loads(json_str)
+                self.logger.info("JSON修复成功")
+                return json_str
+            except json.JSONDecodeError as e:
+                self.logger.warning(f"JSON修复后仍无法解析: {e}")
+                # 返回原始字符串，让调用方处理错误
+                return json_str
+
+        except Exception as e:
+            self.logger.error(f"修复JSON时出错: {e}")
+            return json_str
 
     def _validate_order(self, order: TradingOrder) -> None:
         """验证交易订单的基本有效性"""
@@ -887,10 +1520,10 @@ class ClaudeAIClient:
 - 风险偏好: {request.risk_preference}
 {account_info_text}{position_info_text}{pending_orders_text}{today_deals_text}{technical_info}{capital_flow_info}{orderbook_info}
 
-请按以下JSON格式返回投资建议:
+请按以下JSON格式返回投资建议（务必确保JSON结构完整，所有括号正确闭合）:
 {{
-    "advice_summary": "简短的建议摘要（1-2句话）",
-    "detailed_analysis": "详细的市场和技术分析（包含基本面、技术面、资金面等）",
+    "advice_summary": "简短的建议摘要（1-2句话，不超过100字）",
+    "detailed_analysis": "简明扼要的分析要点（不超过300字，使用简洁的要点式描述）",
     "recommended_action": "buy, sell, hold, wait 其中之一",
     "suggested_orders": [
         {{
@@ -900,15 +1533,20 @@ class ClaudeAIClient:
             "price": 建议价格(null表示市价),
             "order_type": "MARKET, NORMAL, STOP, STOP_LIMIT其中之一",
             "trigger_price": 触发价格(可选),
-            "reasoning": "这个订单的具体原因"
+            "reasoning": "订单原因（不超过50字）"
         }}
     ],
     "risk_assessment": "低, 中, 高 其中之一",
     "confidence_score": 0.0到1.0的置信度,
-    "expected_return": "预期收益描述",
+    "expected_return": "预期收益描述（不超过50字）",
     "risk_factors": ["风险因素1", "风险因素2"],
     "key_points": ["关键要点1", "关键要点2", "关键要点3"]
 }}
+
+重要提示：
+- JSON结构完整性是最高优先级，务必确保所有括号正确闭合
+- 所有字符串字段保持简洁，避免过长导致响应被截断
+- 如果分析内容较多，优先保证JSON结构完整，可以精简文字描述
 
 分析要求:
 1. 结合当前股价、技术指标、资金流向和市场情况进行综合分析
@@ -996,8 +1634,9 @@ class ClaudeAIClient:
                 return self._create_text_based_advice(request, ai_response)
 
         except json.JSONDecodeError as e:
-            self.logger.error(f"建议JSON解析失败: {e}")
-            return self._create_error_advice(request.user_input, f"AI响应格式错误: {str(e)}")
+            self.logger.warning(f"建议JSON解析失败: {e}，降级为文本建议")
+            # JSON解析失败时，降级为文本建议而不是错误建议
+            return self._create_text_based_advice(request, ai_response)
         except Exception as e:
             self.logger.error(f"解析交易建议失败: {e}")
             return self._create_error_advice(request.user_input, f"建议解析异常: {str(e)}")
@@ -1134,15 +1773,46 @@ class ClaudeAIClient:
     
     def get_client_status(self) -> Dict[str, Any]:
         """获取客户端状态"""
+        primary_backend = None
+        if self.anthropic_available:
+            primary_backend = 'Anthropic SDK'
+        elif self.claude_code_available:
+            primary_backend = 'claude-code-sdk'
+        else:
+            primary_backend = 'Unavailable'
+
         return {
             'available': self.available,
-            'sdk_available': CLAUDE_CODE_SDK_AVAILABLE,
-            'authentication': 'Claude Code App' if self.available else 'Unavailable'
+            'anthropic_sdk_available': ANTHROPIC_SDK_AVAILABLE,
+            'anthropic_client_ready': self.anthropic_available,
+            'claude_code_sdk_available': self.claude_code_available,
+            'tool_use_available': self.is_tool_use_available(),
+            'primary_backend': primary_backend,
+            'model': getattr(self, 'anthropic_model', None) if self.anthropic_available else None
         }
     
     def test_connection(self) -> bool:
-        """测试Claude AI连接 - 简化版本，只检查SDK可用性"""
-        return self.is_available()
+        """测试Claude AI连接
+
+        Returns:
+            bool: 连接是否可用
+        """
+        if self.anthropic_available and self.anthropic_client:
+            try:
+                # 尝试发送一个简单请求测试连接
+                response = self.anthropic_client.messages.create(
+                    model=self.anthropic_model,
+                    max_tokens=10,
+                    messages=[{"role": "user", "content": "Say OK"}]
+                )
+                return response is not None
+            except Exception as e:
+                self.logger.warning(f"Anthropic连接测试失败: {e}")
+                return False
+        elif self.claude_code_available:
+            # claude-code-sdk 无法简单测试连接，假设可用
+            return True
+        return False
 
 
 # 便捷函数
