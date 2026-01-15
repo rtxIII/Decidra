@@ -1100,6 +1100,24 @@ class InfoPanel(Widget):
                                 self.logger.info(f"✓ 成功获取股票 {stock_code} 五档买卖盘数据")
                             else:
                                 self.logger.debug(f"股票 {stock_code} 分析数据中无五档买卖盘")
+
+                            # 获取K线数据
+                            if hasattr(analysis_data, 'kline_data') and analysis_data.kline_data:
+                                kline_list = []
+                                for kline in analysis_data.kline_data:
+                                    kline_list.append({
+                                        'time_key': getattr(kline, 'time_key', ''),
+                                        'open': getattr(kline, 'open', 0),
+                                        'high': getattr(kline, 'high', 0),
+                                        'low': getattr(kline, 'low', 0),
+                                        'close': getattr(kline, 'close', 0),
+                                        'volume': getattr(kline, 'volume', 0),
+                                        'change_rate': getattr(kline, 'change_rate', 0)
+                                    })
+                                context['kline_data'] = kline_list
+                                self.logger.info(f"✓ 成功获取股票 {stock_code} K线数据: {len(kline_list)}根")
+                            else:
+                                self.logger.debug(f"股票 {stock_code} 分析数据中无K线数据")
                         else:
                             self.logger.warning(f"✗ 股票 {stock_code} 不在分析数据缓存中，可用股票: {list(analysis_data_manager.analysis_data_cache.keys())}")
                     else:
@@ -1126,6 +1144,7 @@ class InfoPanel(Widget):
             context.setdefault('technical_indicators', {})
             context.setdefault('capital_flow', {})
             context.setdefault('orderbook', {})
+            context.setdefault('kline_data', [])
 
             return context
 
@@ -1150,6 +1169,7 @@ class InfoPanel(Widget):
                 'technical_indicators': {},
                 'capital_flow': {},
                 'orderbook': {},
+                'kline_data': [],
                 'trading_mode': '模拟交易',
                 'position_list': [],
                 'account_info': {}

@@ -61,6 +61,10 @@ class AIRequest(ABC):
         """获取当日成交记录列表"""
         return self.context.get('today_deals', [])
 
+    def get_kline_data(self) -> List[Dict[str, Any]]:
+        """获取K线数据列表"""
+        return self.context.get('kline_data', [])
+
 
 @dataclass
 class AIAnalysisRequest(AIRequest):

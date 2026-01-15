@@ -102,7 +102,7 @@ class TradeManager:
 
             # 对于账户列表，我们需要返回完整的DataFrame数据
             if isinstance(data, pd.DataFrame) and not data.empty:
-                self.logger.info(f"获取账户列表成功，共 {len(data)} 个账户")
+                self.logger.debug(f"获取账户列表成功，共 {len(data)} 个账户")
                 return data.to_dict('records')  # 转换为字典列表
             else:
                 self.logger.warning("获取账户列表返回空数据")
@@ -131,7 +131,7 @@ class TradeManager:
             ret, data = trade_ctx.unlock_trade(password=password, password_md5=password_md5, is_unlock=True)
             
             if ret == 0:         
-                self.logger.info("交易解锁成功")
+                self.logger.w("交易解锁成功")
                 return True
             else:
                 self.logger.error(f"交易解锁失败: {data}")
@@ -172,7 +172,7 @@ class TradeManager:
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
-            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境现金流水")
+            self.logger.debug(f"使用账户ID {acc_id} 查询 {trd_env} 环境现金流水")
 
             # get_acc_cash_flow只支持单日查询，需要按日期逐一查询
             # 富途API要求日期格式为 "yyyy-MM-dd"，例如："2017-06-20"
@@ -206,7 +206,7 @@ class TradeManager:
                 current_date = dt.datetime.strptime(validated_start, "%Y-%m-%d")
                 end_date = dt.datetime.strptime(validated_end, "%Y-%m-%d")
 
-                self.logger.info(f"查询日期范围: {validated_start} 到 {validated_end}")
+                self.logger.debug(f"查询日期范围: {validated_start} 到 {validated_end}")
 
                 while current_date <= end_date:
                     date_str = current_date.strftime("%Y-%m-%d")
@@ -242,13 +242,13 @@ class TradeManager:
                     if not validated_date:
                         return []
                     clearing_date = validated_date
-                    self.logger.info(f"查询单日现金流水: {clearing_date}")
+                    self.logger.debug(f"查询单日现金流水: {clearing_date}")
                 else:
                     # 查询今日，需要传入今天的日期
                     import datetime as dt
                     today = dt.datetime.now().strftime("%Y-%m-%d")
                     clearing_date = today
-                    self.logger.info(f"查询今日现金流水: {clearing_date}")
+                    self.logger.debug(f"查询今日现金流水: {clearing_date}")
 
                 ret, data = trade_ctx.get_acc_cash_flow(
                     clearing_date=clearing_date,
@@ -341,7 +341,7 @@ class TradeManager:
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
-            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境资金信息")
+            self.logger.debug(f"使用账户ID {acc_id} 查询 {trd_env} 环境资金信息")
 
             ret, data = trade_ctx.accinfo_query(
                 trd_env=futu_env,
@@ -390,7 +390,7 @@ class TradeManager:
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
-            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境账户信息")
+            self.logger.debug(f"使用账户ID {acc_id} 查询 {trd_env} 环境账户信息")
 
             ret, data = trade_ctx.accinfo_query(
                 trd_env=futu_env,
@@ -442,7 +442,7 @@ class TradeManager:
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
-            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境持仓列表")
+            self.logger.debug(f"使用账户ID {acc_id} 查询 {trd_env} 环境持仓列表")
 
             ret, data = trade_ctx.position_list_query(
                 trd_env=futu_env,
@@ -533,7 +533,7 @@ class TradeManager:
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
-            self.logger.info(f"使用账户ID {acc_id} 在 {trd_env} 环境下单: {code} {trd_side} {qty}@{price}")
+            self.logger.debug(f"使用账户ID {acc_id} 在 {trd_env} 环境下单: {code} {trd_side} {qty}@{price}")
 
             ret, data = trade_ctx.place_order(
                 price=price,
@@ -589,7 +589,7 @@ class TradeManager:
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
-            self.logger.info(f"使用账户ID {acc_id} 在 {trd_env} 环境修改订单: {order_id}")
+            self.logger.debug(f"使用账户ID {acc_id} 在 {trd_env} 环境修改订单: {order_id}")
 
             # 如果只指定了其中一个参数，需要先获取原订单信息
             if price is None or qty is None:
@@ -652,7 +652,7 @@ class TradeManager:
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
-            self.logger.info(f"使用账户ID {acc_id} 在 {trd_env} 环境撤销订单: {order_id}")
+            self.logger.debug(f"使用账户ID {acc_id} 在 {trd_env} 环境撤销订单: {order_id}")
 
             ret, data = trade_ctx.modify_order(
                 modify_order_op=ft.ModifyOrderOp.CANCEL,
@@ -721,8 +721,6 @@ class TradeManager:
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
-            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境订单列表")
-
             ret, data = trade_ctx.order_list_query(
                 order_id="",
                 status_filter_list=futu_status_filter_list,
@@ -737,7 +735,6 @@ class TradeManager:
             
             df = self._handle_response(ret, data, "获取订单列表")
             
-            self.logger.info(f"获取 {trd_env} 环境订单列表成功")
             return df
             
         except Exception as e:
@@ -780,7 +777,7 @@ class TradeManager:
             
             df = self._handle_response(ret, data, "获取成交列表")
             
-            self.logger.info(f"获取 {trd_env} 环境成交列表成功")
+            self.logger.debug(f"获取 {trd_env} 环境成交列表成功")
             return df
             
         except Exception as e:
@@ -829,7 +826,7 @@ class TradeManager:
             
             df = self._handle_response(ret, data, "获取历史订单列表")
             
-            self.logger.info(f"获取 {trd_env} 环境历史订单列表成功")
+            self.logger.debug(f"获取 {trd_env} 环境历史订单列表成功")
             return df
             
         except Exception as e:
@@ -864,7 +861,7 @@ class TradeManager:
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
-            self.logger.info(f"使用账户ID {acc_id} 查询 {trd_env} 环境历史成交列表")
+            self.logger.debug(f"使用账户ID {acc_id} 查询 {trd_env} 环境历史成交列表")
 
             ret, data = trade_ctx.history_deal_list_query(
                 code="",
@@ -877,7 +874,7 @@ class TradeManager:
             
             df = self._handle_response(ret, data, "获取历史成交列表")
             
-            self.logger.info(f"获取 {trd_env} 环境历史成交列表成功")
+            self.logger.debug(f"获取 {trd_env} 环境历史成交列表成功")
             return df
             
         except Exception as e:
@@ -925,7 +922,7 @@ class TradeManager:
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
-            self.logger.info(f"使用账户ID {acc_id} 查询 {code} 最大交易数量")
+            self.logger.debug(f"使用账户ID {acc_id} 查询 {code} 最大交易数量")
 
             ret, data = trade_ctx.acctradinginfo_query(
                 order_type=futu_order_type,
@@ -939,7 +936,7 @@ class TradeManager:
             
             df = self._handle_response(ret, data, f"获取 {code} 最大交易数量")
             
-            self.logger.info(f"获取 {code} 最大交易数量成功")
+            self.logger.debug(f"获取 {code} 最大交易数量成功")
             return df
             
         except Exception as e:
@@ -989,7 +986,7 @@ class TradeManager:
             # 动态获取可用的账户ID
             acc_id = self._get_active_account_id(trd_env, market)
 
-            self.logger.info(f"使用账户ID {acc_id} 查询 {code} 订单费用")
+            self.logger.debug(f"使用账户ID {acc_id} 查询 {code} 订单费用")
 
             ret, data = trade_ctx.order_fee_query(
                 order_type=futu_order_type,
@@ -1004,7 +1001,7 @@ class TradeManager:
             
             df = self._handle_response(ret, data, f"获取 {code} 订单费用")
             
-            self.logger.info(f"获取 {code} 订单费用成功")
+            self.logger.debug(f"获取 {code} 订单费用成功")
             return df
             
         except Exception as e:
@@ -1024,7 +1021,7 @@ class TradeManager:
         try:
             trade_ctx = self._get_trade_context(market)
             trade_ctx.set_handler(ft.OrderStatus, callback_func)
-            self.logger.info("订单推送回调设置成功")
+            self.logger.debug("订单推送回调设置成功")
             
         except Exception as e:
             self.logger.error(f"设置订单推送回调异常: {str(e)}")
@@ -1041,7 +1038,7 @@ class TradeManager:
         try:
             trade_ctx = self._get_trade_context(market)
             trade_ctx.set_handler(ft.DealStatus, callback_func)
-            self.logger.info("成交推送回调设置成功")
+            self.logger.debug("成交推送回调设置成功")
             
         except Exception as e:
             self.logger.error(f"设置成交推送回调异常: {str(e)}")
@@ -1058,7 +1055,7 @@ class TradeManager:
             trade_ctx = self._get_trade_context(market)
             ret, data = trade_ctx.subscribe(subtype_list=[ft.SubType.ORDER])
             self._handle_response(ret, data, "订单推送订阅")
-            self.logger.info("订单推送订阅启用成功")
+            self.logger.debug("订单推送订阅启用成功")
             
         except Exception as e:
             self.logger.error(f"启用订单推送订阅异常: {str(e)}")
@@ -1075,7 +1072,7 @@ class TradeManager:
             trade_ctx = self._get_trade_context(market)
             ret, data = trade_ctx.subscribe(subtype_list=[ft.SubType.DEAL])
             self._handle_response(ret, data, "成交推送订阅")
-            self.logger.info("成交推送订阅启用成功")
+            self.logger.debug("成交推送订阅启用成功")
             
         except Exception as e:
             self.logger.error(f"启用成交推送订阅异常: {str(e)}")

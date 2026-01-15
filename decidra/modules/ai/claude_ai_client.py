@@ -1503,6 +1503,30 @@ class ClaudeAIClient:
             if len(today_deals) > 5:
                 today_deals_text += f"\n- ... 还有{len(today_deals) - 5}笔成交"
 
+        # 构建K线数据信息文本
+        kline_data = request.get_kline_data()
+        kline_info = ""
+        if kline_data:
+            kline_info = f"\n近期K线数据({len(kline_data)}根):"
+            # 显示最近10根K线
+            recent_klines = kline_data[-10:] if len(kline_data) > 10 else kline_data
+            for kline in recent_klines:
+                date = kline.get('time_key', kline.get('date', ''))
+                open_price = kline.get('open', 0)
+                high_price = kline.get('high', 0)
+                low_price = kline.get('low', 0)
+                close_price = kline.get('close', 0)
+                volume = kline.get('volume', 0)
+                change_rate = kline.get('change_rate', 0)
+                # 格式化成交量
+                if volume >= 100000000:
+                    vol_str = f"{volume / 100000000:.2f}亿"
+                elif volume >= 10000:
+                    vol_str = f"{volume / 10000:.1f}万"
+                else:
+                    vol_str = str(volume)
+                kline_info += f"\n- {date}: 开{open_price:.2f} 高{high_price:.2f} 低{low_price:.2f} 收{close_price:.2f} 量{vol_str} 涨跌{change_rate:+.2f}%"
+
         return f"""
 你是一位专业的股票投资顾问AI助手。用户向你咨询投资建议，请根据用户的需求和当前市场情况，生成专业的交易建议。
 
@@ -1518,7 +1542,7 @@ class ClaudeAIClient:
 - 可用资金: {request.get_available_funds()}
 - 当前股票持仓: {request.get_current_position()}
 - 风险偏好: {request.risk_preference}
-{account_info_text}{position_info_text}{pending_orders_text}{today_deals_text}{technical_info}{capital_flow_info}{orderbook_info}
+{account_info_text}{position_info_text}{pending_orders_text}{today_deals_text}{kline_info}{technical_info}{capital_flow_info}{orderbook_info}
 
 请按以下JSON格式返回投资建议（务必确保JSON结构完整，所有括号正确闭合）:
 {{
@@ -1562,7 +1586,10 @@ class ClaudeAIClient:
 11. 所有建议必须基于风险控制原则
 12. 如果用户已有待成交订单，避免建议重复挂单，可建议修改或取消现有订单
 13. 参考当日成交记录了解用户今日交易行为，避免频繁交易建议
-
+14. 严进策略：不追高，乖离率 > 5% 不买入
+15. 趋势交易：只做 MA5>MA10>MA20 多头排列
+16. 效率优先：关注筹码集中度好的股票
+17. 买点偏好：缩量回踩 MA5/MA10 支撑
 回答请用中文，格式严格按照上述JSON结构。
 """
 
