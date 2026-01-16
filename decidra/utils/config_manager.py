@@ -190,6 +190,8 @@ class ConfigManager:
             'EMAIL_USER': ('Email', 'emailuser'),
             'EMAIL_PASS': ('Email', 'emailpass'),
             'EMAIL_TO': ('Email', 'emailto'),
+            # AI Backend configuration
+            'AI_BACKEND': ('Analyzer', 'aibackend'),
             # Anthropic Claude API configuration (与 analyzer/config.py 一致)
             'ANTHROPIC_API_KEY': ('Analyzer', 'anthropicapikey'),
             'ANTHROPIC_MODEL': ('Analyzer', 'anthropicmodel'),

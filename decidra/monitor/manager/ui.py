@@ -257,7 +257,7 @@ class UIManager:
             
             # 强制刷新表格显示
             #self.stock_table.refresh()
-            self.logger.info(f"股票表格更新完成，共更新 {updated_count} 只股票")
+            self.logger.debug(f"股票表格更新完成，共更新 {updated_count} 只股票")
                     
         except Exception as e:
             self.logger.error(f"更新股票表格失败: {e}")

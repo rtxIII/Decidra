@@ -26,18 +26,34 @@ except ImportError:
     ANTHROPIC_SDK_AVAILABLE = False
     anthropic = None
 
-# claude-code-sdk 作为备选
+# claude-code-sdk / claude-agent-sdk 作为备选（支持 tool use）
 try:
-    from claude_code_sdk import query, ClaudeCodeOptions
-    from claude_code_sdk.types import SystemMessage, AssistantMessage, ResultMessage
+    # 优先尝试新版 claude-agent-sdk
+    from claude_agent_sdk import query as agent_query, ClaudeAgentOptions, tool as agent_tool, create_sdk_mcp_server
+    from claude_agent_sdk.types import SystemMessage, AssistantMessage, ResultMessage
     CLAUDE_CODE_SDK_AVAILABLE = True
+    query = agent_query
+    ClaudeCodeOptions = ClaudeAgentOptions
+    CLAUDE_AGENT_SDK_TOOL_SUPPORT = True
 except ImportError:
-    CLAUDE_CODE_SDK_AVAILABLE = False
-    query = None
-    ClaudeCodeOptions = None
-    SystemMessage = None
-    AssistantMessage = None
-    ResultMessage = None
+    try:
+        # 回退到旧版 claude-code-sdk
+        from claude_code_sdk import query, ClaudeCodeOptions
+        from claude_code_sdk.types import SystemMessage, AssistantMessage, ResultMessage
+        CLAUDE_CODE_SDK_AVAILABLE = True
+        CLAUDE_AGENT_SDK_TOOL_SUPPORT = False
+        agent_tool = None
+        create_sdk_mcp_server = None
+    except ImportError:
+        CLAUDE_CODE_SDK_AVAILABLE = False
+        CLAUDE_AGENT_SDK_TOOL_SUPPORT = False
+        query = None
+        ClaudeCodeOptions = None
+        SystemMessage = None
+        AssistantMessage = None
+        ResultMessage = None
+        agent_tool = None
+        create_sdk_mcp_server = None
 
 
 # ================== 股票数据工具定义 ==================
@@ -132,6 +148,117 @@ STOCK_DATA_TOOLS = [
         }
     }
 ]
+
+
+# ================== Claude Agent SDK MCP 工具创建器 ==================
+
+class StockDataMCPServerBuilder:
+    """
+    股票数据 MCP 服务器构建器
+    用于 Claude Agent SDK 的 tool use 功能
+    """
+
+    def __init__(self, tool_executor: 'StockDataToolExecutor'):
+        """
+        初始化 MCP 服务器构建器
+
+        Args:
+            tool_executor: StockDataToolExecutor 实例
+        """
+        self.tool_executor = tool_executor
+        self.logger = get_logger(__name__)
+
+    def create_mcp_server(self):
+        """
+        创建包含股票数据工具的 MCP 服务器
+
+        Returns:
+            MCP 服务器实例，如果不支持则返回 None
+        """
+        if not CLAUDE_AGENT_SDK_TOOL_SUPPORT or not create_sdk_mcp_server or not agent_tool:
+            self.logger.warning("Claude Agent SDK tool support 不可用")
+            return None
+
+        try:
+            # 创建工具函数引用
+            executor = self.tool_executor
+
+            # 定义 MCP 工具
+            @agent_tool(
+                "get_realtime_quote",
+                "获取股票实时行情报价，包括当前价格、涨跌幅、成交量、换手率等数据",
+                {"stock_codes": list}
+            )
+            async def get_realtime_quote_tool(args: dict) -> dict:
+                result = executor.execute_tool("get_realtime_quote", args)
+                return {"content": [{"type": "text", "text": result}]}
+
+            @agent_tool(
+                "get_stock_kline",
+                "获取股票K线数据，用于技术分析。支持日K、周K、月K等多种周期",
+                {"stock_code": str, "ktype": str, "num": int}
+            )
+            async def get_stock_kline_tool(args: dict) -> dict:
+                result = executor.execute_tool("get_stock_kline", args)
+                return {"content": [{"type": "text", "text": result}]}
+
+            @agent_tool(
+                "get_capital_flow",
+                "获取股票资金流向数据，包括主力资金、超大单、大单、中单、小单的净流入流出情况",
+                {"stock_code": str, "period_type": str}
+            )
+            async def get_capital_flow_tool(args: dict) -> dict:
+                result = executor.execute_tool("get_capital_flow", args)
+                return {"content": [{"type": "text", "text": result}]}
+
+            @agent_tool(
+                "get_orderbook",
+                "获取股票五档买卖盘数据，显示当前买卖挂单的价格和数量分布",
+                {"stock_code": str}
+            )
+            async def get_orderbook_tool(args: dict) -> dict:
+                result = executor.execute_tool("get_orderbook", args)
+                return {"content": [{"type": "text", "text": result}]}
+
+            @agent_tool(
+                "get_stock_basicinfo",
+                "获取股票基本信息，包括公司名称、行业、市值等基本面数据",
+                {"stock_code": str}
+            )
+            async def get_stock_basicinfo_tool(args: dict) -> dict:
+                result = executor.execute_tool("get_stock_basicinfo", args)
+                return {"content": [{"type": "text", "text": result}]}
+
+            # 创建 MCP 服务器
+            mcp_server = create_sdk_mcp_server(
+                name="stock-data-tools",
+                version="1.0.0",
+                tools=[
+                    get_realtime_quote_tool,
+                    get_stock_kline_tool,
+                    get_capital_flow_tool,
+                    get_orderbook_tool,
+                    get_stock_basicinfo_tool
+                ]
+            )
+
+            self.logger.info("股票数据 MCP 服务器创建成功")
+            return mcp_server
+
+        except Exception as e:
+            self.logger.error(f"创建 MCP 服务器失败: {e}")
+            return None
+
+    @staticmethod
+    def get_allowed_tools() -> list:
+        """获取允许使用的工具列表（MCP 格式）"""
+        return [
+            "mcp__stock-data-tools__get_realtime_quote",
+            "mcp__stock-data-tools__get_stock_kline",
+            "mcp__stock-data-tools__get_capital_flow",
+            "mcp__stock-data-tools__get_orderbook",
+            "mcp__stock-data-tools__get_stock_basicinfo"
+        ]
 
 
 class StockDataToolExecutor:
@@ -325,7 +452,17 @@ class ClaudeAIClient:
     """
     Claude AI客户端 - 基于Anthropic SDK
     支持完整的 tool use 能力，可动态调用股票数据API
+
+    配置项 aibackend 支持以下值:
+    - "anthropic": 强制使用 Anthropic SDK
+    - "claude_code": 强制使用 claude-code-sdk
+    - "auto": 自动选择（优先 Anthropic SDK）
     """
+
+    # 支持的后端类型
+    BACKEND_ANTHROPIC = "anthropic"
+    BACKEND_CLAUDE_CODE = "claude_code"
+    BACKEND_AUTO = "auto"
 
     def __init__(self, futu_market=None):
         """初始化Claude AI客户端"""
@@ -335,23 +472,83 @@ class ClaudeAIClient:
         # 初始化工具执行器
         self.tool_executor = StockDataToolExecutor(futu_market)
 
+        # 初始化 MCP 服务器构建器（用于 claude-agent-sdk 的 tool use）
+        self.mcp_server_builder = StockDataMCPServerBuilder(self.tool_executor)
+        self.mcp_server = None  # 延迟创建
+
+        # 从配置获取后端选择
+        self.configured_backend = self._get_configured_backend()
+
         # 初始化Anthropic客户端
         self.anthropic_client = None
         self.anthropic_available = False
-        self._init_anthropic_client()
 
-        # claude-code-sdk 作为备选
+        # 初始化claude-code-sdk可用性和tool use支持
         self.claude_code_available = CLAUDE_CODE_SDK_AVAILABLE
+        self.claude_code_tool_use_available = CLAUDE_AGENT_SDK_TOOL_SUPPORT
+
+        # 根据配置初始化对应的SDK
+        self._init_backend()
 
         # 确定主要可用方式
         self.available = self.anthropic_available or self.claude_code_available
 
-        if self.anthropic_available:
-            self.logger.info("Claude AI客户端初始化成功 (使用Anthropic SDK，支持tool use)")
-        elif self.claude_code_available:
-            self.logger.info("Claude AI客户端初始化成功 (使用claude-code-sdk，不支持tool use)")
+        # 记录实际使用的后端
+        self._log_backend_status()
+
+    def _get_configured_backend(self) -> str:
+        """从配置获取后端选择"""
+        backend = self.config.get("aibackend", self.BACKEND_AUTO) if isinstance(self.config, dict) else self.BACKEND_AUTO
+        backend = backend.lower().strip()
+
+        # 验证配置值
+        valid_backends = [self.BACKEND_ANTHROPIC, self.BACKEND_CLAUDE_CODE, self.BACKEND_AUTO]
+        if backend not in valid_backends:
+            self.logger.warning(f"无效的aibackend配置值: {backend}，使用默认值: auto")
+            return self.BACKEND_AUTO
+
+        return backend
+
+    def _init_backend(self):
+        """根据配置初始化对应的后端"""
+        if self.configured_backend == self.BACKEND_ANTHROPIC:
+            # 强制使用 Anthropic SDK
+            self._init_anthropic_client()
+            if not self.anthropic_available:
+                self.logger.warning("配置要求使用Anthropic SDK，但初始化失败")
+        elif self.configured_backend == self.BACKEND_CLAUDE_CODE:
+            # 强制使用 claude-code-sdk，不初始化 Anthropic
+            if not self.claude_code_available:
+                self.logger.warning("配置要求使用claude-code-sdk，但SDK不可用")
         else:
-            self.logger.error("Claude AI客户端不可用，请安装anthropic或claude-code-sdk")
+            # auto 模式：都尝试初始化，优先 Anthropic
+            self._init_anthropic_client()
+
+    def _log_backend_status(self):
+        """记录后端状态日志"""
+        active_backend = self._get_active_backend()
+
+        if active_backend == self.BACKEND_ANTHROPIC:
+            self.logger.info(f"Claude AI客户端初始化成功 (配置: {self.configured_backend}, 使用: Anthropic SDK，支持tool use)")
+        elif active_backend == self.BACKEND_CLAUDE_CODE:
+            tool_use_status = "支持tool use (MCP)" if self.claude_code_tool_use_available else "不支持tool use"
+            self.logger.info(f"Claude AI客户端初始化成功 (配置: {self.configured_backend}, 使用: claude-agent-sdk，{tool_use_status})")
+        else:
+            self.logger.error(f"Claude AI客户端不可用 (配置: {self.configured_backend})，请安装anthropic或claude-code-sdk")
+
+    def _get_active_backend(self) -> Optional[str]:
+        """获取当前实际使用的后端"""
+        if self.configured_backend == self.BACKEND_ANTHROPIC:
+            return self.BACKEND_ANTHROPIC if self.anthropic_available else None
+        elif self.configured_backend == self.BACKEND_CLAUDE_CODE:
+            return self.BACKEND_CLAUDE_CODE if self.claude_code_available else None
+        else:
+            # auto 模式：优先 Anthropic
+            if self.anthropic_available:
+                return self.BACKEND_ANTHROPIC
+            elif self.claude_code_available:
+                return self.BACKEND_CLAUDE_CODE
+            return None
 
     def _init_anthropic_client(self):
         """初始化Anthropic客户端"""
@@ -387,7 +584,20 @@ class ClaudeAIClient:
 
     def is_tool_use_available(self) -> bool:
         """检查是否支持tool use功能"""
-        return self.anthropic_available and self.tool_executor.futu_market is not None
+        has_futu_market = self.tool_executor.futu_market is not None
+        # Anthropic SDK 支持 tool use
+        if self.anthropic_available and has_futu_market:
+            return True
+        # Claude Agent SDK 也支持 tool use (通过 MCP)
+        if self.claude_code_available and self.claude_code_tool_use_available and has_futu_market:
+            return True
+        return False
+
+    def _get_or_create_mcp_server(self):
+        """获取或创建 MCP 服务器实例（延迟创建）"""
+        if self.mcp_server is None and self.claude_code_tool_use_available:
+            self.mcp_server = self.mcp_server_builder.create_mcp_server()
+        return self.mcp_server
 
     def _call_anthropic_with_tools(self, system_prompt: str, user_message: str, use_tools: bool = True) -> str:
         """
@@ -514,10 +724,11 @@ class ClaudeAIClient:
 
             self.logger.info(f"开始生成{request.analysis_type}分析: {request.stock_code}")
 
-            # 优先使用Anthropic SDK（支持tool use）
-            if self.anthropic_available:
+            # 根据配置选择后端
+            active_backend = self._get_active_backend()
+            if active_backend == self.BACKEND_ANTHROPIC:
                 response_content = await self._generate_analysis_with_anthropic(request)
-            elif self.claude_code_available:
+            elif active_backend == self.BACKEND_CLAUDE_CODE:
                 response_content = await self._generate_analysis_with_claude_code(request)
             else:
                 return self._create_error_response(request, "无可用的AI后端")
@@ -601,33 +812,66 @@ class ClaudeAIClient:
         return "\n".join(context_parts) if context_parts else ""
 
     async def _generate_analysis_with_claude_code(self, request: AIAnalysisRequest) -> str:
-        """使用claude-code-sdk生成分析（备选方案，不支持tool use）"""
-        prompt = self._build_analysis_prompt(request)
+        """使用claude-agent-sdk生成分析（支持 MCP tool use）"""
+        # 如果支持 tool use，使用工具调用模式
+        use_tools = self.claude_code_tool_use_available and self.tool_executor.futu_market is not None
+
+        if use_tools:
+            prompt = self._build_analysis_prompt_for_tool_use(request)
+            system_prompt = """你是一位专业的股票分析师AI助手，擅长技术分析和基本面分析。
+
+你可以使用以下工具获取股票数据：
+- get_realtime_quote: 获取实时行情报价
+- get_stock_kline: 获取K线数据用于技术分析
+- get_capital_flow: 获取资金流向数据
+- get_orderbook: 获取五档买卖盘数据
+- get_stock_basicinfo: 获取股票基本信息
+
+请根据用户需求调用相关工具获取数据，然后进行专业分析。用中文回答。"""
+        else:
+            prompt = self._build_analysis_prompt(request)
+            system_prompt = "你是一位专业的股票分析师AI助手。请直接回复，不要使用任何工具。"
+
         self.logger.debug(f"分析提示词: {prompt}")
+        return await self._query_claude_code_sdk(prompt, system_prompt, use_tools=use_tools)
 
-        system_prompt = "你是一位专业的股票分析师AI助手。请直接回复，不要使用任何工具。"
-        return await self._query_claude_code_sdk(prompt, system_prompt)
-
-    async def _query_claude_code_sdk(self, prompt: str, system_prompt: str = None) -> str:
-        """统一的claude-code-sdk查询方法
+    async def _query_claude_code_sdk(self, prompt: str, system_prompt: str = None, use_tools: bool = False) -> str:
+        """统一的claude-code-sdk/claude-agent-sdk查询方法
 
         Args:
             prompt: 用户提示词
             system_prompt: 系统提示词（可选）
+            use_tools: 是否使用工具（需要 claude-agent-sdk 支持）
 
         Returns:
             str: AI响应文本
         """
         if not CLAUDE_CODE_SDK_AVAILABLE or not query:
-            raise RuntimeError("claude-code-sdk不可用")
+            raise RuntimeError("claude-code-sdk/claude-agent-sdk不可用")
 
         options = None
-        if ClaudeCodeOptions and system_prompt:
-            options = ClaudeCodeOptions(
-                system_prompt=system_prompt,
-                max_turns=1,
-                allowed_tools=[]
-            )
+        mcp_servers = None
+        allowed_tools = []
+
+        # 如果启用工具且支持 MCP
+        if use_tools and self.claude_code_tool_use_available and self.tool_executor.futu_market is not None:
+            mcp_server = self._get_or_create_mcp_server()
+            if mcp_server:
+                mcp_servers = {"stock-data-tools": mcp_server}
+                allowed_tools = StockDataMCPServerBuilder.get_allowed_tools()
+                self.logger.info(f"claude-agent-sdk 启用 tool use，工具: {allowed_tools}")
+
+        if ClaudeCodeOptions:
+            options_kwargs = {
+                "max_turns": 10 if use_tools else 1,
+            }
+            if system_prompt:
+                options_kwargs["system_prompt"] = system_prompt
+            if mcp_servers:
+                options_kwargs["mcp_servers"] = mcp_servers
+            if allowed_tools:
+                options_kwargs["allowed_tools"] = allowed_tools
+            options = ClaudeCodeOptions(**options_kwargs)
 
         response_content = ""
         try:
@@ -636,6 +880,9 @@ class ClaudeAIClient:
                 if SystemMessage and isinstance(message, SystemMessage):
                     continue
                 if ResultMessage and isinstance(message, ResultMessage):
+                    # 从 ResultMessage 中提取结果
+                    if hasattr(message, 'result') and message.result:
+                        response_content = str(message.result)
                     continue
                 if AssistantMessage and isinstance(message, AssistantMessage):
                     if hasattr(message, 'content') and message.content:
@@ -646,10 +893,13 @@ class ClaudeAIClient:
                     response_content += message
                 elif hasattr(message, 'content'):
                     response_content += str(message.content)
+                elif hasattr(message, 'result'):
+                    response_content = str(message.result)
                 else:
-                    response_content += str(message)
+                    # 跳过其他类型的消息（如工具调用消息）
+                    self.logger.debug(f"跳过消息类型: {type(message)}")
         except Exception as query_error:
-            self.logger.error(f"claude-code-sdk查询异常: {query_error}")
+            self.logger.error(f"claude-agent-sdk查询异常: {query_error}")
             raise
 
         return response_content
@@ -669,11 +919,12 @@ class ClaudeAIClient:
             if not self.is_available():
                 return "抱歉，AI服务当前不可用，请稍后重试。"
 
-            # 优先使用Anthropic SDK（支持tool use）
-            if self.anthropic_available:
+            # 根据配置选择后端
+            active_backend = self._get_active_backend()
+            if active_backend == self.BACKEND_ANTHROPIC:
                 return await self._chat_with_anthropic(user_message, stock_context, use_tools)
-            elif self.claude_code_available:
-                return await self._chat_with_claude_code(user_message, stock_context)
+            elif active_backend == self.BACKEND_CLAUDE_CODE:
+                return await self._chat_with_claude_code(user_message, stock_context, use_tools)
             else:
                 return "抱歉，AI服务当前不可用，请稍后重试。"
 
@@ -708,13 +959,29 @@ class ClaudeAIClient:
             self.logger.error(f"Anthropic对话异常: {e}")
             return f"对话服务异常: {str(e)}"
 
-    async def _chat_with_claude_code(self, user_message: str, stock_context: Dict[str, Any] = None) -> str:
-        """使用claude-code-sdk进行对话（备选方案，不支持tool use）"""
+    async def _chat_with_claude_code(self, user_message: str, stock_context: Dict[str, Any] = None, use_tools: bool = True) -> str:
+        """使用claude-agent-sdk进行对话（支持 MCP tool use）"""
         prompt = self._build_chat_prompt(user_message, stock_context)
-        system_prompt = "你是一位专业的股票分析师AI助手，具有丰富的投资分析经验。请用中文与用户交流，请直接回复，不要使用任何工具。"
+
+        # 如果支持 tool use 且用户启用
+        should_use_tools = use_tools and self.claude_code_tool_use_available and self.tool_executor.futu_market is not None
+
+        if should_use_tools:
+            system_prompt = """你是一位专业的股票分析师AI助手，具有丰富的投资分析经验。请用中文与用户交流。
+
+你可以使用以下工具获取股票数据：
+- get_realtime_quote: 获取实时行情报价
+- get_stock_kline: 获取K线数据用于技术分析
+- get_capital_flow: 获取资金流向数据
+- get_orderbook: 获取五档买卖盘数据
+- get_stock_basicinfo: 获取股票基本信息
+
+当用户询问特定股票时，请主动调用相关工具获取最新数据，然后进行专业分析回答。"""
+        else:
+            system_prompt = "你是一位专业的股票分析师AI助手，具有丰富的投资分析经验。请用中文与用户交流，请直接回复。"
 
         try:
-            response_content = await self._query_claude_code_sdk(prompt, system_prompt)
+            response_content = await self._query_claude_code_sdk(prompt, system_prompt, use_tools=should_use_tools)
             return response_content if response_content else "抱歉，AI服务响应异常，请稍后重试。"
         except Exception as query_error:
             self.logger.error(f"Chat query调用异常: {query_error}")
@@ -735,11 +1002,12 @@ class ClaudeAIClient:
 
             self.logger.info(f"开始生成交易建议: {request.user_input}")
 
-            # 优先使用Anthropic SDK（支持tool use）
-            if self.anthropic_available:
+            # 根据配置选择后端
+            active_backend = self._get_active_backend()
+            if active_backend == self.BACKEND_ANTHROPIC:
                 ai_response = await self._generate_advice_with_anthropic(request)
             else:
-                # 备选方案：使用chat_with_ai
+                # 备选方案：使用chat_with_ai (包括 claude_code 模式)
                 advice_prompt = self._build_advice_prompt(request)
                 self.logger.debug(f"用户PROMPT: {advice_prompt}")
                 ai_response = await self.chat_with_ai(advice_prompt, use_tools=False)
@@ -1577,19 +1845,16 @@ class ClaudeAIClient:
 2. 充分利用技术指标(MA、RSI、MACD等)进行技术面分析
 3. 结合资金流向数据分析主力资金动向和市场情绪
 4. 分析五档买卖盘数据判断短期买卖力量对比和支撑阻力位
-5. 基于用户的实际持仓和可用资金制定合理的仓位建议
-6. 如果用户已持有该股票，考虑是加仓、减仓还是持有
-7. 考虑用户的风险偏好和风险承受能力
+5. 基于用户的实际持仓和可用资金制定合理的仓位建议,如果用户已持有该股票，考虑是加仓、减仓还是持有
 8. 提供具体可执行的交易策略，建议数量应与可用资金匹配
 9. 明确指出风险因素和注意事项
-10. 如果市场条件不适合交易，建议等待
+10. 如果市场条件不适合交易，建议等待.但是当用户提出建仓需求时,提出合理买入价格建议
 11. 所有建议必须基于风险控制原则
 12. 如果用户已有待成交订单，避免建议重复挂单，可建议修改或取消现有订单
 13. 参考当日成交记录了解用户今日交易行为，避免频繁交易建议
 14. 严进策略：不追高，乖离率 > 5% 不买入
-15. 趋势交易：只做 MA5>MA10>MA20 多头排列
 16. 效率优先：关注筹码集中度好的股票
-17. 买点偏好：缩量回踩 MA5/MA10 支撑
+17. 买点偏好：缩量回踩 MA5/MA10 支撑 MA5>MA10>MA20 多头排列
 回答请用中文，格式严格按照上述JSON结构。
 """
 
@@ -1800,21 +2065,24 @@ class ClaudeAIClient:
     
     def get_client_status(self) -> Dict[str, Any]:
         """获取客户端状态"""
-        primary_backend = None
-        if self.anthropic_available:
-            primary_backend = 'Anthropic SDK'
-        elif self.claude_code_available:
-            primary_backend = 'claude-code-sdk'
+        active_backend = self._get_active_backend()
+        active_backend_name = None
+        if active_backend == self.BACKEND_ANTHROPIC:
+            active_backend_name = 'Anthropic SDK'
+        elif active_backend == self.BACKEND_CLAUDE_CODE:
+            active_backend_name = 'claude-agent-sdk'
         else:
-            primary_backend = 'Unavailable'
+            active_backend_name = 'Unavailable'
 
         return {
             'available': self.available,
+            'configured_backend': self.configured_backend,
+            'active_backend': active_backend_name,
             'anthropic_sdk_available': ANTHROPIC_SDK_AVAILABLE,
             'anthropic_client_ready': self.anthropic_available,
             'claude_code_sdk_available': self.claude_code_available,
+            'claude_agent_sdk_tool_support': self.claude_code_tool_use_available,
             'tool_use_available': self.is_tool_use_available(),
-            'primary_backend': primary_backend,
             'model': getattr(self, 'anthropic_model', None) if self.anthropic_available else None
         }
     

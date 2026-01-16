@@ -519,7 +519,7 @@ class DataManager:
                 
                 # 更新UI
                 await self.app_core.app.ui_manager.update_stock_table()
-                self.logger.info(f"实时数据更新成功，共更新 {updated_count} 只股票")
+                self.logger.debug(f"实时数据更新成功，共更新 {updated_count} 只股票")
             else:
                 self.logger.warning("获取实时报价返回空数据")
                 
